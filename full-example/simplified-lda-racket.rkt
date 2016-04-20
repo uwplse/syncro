@@ -7,6 +7,7 @@
 
 (require "rosette-namespace.rkt")
 (require "lsl-namespace.rkt")
+(require "lsl-transformer.rkt")
 
 (define x 4)
 (define y 6)
@@ -33,4 +34,4 @@
 ;(define (qadd3 x y z)
 ;  (+ x (+ y z)))
 
-;(define fn2 (pe (thunk (+ #'x y z))))
+(define fn2 (pe (thunk (transform (+ #'x (+ y z))))))
