@@ -1,41 +1,59 @@
 #lang racket
 
-(require "rosette-namespace.rkt")
-(require "lsl-namespace.rkt")
+;(require "rosette-namespace.rkt")
+;(require "lsl-namespace.rkt")
+
+(require "constructs.rkt")
 
 ;; Goal is for the following program to work:
-(define (assert-positive x) (assert (> x 0)))
+(define NUM_WORDS 12)
+(define NUM_TOPICS 3)
+(define NUM_DOCUMENTS 2)
+(define VOCABULARY_SIZE 10)
+(define documents
+  (build-vector NUM_WORDS (lambda (w) (if (< w 5) 0 1))))
 
-(define-constant NUM_WORDS integer?)
-(define-constant NUM_TOPICS integer?)
-(define-constant NUM_DOCUMENTS integer?)
-(define-constant VOCABULARY_SIZE integer?)
+;; TODO: All five of the above may need to use a "define-constant"
+;; form that may look something like this:
+;; This could help with doing things symbolically.
+;; (define-constant documents (Vector-type Word Document)
+;;   (build-vector NUM_WORDS (lambda (w) (if (< w 5) 0 1))))
 
-;; (define-base-type word (enum-range NUM_WORDS))
-;; (define-base-type topic (enum-range NUM_TOPICS))
-;; (define-base-type document (enum-range NUM_DOCUMENTS))
+(define Word (Enum-type NUM_WORDS))
+(define Topic (Enum-type NUM_TOPICS))
+(define Document (Enum-type NUM_DOCUMENTS))
 
-;; TODO: Need to specify types better -- specifically, how do we
-;; specify the range of this relation?
-(define-structure topics (Vector NUM_WORDS topic)
-  (mutable))
+(define-mutable topics update-topics! (Vector-type Word Topic)
+  (build-vector NUM_WORDS (lambda (w) (random NUM_TOPICS))))
 
-(define-structure num1 (Vector NUM_TOPICS integer?)
-  (incremental
+(define-incremental num1 update-num1! (Vector-type Topic Integer-type) (topics)
+  (build-vector
+   NUM_TOPICS
    (lambda (t)
-     (size-of-set ((word w) | (equal? (vector-ref topics w) t))))))
+     (for/sum ([w NUM_WORDS])
+       (if (equal? (vector-ref topics w) t) 1 0)))))
+     ;(size (set (Word w) | (equal? (vector-ref topics w) t))))))
 
-(define-structure num2 (Vector NUM_DOCUMENTS integer?)
-  (incremental
+(define-incremental num2 update-num2! (Vector-type Document Integer-type) (topics)
+  (build-vector
+   NUM_DOCUMENTS
    (lambda (d)
-     (size-of-set ((topic t) | (exists (word w)
-                                       (and (equal? (vector-ref topics w) t)
-                                            (equal? (document w) d))))))))
+     (for/sum ([t NUM_TOPICS])
+       (if (for/or ([w NUM_WORDS])
+             (and (equal? (vector-ref topics w) t)
+                  (equal? (vector-ref documents w) d)))
+           1
+           0)))))
+     ;; (size (set (Topic t) | (exists (Word w)
+     ;;                                (and (equal? (vector-ref topics w) t)
+     ;;                                     (equal? (vector-ref documents w) d))))))))
 
-(define-structure value (integer?)
-  (incremental
-   (lambda ()
-     (sum (/ (* beta num1) (+ (* beta VOCABULARY_SIZE) (sum num2)))))))
+(define-incremental value update-value! (Integer-type) (num1 num2)
+  (lambda ()
+    (let ([num1sum (for/sum ([x num1]) x)]
+          [num2sum (for/sum ([x num2]) x)])
+     (/ (* beta num1sum) (+ (* beta VOCABULARY_SIZE) num2sum)))))
+    ;(sum (/ (* beta num1) (+ (* beta VOCABULARY_SIZE) (sum num2))))))
 
 (define (go)
   (for/sum ([i 100])
