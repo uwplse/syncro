@@ -20,11 +20,11 @@
   (begin
     ; (assert (not (hash-contains dependency-table 'id)))
     (define (update-id . args)
-      (apply base-update 'id type args)
+      (apply base-update id type args)
       (for ([dependency (id-vector-children (hash-ref id-table 'id))])
         ((id-vector-update-fn (hash-ref id-table dependency)))))
 
-    (hash-set! id-vector 'id
+    (hash-set! id-table 'id
                (id-vector 'id type '() '()
                           (lambda () expr ...)
                           update-id))
@@ -32,10 +32,10 @@
     (void)))
 
 (define-syntax-rule (define-incremental id update-id type (dependency ...) expr ...)
-  (let ([type-val type])
+  (begin
     ; (assert (not (hash-contains dependency-table 'id)))
-    (hash-set! id-vector 'id
-               (id-vector 'id type-val '() '(dependency ...)
+    (hash-set! id-table 'id
+               (id-vector 'id type '() '(dependency ...)
                           (lambda () expr ...)
                           (lambda () expr ...)))
     (begin

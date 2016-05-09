@@ -10,6 +10,7 @@
 (define NUM_TOPICS 3)
 (define NUM_DOCUMENTS 2)
 (define VOCABULARY_SIZE 10)
+(define BETA 1)
 (define documents
   (build-vector NUM_WORDS (lambda (w) (if (< w 5) 0 1))))
 
@@ -52,10 +53,10 @@
   (lambda ()
     (let ([num1sum (for/sum ([x num1]) x)]
           [num2sum (for/sum ([x num2]) x)])
-     (/ (* beta num1sum) (+ (* beta VOCABULARY_SIZE) num2sum)))))
-    ;(sum (/ (* beta num1) (+ (* beta VOCABULARY_SIZE) (sum num2))))))
+     (/ (* BETA num1sum) (+ (* BETA VOCABULARY_SIZE) num2sum)))))
+    ;(sum (/ (* BETA num1) (+ (* BETA VOCABULARY_SIZE) (sum num2))))))
 
 (define (go)
   (for/sum ([i 100])
     (update-topics! (random NUM_WORDS) (random NUM_TOPICS))
-    value))
+    (value)))
