@@ -24,10 +24,10 @@
 (define Topic (Enum-type NUM_TOPICS))
 (define Document (Enum-type NUM_DOCUMENTS))
 
-(define-mutable topics update-topics! (Vector-type Word Topic)
+(define-mutable topics (Vector-type Word Topic)
   (build-vector NUM_WORDS (lambda (w) (random NUM_TOPICS))))
 
-(define-incremental num1 update-num1! (Vector-type Topic Integer-type) (topics)
+(define-incremental num1 (Vector-type Topic Integer-type) (topics)
   (build-vector
    NUM_TOPICS
    (lambda (t)
@@ -35,7 +35,7 @@
        (if (equal? (vector-ref topics w) t) 1 0)))))
      ;(size (set (Word w) | (equal? (vector-ref topics w) t))))))
 
-(define-incremental num2 update-num2! (Vector-type Document Integer-type) (topics)
+(define-incremental num2 (Vector-type Document Integer-type) (topics)
   (build-vector
    NUM_DOCUMENTS
    (lambda (d)
@@ -49,7 +49,7 @@
      ;;                                (and (equal? (vector-ref topics w) t)
      ;;                                     (equal? (vector-ref documents w) d))))))))
 
-(define-incremental value update-value! (Integer-type) (num1 num2)
+(define-incremental value (Integer-type) (num1 num2)
   (lambda ()
     (let ([num1sum (for/sum ([x num1]) x)]
           [num2sum (for/sum ([x num2]) x)])

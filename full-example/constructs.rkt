@@ -15,35 +15,55 @@
 
 (define id-table (make-hash))
 
-(define-syntax-rule (define-mutable id update-id type expr ...)
-  ;; TODO: type is recomputed twice here, but don't want to use a let because then update-id would not be global
-  (begin
-    ; (assert (not (hash-contains dependency-table 'id)))
-    (define (update-id . args)
-      (apply base-update id type args)
-      (for ([dependency (id-vector-children (hash-ref id-table 'id))])
-        ((id-vector-update-fn (hash-ref id-table dependency)))))
 
-    (hash-set! id-table 'id
-               (id-vector 'id type '() '()
-                          (lambda () expr ...)
-                          update-id))
-    (define id (begin expr ...))
-    (void)))
+(define-for-syntax (make-id template . ids)
+  (string->symbol (apply format template (map syntax->datum ids))))
 
-(define-syntax-rule (define-incremental id update-id type (dependency ...) expr ...)
-  (begin
-    ; (assert (not (hash-contains dependency-table 'id)))
-    (hash-set! id-table 'id
-               (id-vector 'id type '() '(dependency ...)
-                          (lambda () expr ...)
-                          (lambda () expr ...)))
-    (begin
-      (let ([dep (hash-ref id-table 'dependency)])
-        (set-id-vector-children! dep (cons 'id (id-vector-children dep))))
-      ...)
-    (define id (begin expr ...))
-    (void)))
+(define-syntax (define-mutable stx)
+  (syntax-case stx ()
+    [(_ id type expr ...)
+     (with-syntax ([update-id
+                    (datum->syntax stx (make-id "update-~a!" #'id))])
+       (syntax/loc stx
+         ;; TODO: type is recomputed twice here, but don't want to use a let because then update-id would not be global
+         (begin
+           (when (hash-has-key? id-table 'id)
+             (error (string-append "Symbol has already been used: " (symbol->string 'id))))
+           (define (update-id . args)
+             (apply base-update id type args)
+             (for ([dep (id-vector-children (hash-ref id-table 'id))])
+               ((id-vector-update-fn (hash-ref id-table dep)))))
+           
+           (hash-set! id-table 'id
+                      (id-vector 'id type '() '()
+                                 (lambda () expr ...)
+                                 update-id))
+           (define id (begin expr ...))
+           (void))))]))
+
+(define-syntax (define-incremental stx)
+  (syntax-case stx ()
+    [(_ id type (dependency ...) expr ...)
+     (with-syntax ([update-id
+                    (datum->syntax stx (make-id "update-~a!" #'id))])
+       (syntax/loc stx
+         (begin
+           (when (hash-has-key? id-table 'id)
+             (error (string-append "Symbol has already been used: " (symbol->string 'id))))
+           (hash-set! id-table 'id
+                      (id-vector 'id type '() '(dependency ...)
+                                 (lambda () expr ...)
+                                 (lambda ()
+                                   (set! id (begin expr ...))
+                                   (for ([dep (id-vector-children (hash-ref id-table 'id))])
+                                     ((id-vector-update-fn (hash-ref id-table dep)))))))
+                            
+           (begin
+             (let ([dep (hash-ref id-table 'dependency)])
+               (set-id-vector-children! dep (cons 'id (id-vector-children dep))))
+             ...)
+           (define id (begin expr ...))
+           (void))))]))
 
 (define (base-update thing type . args)
   (apply vector-set! thing args))
