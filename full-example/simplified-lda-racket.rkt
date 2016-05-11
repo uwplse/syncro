@@ -11,13 +11,13 @@
 (define NUM_DOCUMENTS 2)
 (define VOCABULARY_SIZE 10)
 (define BETA 1)
-(define documents
+(define word->document
   (build-vector NUM_WORDS (lambda (w) (if (< w 5) 0 1))))
 
 ;; TODO: All five of the above may need to use a "define-constant"
 ;; form that may look something like this:
 ;; This could help with doing things symbolically.
-;; (define-constant documents (Vector-type Word Document)
+;; (define-constant word->document (Vector-type Word Document)
 ;;   (build-vector NUM_WORDS (lambda (w) (if (< w 5) 0 1))))
 
 (define Word (Enum-type NUM_WORDS))
@@ -42,12 +42,12 @@
      (for/sum ([t NUM_TOPICS])
        (if (for/or ([w NUM_WORDS])
              (and (equal? (vector-ref topics w) t)
-                  (equal? (vector-ref documents w) d)))
+                  (equal? (vector-ref word->document w) d)))
            1
            0)))))
      ;; (size (set (Topic t) | (exists (Word w)
      ;;                                (and (equal? (vector-ref topics w) t)
-     ;;                                     (equal? (vector-ref documents w) d))))))))
+     ;;                                     (equal? (vector-ref word->document w) d))))))))
 
 (define-incremental value (Integer-type) (num1 num2)
   (lambda ()
