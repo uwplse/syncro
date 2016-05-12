@@ -24,10 +24,10 @@
 (define Topic (Enum-type NUM_TOPICS))
 (define Document (Enum-type NUM_DOCUMENTS))
 
-(define-mutable topics (Vector-type Word Topic)
+(define-incremental topics (Vector-type Word Topic) () (assign)
   (build-vector NUM_WORDS (lambda (w) (random NUM_TOPICS))))
 
-(define-incremental num1 (Vector-type Topic Integer-type) (topics)
+(define-incremental num1 (Vector-type Topic Integer-type) (topics) ()
   (build-vector
    NUM_TOPICS
    (lambda (t)
@@ -35,7 +35,7 @@
        (if (equal? (vector-ref topics w) t) 1 0)))))
      ;(size (set (Word w) | (equal? (vector-ref topics w) t))))))
 
-(define-incremental num2 (Vector-type Document Integer-type) (topics)
+(define-incremental num2 (Vector-type Document Integer-type) (topics) ()
   (build-vector
    NUM_DOCUMENTS
    (lambda (d)
@@ -49,14 +49,16 @@
      ;;                                (and (equal? (vector-ref topics w) t)
      ;;                                     (equal? (vector-ref word->document w) d))))))))
 
-(define-incremental value (Integer-type) (num1 num2)
+(define-incremental value (Integer-type) (num1 num2) ()
   (lambda ()
     (let ([num1sum (for/sum ([x num1]) x)]
           [num2sum (for/sum ([x num2]) x)])
      (/ (* BETA num1sum) (+ (* BETA VOCABULARY_SIZE) num2sum)))))
     ;(sum (/ (* BETA num1) (+ (* BETA VOCABULARY_SIZE) (sum num2))))))
 
+(finalize)
+
 (define (go)
   (for/sum ([i 100])
-    (update-topics! (random NUM_WORDS) (random NUM_TOPICS))
+    (assign-topics! (random NUM_WORDS) (random NUM_TOPICS))
     (value)))
