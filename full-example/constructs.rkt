@@ -1,7 +1,16 @@
 #lang racket
 
+(require "rosette-namespace.rkt")
+
 (provide Integer-type Enum-type Vector-type
-         define-incremental finalize)
+         define-constant define-incremental finalize
+         my-for/sum my-for/or)
+
+;; TODO: Also put in the define-symbolic into this function
+(define (set-add-code set-name val)
+  (if set-name
+      #`(set-add! #,set-name #,val)
+      #'(void)))
 
 ;; TODO: Currently Type% is performing the role of an interface. If it
 ;; stays like that, we should convert it into an explicit interface.
@@ -12,11 +21,14 @@
     (define/public (mutable-structure?)
       (error (format "~a does not implement mutable-structure?" this)))
 
-    (define/public (symbolic-code var)
+    (define/public (symbolic-code var [varset-name #f])
       (error (format "~a does not implement symbolic-code" this)))
 
     (define/public (update-code update-type)
-      (error (format "~a does not implement update-code" this)))))
+      (error (format "~a does not implement update-code" this)))
+
+    (define/public (symbolic-update-code update-type var [varset-name #f])
+      (error (format "~a does not implement symbolic-update-code" this)))))
 
 (define Integer%
   (class Type%
@@ -24,8 +36,9 @@
 
     (define/override (mutable-structure?) #f)
 
-    (define/override (symbolic-code var)
-      #`(define-symbolic* #,var integer?))
+    (define/override (symbolic-code var [varset-name #f])
+      #`(begin (define-symbolic* #,var integer?)
+               #,(set-add-code varset-name var)))
 
     (define/override (update-code update-type)
       (cond [(equal? update-type 'assign)
@@ -40,7 +53,24 @@
              (lambda (var)
                #`(set! #,var (- #,var 1)))]
 
-            [else (super update-code update-type)]))))
+            [else (super update-code update-type)]))
+
+    (define/override (symbolic-update-code update-type var [varset-name #f])
+      (cond [(equal? update-type 'assign)
+             (define tmp (gensym 'val))
+             (values #`(begin (define-symbolic* #,tmp integer?)
+                              #,(set-add-code varset-name tmp))
+                     #`(set! #,var #,tmp))]
+
+            [(equal? update-type 'increment)
+             (values #'(void)
+                     #`(set! #,var (+ #,var 1)))]
+
+            [(equal? update-type 'decrement)
+             (values #'(void)
+                     #`(set! #,var (- #,var 1)))]
+
+            [else (super symbolic-update-code update-type var varset-name)]))))
 
 (define (Integer-type) (new Integer%))
 
@@ -50,19 +80,31 @@
     (init-field num-items)
     (define/public (get-num-items) num-items)
 
-    (define/override (symbolic-code var)
+    (define/override (mutable-structure?) #f)
+
+    (define/override (symbolic-code var [varset-name #f])
       #`(begin (define-symbolic* #,var integer?)
+               #,(set-add-code varset-name var)
                (assert (>= #,var 0))
                (assert (< #,var #,num-items))))
-
-    (define/override (mutable-structure?) #f)
 
     (define/override (update-code update-type)
       (cond [(equal? update-type 'assign)
              (lambda (var val)
                #`(set! #,var #,val))]
 
-            [else (super update-code update-type)]))))
+            [else (super update-code update-type)]))
+
+    (define/override (symbolic-update-code update-type var [varset-name #f])
+      (cond [(equal? update-type 'assign)
+             (define tmp (gensym 'val))
+             (values #`(begin (define-symbolic* #,tmp integer?)
+                              #,(set-add-code varset-name tmp)
+                              (assert (>= #,tmp 0))
+                              (assert (< #,tmp #,num-items)))
+                     #`(set! #,var #,tmp))]
+
+            [else (super symbolic-update-code update-type var varset-name)]))))
 
 (define (Enum-type items) (new Enum% [num-items items]))
 
@@ -70,16 +112,16 @@
   (class Type%
     (super-new)
     (init-field len output-type)
+
+    (define/override (mutable-structure?) #t)
     
-    (define/override (symbolic-code var)
+    (define/override (symbolic-code var [varset-name #f])
       (define tmp (gensym))
       #`(define #,var
           (build-vector #,len
                         (lambda (i)
-                          #,(send output-type symbolic-code tmp)
+                          #,(send output-type symbolic-code tmp varset-name)
                           #,tmp))))
-
-    (define/override (mutable-structure?) #t)
 
     (define/override (update-code update-type)
       (cond [(equal? update-type 'assign)
@@ -93,7 +135,44 @@
                  (lambda (vect index value)
                    #`(vector-set! #,vect #,index #,value)))]
 
-            [else (super update-code update-type)]))))
+            [else (super update-code update-type)]))
+
+    (define/override (symbolic-update-code update-type var [varset-name #f])
+      (cond [(equal? update-type 'assign)
+             (define tmp-index (gensym 'index))
+             (define tmp-val (gensym 'val))
+
+             (if (send output-type mutable-structure?)
+
+                 (let-values ([(output-defns output-update)
+                               (send output-type symbolic-update-code
+                                     ;; TODO: update-type needs to change here
+                                     update-type
+                                     #`(vector-ref #,var #,tmp-index)
+                                     varset-name)])
+                   (values
+                    ;; Create the symbolic index into the vector
+                    #`(begin (define-symbolic* #,tmp-index integer?)
+                             #,(set-add-code varset-name tmp-index)
+                             (assert (>= #,tmp-index 0))
+                             (assert (< #,tmp-index #,len))
+                             #,output-defns)
+                    ;; Update the mutable structure at the specified symbolic index
+                    output-update))
+
+                 (values
+                  ;; Create the symbolic index into the vector
+                  #`(begin (define-symbolic* #,tmp-index integer?)
+                           #,(set-add-code varset-name tmp-index)
+                           (assert (>= #,tmp-index 0))
+                           (assert (< #,tmp-index #,len))
+                           ;; Create the symbolic value
+                           #,(send output-type symbolic-code tmp-val varset-name))
+                  ;; Perform the update
+                  #`(vector-set! #,var #,tmp-index #,tmp-val)
+                  tmp-index))]
+
+            [else (super symbolic-update-code update-type var varset-name)]))))
 
 (define (Vector-type length-or-input output)
   (define length
@@ -133,9 +212,11 @@
                        update-type)))
       (hash-set! update-fns update-type fn))
 
-    ;; TODO:
-    ;; (define/public (get-symbolic-update-code)
-    ;;   (send type symbolic-update-code))
+    (define/public (get-symbolic-code var [varset-name #f])
+      (send type symbolic-code var varset-name))
+    
+    (define/public (get-symbolic-update-code update-type var [varset-name #f])
+      (send type symbolic-update-code update-type var varset-name))
     
     (define/public (get-base-update-code update-type . args)
       (apply (send type update-code update-type) args))))
@@ -145,6 +226,10 @@
 
 (define-for-syntax (make-id template . ids)
   (string->symbol (apply format template (map syntax->datum ids))))
+
+(define-syntax-rule (define-constant var val)
+  (begin (define var val)
+         (eval '(define var val) rosette-ns)))
 
 (define-syntax (define-incremental stx)
   (syntax-case stx ()
@@ -206,4 +291,65 @@
   ;; Creates the children relation from the parents relation
   (for* ([(id struc) id-table]
          [parent (send struc get-parents)])
-    (send (hash-ref id-table parent) add-child id)))
+    (send (hash-ref id-table parent) add-child id))
+
+  (define parent (hash-ref id-table 'word->topic))
+  (define child (hash-ref id-table 'num1))
+  (let* ([p-id (send parent get-id)]
+         [c-id (send child get-id)]
+         [update-type 'assign]
+         [parent-definition (send parent get-symbolic-code p-id 'symbolic-vars)]
+         [child-expr (send child get-fn-code)])
+    ;; TODO: index-var is a hack to test, get rid of it
+    (let-values ([(update-defns-code update-code index-var)
+                  (send parent get-symbolic-update-code update-type
+                        p-id 'symbolic-vars)])
+      (define rosette-code
+        `(begin
+           (define symbolic-vars (mutable-set))
+           ;(define terminal-hash (make-hash))
+           ,(syntax->datum parent-definition)
+           (define ,c-id ,child-expr)
+           ,(syntax->datum update-defns-code)
+           (synthesize
+            #:forall (set->list symbolic-vars)
+            #:guarantee (begin
+                          (define idx ,index-var)
+                          ;; TODO: Hard coded for testing
+                          ((choose vector-decrement! vector-increment!) ,c-id (vector-ref ,p-id ,index-var))
+                          #;(stmt 1 3
+                                ;; TODO: Make this hash properly
+                                (make-hash `((numeric-vector . (,,c-id))
+                                             (topic . ((vector-ref word->topic idx))))))
+                          ,(syntax->datum update-code)
+                          ;; TODO: Hard coded for testing
+                          ((choose vector-decrement! vector-increment!) ,c-id (vector-ref ,p-id, index-var))
+                          #;(stmt 1 3
+                                ;; TODO: Make this hash properly
+                                (make-hash `((numeric-vector . (,,c-id))
+                                             (topic . ((vector-ref word->topic idx))))))
+                          (assert (equal? ,c-id ,child-expr))))))
+      (pretty-print rosette-code)
+      (eval rosette-code rosette-ns))))
+
+;; NOTE: The reimplementations of for can also be found in
+;; rosette-namespace.rkt
+(define-syntax (my-for/sum stx)
+  (syntax-case stx ()
+    [(_ ([i itr] ...) expr ...)
+     (syntax/loc stx
+       (let ([sum 0])
+         (for ([i itr] ...)
+           (set! sum (+ sum (begin expr ...))))
+         sum))]))
+
+;; TODO: Reimplement with break? If so, also change in
+;; rosette-namespace.rkt
+(define-syntax (my-for/or stx)
+  (syntax-case stx ()
+    [(_ ([i itr] ...) expr ...)
+     (syntax/loc stx
+       (let ([val #f])
+         (for ([i itr] ...)
+           (set! val (or val (begin expr ...))))
+         val))]))

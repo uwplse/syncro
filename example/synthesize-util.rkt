@@ -3,7 +3,7 @@
 (require rosette/lib/synthax)
 (require "util.rkt")
 
-(provide stmt stmt-synthax)
+(provide stmt stmt-synthax (rename-out [choose-fn choose]))
 
 ;; Introduces a choice hole into a program -- a placeholder
 ;; to be filled with one of the given expressions.
