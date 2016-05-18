@@ -1,6 +1,6 @@
 #lang s-exp rosette
 
-(require "../example/synthesize-util.rkt" "../example/util.rkt")
+(require "grammar.rkt")
 
 (provide rosette-ns my-for/sum my-for/or)
 
@@ -24,5 +24,6 @@
            (set! val (or val (begin expr ...))))
          val))]))
 
+;; TODO: We may want to create new namespaces each time we pose a new synthesis problem
 (define-namespace-anchor anchor)
 (define rosette-ns (namespace-anchor->namespace anchor))

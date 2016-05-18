@@ -62,3 +62,5 @@
   (for/sum ([i 100])
     (assign-word->topic! (random NUM_WORDS) (random NUM_TOPICS))
     (value)))
+
+(go)

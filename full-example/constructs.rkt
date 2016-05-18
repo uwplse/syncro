@@ -311,24 +311,30 @@
            ,(syntax->datum parent-definition)
            (define ,c-id ,child-expr)
            ,(syntax->datum update-defns-code)
-           (synthesize
-            #:forall (set->list symbolic-vars)
-            #:guarantee (begin
-                          (define idx ,index-var)
-                          ;; TODO: Hard coded for testing
-                          ((choose vector-decrement! vector-increment!) ,c-id (vector-ref ,p-id ,index-var))
-                          #;(stmt 1 3
-                                ;; TODO: Make this hash properly
-                                (make-hash `((numeric-vector . (,,c-id))
-                                             (topic . ((vector-ref word->topic idx))))))
-                          ,(syntax->datum update-code)
-                          ;; TODO: Hard coded for testing
-                          ((choose vector-decrement! vector-increment!) ,c-id (vector-ref ,p-id, index-var))
-                          #;(stmt 1 3
-                                ;; TODO: Make this hash properly
-                                (make-hash `((numeric-vector . (,,c-id))
-                                             (topic . ((vector-ref word->topic idx))))))
-                          (assert (equal? ,c-id ,child-expr))))))
+           (define synth
+             (synthesize
+              #:forall (set->list symbolic-vars)
+              #:guarantee
+              (begin
+                ;; NOTE: One possible way to perform this synthesis is
+                ;; to have one function run before the update and one
+                ;; run after the update. Alternatively, we could save
+                ;; the old values, and then synthesize a single function
+                ;; that can access those old values.
+                ;; It seems Rosette's define-synthax can only be used
+                ;; once per synthesis problem (current hypothesis: it
+                ;; returns the same function if used again, because all
+                ;; of the symbolic variables are the same, because the
+                ;; call stack is the same), so we're going with the
+                ;; latter option for now.
+                ;; TODO: Hard coded for testing
+                (define old-value (vector-ref ,p-id ,index-var))
+                ,(syntax->datum update-code)
+                ;; TODO: Hard coded for testing
+                (define new-value (vector-ref ,p-id ,index-var))
+                (sketch ,c-id old-value new-value)
+                (assert (equal? ,c-id ,child-expr)))))
+           (syntax->datum (car (generate-forms synth)))))
       (pretty-print rosette-code)
       (eval rosette-code rosette-ns))))
 
