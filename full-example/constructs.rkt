@@ -256,6 +256,11 @@
            (begin
              ;; Define the update functions for each update type
              (define (update-id . args)
+               ;; TODO: Hard coded for testing
+               (define old-value
+                 (if (equal? 'name 'word->topic)
+                     (vector-ref name (first args))
+                     #f))
                ;; First apply the update to the data structure
                ;; TODO: eval only works if the free variables in the
                ;; code are globally defined, I think
@@ -267,7 +272,12 @@
                ;; could find a linearization and process updates in that
                ;; order.
                (for ([dep (send struc get-children)])
-                 ((send (hash-ref id-table dep) get-update-fn 'recompute))))
+                 ;; TODO: Hard coded for testing
+                 (if (equal? (send (hash-ref id-table dep) get-id) 'num1)
+                     ;; TODO: Should actually be the following:
+                     ;(apply (send (hash-ref id-table dep) get-update-fn 'name 'update-type) args)
+                     ((send (hash-ref id-table dep) get-update-fn 'update-type) name old-value (second args))
+                     ((send (hash-ref id-table dep) get-update-fn 'recompute)))))
              ...)
 
            ;; Add the update functions for each update type to struc
@@ -285,58 +295,67 @@
            (define name (begin expr ...))
            (void))))]))
 
-(define (finalize)
-  ;; Here we modify *values* in a hash table while iterating over that
-  ;; hash table, so there is no problem.
-  ;; Creates the children relation from the parents relation
-  (for* ([(id struc) id-table]
-         [parent (send struc get-parents)])
-    (send (hash-ref id-table parent) add-child id))
-
-  (define parent (hash-ref id-table 'word->topic))
-  (define child (hash-ref id-table 'num1))
-  (let* ([p-id (send parent get-id)]
-         [c-id (send child get-id)]
-         [update-type 'assign]
-         [parent-definition (send parent get-symbolic-code p-id 'symbolic-vars)]
-         [child-expr (send child get-fn-code)])
-    ;; TODO: index-var is a hack to test, get rid of it
-    (let-values ([(update-defns-code update-code index-var)
-                  (send parent get-symbolic-update-code update-type
-                        p-id 'symbolic-vars)])
-      (define rosette-code
-        `(begin
-           (define symbolic-vars (mutable-set))
-           ;(define terminal-hash (make-hash))
-           ,(syntax->datum parent-definition)
-           (define ,c-id ,child-expr)
-           ,(syntax->datum update-defns-code)
-           (define synth
-             (synthesize
-              #:forall (set->list symbolic-vars)
-              #:guarantee
-              (begin
-                ;; NOTE: One possible way to perform this synthesis is
-                ;; to have one function run before the update and one
-                ;; run after the update. Alternatively, we could save
-                ;; the old values, and then synthesize a single function
-                ;; that can access those old values.
-                ;; It seems Rosette's define-synthax can only be used
-                ;; once per synthesis problem (current hypothesis: it
-                ;; returns the same function if used again, because all
-                ;; of the symbolic variables are the same, because the
-                ;; call stack is the same), so we're going with the
-                ;; latter option for now.
-                ;; TODO: Hard coded for testing
-                (define old-value (vector-ref ,p-id ,index-var))
-                ,(syntax->datum update-code)
-                ;; TODO: Hard coded for testing
-                (define new-value (vector-ref ,p-id ,index-var))
-                (sketch ,c-id old-value new-value)
-                (assert (equal? ,c-id ,child-expr)))))
-           (syntax->datum (car (generate-forms synth)))))
-      (pretty-print rosette-code)
-      (eval rosette-code rosette-ns))))
+(define-syntax-rule (finalize)
+  (begin
+    ;; Here we modify *values* in a hash table while iterating over that
+    ;; hash table, so there is no problem.
+    ;; Creates the children relation from the parents relation
+    (for* ([(id struc) id-table]
+           [parent (send struc get-parents)])
+      (send (hash-ref id-table parent) add-child id))
+    
+    (define-namespace-anchor anchor)
+    (define program-ns (namespace-anchor->namespace anchor))
+    
+    (define parent (hash-ref id-table 'word->topic))
+    (define child (hash-ref id-table 'num1))
+    (let* ([p-id (send parent get-id)]
+           [c-id (send child get-id)]
+           [update-type 'assign]
+           [sketch-name 'sketch]
+           [parent-definition (send parent get-symbolic-code p-id 'symbolic-vars)]
+           [child-expr (send child get-fn-code)])
+      ;; TODO: index-var is a hack to test, get rid of it
+      (let-values ([(update-defns-code update-code index-var)
+                    (send parent get-symbolic-update-code update-type
+                          p-id 'symbolic-vars)])
+        (define rosette-code
+          `(begin
+             (define symbolic-vars (mutable-set))
+             ;(define terminal-hash (make-hash))
+             ,(syntax->datum parent-definition)
+             (define ,c-id ,child-expr)
+             ,(syntax->datum update-defns-code)
+             (define synth
+               (synthesize
+                #:forall (set->list symbolic-vars)
+                #:guarantee
+                (begin
+                  ;; NOTE: One possible way to perform this synthesis is
+                  ;; to have one function run before the update and one
+                  ;; run after the update. Alternatively, we could save
+                  ;; the old values, and then synthesize a single function
+                  ;; that can access those old values.
+                  ;; It seems Rosette's define-synthax can only be used
+                  ;; once per synthesis problem (current hypothesis: it
+                  ;; returns the same function if used again, because all
+                  ;; of the symbolic variables are the same, because the
+                  ;; call stack is the same), so we're going with the
+                  ;; latter option for now.
+                  ;; TODO: Hard coded for testing
+                  (define old-value (vector-ref ,p-id ,index-var))
+                  ,(syntax->datum update-code)
+                  ;; TODO: Hard coded for testing
+                  (define new-value (vector-ref ,p-id ,index-var))
+                  (,sketch-name ,c-id old-value new-value)
+                  (assert (equal? ,c-id ,child-expr)))))
+             (syntax->datum (car (generate-forms synth)))))
+        ;(pretty-print rosette-code)
+        (define result (eval rosette-code rosette-ns))
+        (pretty-print result)
+        (eval result program-ns)
+        (define update-fn (eval sketch-name program-ns))
+        (send child set-update-fn update-type update-fn)))))
 
 ;; NOTE: The reimplementations of for can also be found in
 ;; rosette-namespace.rkt

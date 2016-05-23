@@ -3,7 +3,7 @@
 ;(require "rosette-namespace.rkt")
 ;(require "lsl-namespace.rkt")
 
-(require "constructs.rkt")
+(require "constructs.rkt" "grammar.rkt")
 
 ;; Goal is for the following program to work:
 (define-constant NUM_WORDS 12)
@@ -28,12 +28,14 @@
   (build-vector NUM_WORDS (lambda (w) (random NUM_TOPICS))))
 
 (define-incremental num1 (Vector-type Topic (Integer-type)) (word->topic) ()
-  (build-vector
-   NUM_TOPICS
-   (lambda (t)
-     (my-for/sum ([w NUM_WORDS])
-       (if (equal? (vector-ref word->topic w) t) 1 0)))))
-     ;(size (set (Word w) | (equal? (vector-ref topics w) t))))))
+  (begin
+    (display "Recomputing num1\n")
+    (build-vector
+     NUM_TOPICS
+     (lambda (t)
+       (my-for/sum ([w NUM_WORDS])
+                   (if (equal? (vector-ref word->topic w) t) 1 0))))))
+  ;(size (set (Word w) | (equal? (vector-ref topics w) t))))))
 
 (define-incremental num2 (Vector-type Document (Integer-type)) (word->topic) ()
   (build-vector
@@ -59,7 +61,7 @@
 (finalize)
 
 (define (go)
-  (for/sum ([i 100])
+  (for/sum ([i 10])
     (assign-word->topic! (random NUM_WORDS) (random NUM_TOPICS))
     (value)))
 
