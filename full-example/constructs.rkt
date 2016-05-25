@@ -4,6 +4,7 @@
 
 (provide Integer-type Enum-type Vector-type
          define-constant define-incremental finalize
+         id-table
          my-for/sum my-for/or)
 
 ;; TODO: Also put in the define-symbolic into this function
@@ -27,7 +28,10 @@
     (define/public (update-code update-type)
       (error (format "~a does not implement update-code" this)))
 
-    (define/public (symbolic-update-code update-type var [varset-name #f])
+    (define/public (old-values-code update-type var . update-args)
+      (error (format "~a does not implement old-values-code" this)))
+
+    (define/public (symbolic-update-code update-type var)
       (error (format "~a does not implement symbolic-update-code" this)))))
 
 (define Integer%
@@ -55,22 +59,35 @@
 
             [else (super update-code update-type)]))
 
-    (define/override (symbolic-update-code update-type var [varset-name #f])
+    (define/override (old-values-code update-type var . update-args)
+      (define old-val-tmp (gensym 'old-value))
+      (cond [(member update-type '(assign increment decrement))
+             (values #`(define #,old-val-tmp #,var)
+                     (list old-val-tmp))]
+            
+            [else (super old-values-code update-type var)]))
+
+    (define/override (symbolic-update-code update-type var)
       (cond [(equal? update-type 'assign)
-             (define tmp (gensym 'val))
-             (values #`(begin (define-symbolic* #,tmp integer?)
-                              #,(set-add-code varset-name tmp))
-                     #`(set! #,var #,tmp))]
+             (define val-tmp (gensym 'val))
+             (values #`(define-symbolic* #,val-tmp integer?)
+                     #`(set! #,var #,val-tmp)
+                     (list val-tmp)
+                     (list val-tmp))]
 
             [(equal? update-type 'increment)
              (values #'(void)
-                     #`(set! #,var (+ #,var 1)))]
+                     #`(set! #,var (+ #,var 1))
+                     (list)
+                     (list))]
 
             [(equal? update-type 'decrement)
              (values #'(void)
-                     #`(set! #,var (- #,var 1)))]
+                     #`(set! #,var (- #,var 1))
+                     (list)
+                     (list))]
 
-            [else (super symbolic-update-code update-type var varset-name)]))))
+            [else (super symbolic-update-code update-type var)]))))
 
 (define (Integer-type) (new Integer%))
 
@@ -95,16 +112,25 @@
 
             [else (super update-code update-type)]))
 
-    (define/override (symbolic-update-code update-type var [varset-name #f])
+    (define/override (old-values-code update-type var . update-args)
       (cond [(equal? update-type 'assign)
-             (define tmp (gensym 'val))
-             (values #`(begin (define-symbolic* #,tmp integer?)
-                              #,(set-add-code varset-name tmp)
-                              (assert (>= #,tmp 0))
-                              (assert (< #,tmp #,num-items)))
-                     #`(set! #,var #,tmp))]
+             (define old-val-tmp (gensym 'old-value))
+             (values #`(define #,old-val-tmp #,var)
+                     (list old-val-tmp))]
 
-            [else (super symbolic-update-code update-type var varset-name)]))))
+            [else (super old-values-code update-type var)]))
+
+    (define/override (symbolic-update-code update-type var)
+      (cond [(equal? update-type 'assign)
+             (define val-tmp (gensym 'val))
+             (values #`(begin (define-symbolic* #,val-tmp integer?)
+                              (assert (>= #,val-tmp 0))
+                              (assert (< #,val-tmp #,num-items)))
+                     #`(set! #,var #,val-tmp)
+                     (list val-tmp)
+                     (list val-tmp))]
+
+            [else (super symbolic-update-code update-type var)]))))
 
 (define (Enum-type items) (new Enum% [num-items items]))
 
@@ -137,42 +163,62 @@
 
             [else (super update-code update-type)]))
 
-    (define/override (symbolic-update-code update-type var [varset-name #f])
+    (define/override (old-values-code update-type var . update-args)
+      (cond [(equal? update-type 'assign)
+             (if (send output-type mutable-structure?)
+                 (send/apply output-type old-values-code
+                             ;; TODO: update-type needs to change here
+                             update-type
+                             #`(vector-ref #,var #,(car update-args))
+                             (cdr update-args))
+
+                 (let ([old-val-tmp (gensym 'old-value)])
+                   (values
+                    ;; TODO: tmp-index no longer exists...
+                    #`(define #,old-val-tmp (vector-ref #,var #,(car update-args)))
+                    (list old-val-tmp))))]
+
+            [else (super old-values-code update-type var)]))
+
+    (define/override (symbolic-update-code update-type var)
       (cond [(equal? update-type 'assign)
              (define tmp-index (gensym 'index))
              (define tmp-val (gensym 'val))
 
              (if (send output-type mutable-structure?)
 
-                 (let-values ([(output-defns output-update)
+                 (let-values ([(output-defns output-update output-update-symbolic-vars output-update-args)
                                (send output-type symbolic-update-code
                                      ;; TODO: update-type needs to change here
                                      update-type
-                                     #`(vector-ref #,var #,tmp-index)
-                                     varset-name)])
+                                     #`(vector-ref #,var #,tmp-index))])
                    (values
                     ;; Create the symbolic index into the vector
                     #`(begin (define-symbolic* #,tmp-index integer?)
-                             #,(set-add-code varset-name tmp-index)
                              (assert (>= #,tmp-index 0))
                              (assert (< #,tmp-index #,len))
                              #,output-defns)
                     ;; Update the mutable structure at the specified symbolic index
-                    output-update))
+                    output-update
+                    (cons tmp-index output-update-symbolic-vars)
+                    (cons tmp-index output-update-args)))
 
-                 (values
-                  ;; Create the symbolic index into the vector
-                  #`(begin (define-symbolic* #,tmp-index integer?)
-                           #,(set-add-code varset-name tmp-index)
-                           (assert (>= #,tmp-index 0))
-                           (assert (< #,tmp-index #,len))
-                           ;; Create the symbolic value
-                           #,(send output-type symbolic-code tmp-val varset-name))
-                  ;; Perform the update
-                  #`(vector-set! #,var #,tmp-index #,tmp-val)
-                  tmp-index))]
+                 (let ([old-val-tmp (gensym 'old-value)])
+                   (values
+                    ;; Create the symbolic index into the vector
+                    #`(begin (define-symbolic* #,tmp-index integer?)
+                             (assert (>= #,tmp-index 0))
+                             (assert (< #,tmp-index #,len))
+                             ;; Create the symbolic value
+                             ;; TODO: This isn't an issue now, since output-type cannot be a mutable structure, but what if symbolic-code creates other symbolic variables besides tmp-val?
+                             #,(send output-type symbolic-code tmp-val #f))
+                    ;; Perform the update
+                    #`(vector-set! #,var #,tmp-index #,tmp-val)
+                    ;; TODO: Get the other symbolic variables here
+                    (list tmp-index tmp-val)
+                    (list tmp-index tmp-val))))]
 
-            [else (super symbolic-update-code update-type var varset-name)]))))
+            [else (super symbolic-update-code update-type var)]))))
 
 (define (Vector-type length-or-input output)
   (define length
@@ -195,7 +241,11 @@
     (define/public (get-fn) fn)
     (define/public (get-fn-code) fn-code)
     (define/public (get-update-fn update-type)
-      (hash-ref update-fns update-type))
+      (if (and (not (equal? update-type 'recompute))
+               (not (hash-has-key? update-fns update-type)))
+          (begin (display (format "Warning: Using recomputation instead of update of type ~a to ~a~%" update-type id))
+                 (hash-ref update-fns 'recompute))
+          (hash-ref update-fns update-type)))
 
     (define/public (add-child child)
       (set! children (cons child children)))
@@ -215,8 +265,11 @@
     (define/public (get-symbolic-code var [varset-name #f])
       (send type symbolic-code var varset-name))
     
-    (define/public (get-symbolic-update-code update-type var [varset-name #f])
-      (send type symbolic-update-code update-type var varset-name))
+    (define/public (get-symbolic-update-code update-type var)
+      (send type symbolic-update-code update-type var))
+    
+    (define/public (get-old-values-code update-type var . update-args)
+      (send/apply type old-values-code update-type var update-args))
     
     (define/public (get-base-update-code update-type . args)
       (apply (send type update-code update-type) args))))
@@ -253,31 +306,35 @@
                   [fn (lambda () expr ...)]
                   [fn-code '(begin expr ...)]))
 
+           (define-namespace-anchor program-anchor)
+           (define program-ns (namespace-anchor->namespace program-anchor))
+
            (begin
              ;; Define the update functions for each update type
              (define (update-id . args)
-               ;; TODO: Hard coded for testing
-               (define old-value
-                 (if (equal? 'name 'word->topic)
-                     (vector-ref name (first args))
-                     #f))
-               ;; First apply the update to the data structure
-               ;; TODO: eval only works if the free variables in the
-               ;; code are globally defined, I think
-               (eval
-                (send/apply struc get-base-update-code 'update-type #'name args))
-               ;; Then propagate it to its children in the dependency graph
-               ;; TODO: This can recompute things multiple times. If we
-               ;; assert that the dependency graph must be a DAG, we
-               ;; could find a linearization and process updates in that
-               ;; order.
-               (for ([dep (send struc get-children)])
-                 ;; TODO: Hard coded for testing
-                 (if (equal? (send (hash-ref id-table dep) get-id) 'num1)
-                     ;; TODO: Should actually be the following:
-                     ;(apply (send (hash-ref id-table dep) get-update-fn 'name 'update-type) args)
-                     ((send (hash-ref id-table dep) get-update-fn 'update-type) name old-value (second args))
-                     ((send (hash-ref id-table dep) get-update-fn 'recompute)))))
+               (let-values ([(update-old-vals update-old-val-vars)
+                             (send/apply struc get-old-values-code 'update-type #'name args)])
+                 ;; Define the old values
+                 (eval (syntax->datum update-old-vals) program-ns)
+
+                 ;; Apply the update to the data structure
+                 (eval
+                  (syntax->datum
+                   (send/apply struc get-base-update-code 'update-type #'name args))
+                  program-ns)
+                 ;; Then propagate it to its children in the dependency graph
+                 ;; TODO: This can recompute things multiple times. If we
+                 ;; assert that the dependency graph must be a DAG, we
+                 ;; could find a linearization and process updates in that
+                 ;; order.
+                 (for ([dep (send struc get-children)])
+                   ;; TODO: Hard coded for testing, should actually be the following:
+                   ;(apply (send (hash-ref id-table dep) get-update-fn 'name 'update-type) args)
+                   (apply (send (hash-ref id-table dep) get-update-fn 'update-type)
+                          ;TODO: Include name, but first need to prevent the synthesized function from modifying it (see TODO in the synthesis part)
+                          (append (map (lambda (var) (eval var program-ns))
+                                       update-old-val-vars)
+                                  args)))))
              ...)
 
            ;; Add the update functions for each update type to struc
@@ -285,7 +342,7 @@
                   ...)
            ;; Add the recompute update function to struc
            (send struc set-update-fn 'recompute
-                 (lambda ()
+                 (lambda args
                    (set! name (begin expr ...))
                    (for ([dep (send struc get-children)])
                      ((send (hash-ref id-table dep) get-update-fn 'recompute)))))
@@ -303,58 +360,58 @@
     (for* ([(id struc) id-table]
            [parent (send struc get-parents)])
       (send (hash-ref id-table parent) add-child id))
-    
-    (define-namespace-anchor anchor)
-    (define program-ns (namespace-anchor->namespace anchor))
-    
+
+    (define-namespace-anchor program-anchor)
+    (define program-ns (namespace-anchor->namespace program-anchor))
+        
     (define parent (hash-ref id-table 'word->topic))
     (define child (hash-ref id-table 'num1))
     (let* ([p-id (send parent get-id)]
            [c-id (send child get-id)]
            [update-type 'assign]
            [sketch-name 'sketch]
-           [parent-definition (send parent get-symbolic-code p-id 'symbolic-vars)]
+           [parent-definition (send parent get-symbolic-code p-id 'symbolic-defn-vars-set)]
            [child-expr (send child get-fn-code)])
-      ;; TODO: index-var is a hack to test, get rid of it
-      (let-values ([(update-defns-code update-code index-var)
-                    (send parent get-symbolic-update-code update-type
-                          p-id 'symbolic-vars)])
+      (let*-values ([(update-defns-code update-code update-symbolic-vars update-args)
+                     (send parent get-symbolic-update-code update-type p-id)]
+                    [(update-old-vals update-old-val-vars)
+                     (send/apply parent get-old-values-code update-type p-id update-args)])
         (define rosette-code
           `(begin
-             (define symbolic-vars (mutable-set))
+             (define symbolic-defn-vars-set (mutable-set))
              ;(define terminal-hash (make-hash))
              ,(syntax->datum parent-definition)
              (define ,c-id ,child-expr)
              ,(syntax->datum update-defns-code)
+             (define symbolic-defn-vars (set->list symbolic-defn-vars-set))
              (define synth
                (synthesize
-                #:forall (set->list symbolic-vars)
+                #:forall (append (list ,@update-symbolic-vars) symbolic-defn-vars)
                 #:guarantee
                 (begin
-                  ;; NOTE: One possible way to perform this synthesis is
-                  ;; to have one function run before the update and one
-                  ;; run after the update. Alternatively, we could save
-                  ;; the old values, and then synthesize a single function
-                  ;; that can access those old values.
-                  ;; It seems Rosette's define-synthax can only be used
-                  ;; once per synthesis problem (current hypothesis: it
-                  ;; returns the same function if used again, because all
-                  ;; of the symbolic variables are the same, because the
-                  ;; call stack is the same), so we're going with the
-                  ;; latter option for now.
-                  ;; TODO: Hard coded for testing
-                  (define old-value (vector-ref ,p-id ,index-var))
+                  ;; NOTE: Another possible way to perform this synthesis is
+                  ;; to have one function run before the update and one run
+                  ;; after the update.
+                  ,(syntax->datum update-old-vals)
                   ,(syntax->datum update-code)
-                  ;; TODO: Hard coded for testing
-                  (define new-value (vector-ref ,p-id ,index-var))
-                  (,sketch-name ,c-id old-value new-value)
+                  (,sketch-name ,c-id
+                                ; TODO: Include ,p-id but prevent the sketch from mutating it, it should be read-only
+                                ,@update-old-val-vars
+                                ,@update-symbolic-vars)
                   (assert (equal? ,c-id ,child-expr)))))
              (syntax->datum (car (generate-forms synth)))))
         ;(pretty-print rosette-code)
         (define result (eval rosette-code rosette-ns))
-        (pretty-print result)
-        (eval result program-ns)
-        (define update-fn (eval sketch-name program-ns))
+        ;(pretty-print result)
+        (define update-fn-code
+          `(lambda args
+             ,result
+             (apply ,sketch-name ,c-id args)
+             (for ([dep (send (hash-ref id-table ',c-id) get-children)])
+               ;; TODO: Hard coded for testing, see previous example for how to change this
+               ((send (hash-ref id-table dep) get-update-fn 'recompute)))))
+        (pretty-print update-fn-code)
+        (define update-fn (eval update-fn-code program-ns))
         (send child set-update-fn update-type update-fn)))))
 
 ;; NOTE: The reimplementations of for can also be found in

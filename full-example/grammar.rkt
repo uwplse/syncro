@@ -19,9 +19,9 @@
   (vector-set! vec index
                (- (vector-ref vec index) 1)))
 
-(define (sketch a b c)
+(define (sketch a b c d)
   (display (format "Running sketch~%"))
-  (stmt-synthax a b c 2))
+  (stmt-synthax a b c d 2))
 
 ;; TODO: Make this type directed, so that each terminal has a type
 ;; attached to it that determines where it can be used

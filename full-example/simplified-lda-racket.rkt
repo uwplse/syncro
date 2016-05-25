@@ -62,6 +62,8 @@
 
 (define (go)
   (for/sum ([i 10])
+    ;; TODO: Here we assume that the programmer only uses our update functions, like assign-word->topic!
+    ;; We should not allow the programmer to do arbitrary updates (such as just using vector-set!). We can get this behavior by encapsulating the data structures in a class, and only providing certain kinds of updates.
     (assign-word->topic! (random NUM_WORDS) (random NUM_TOPICS))
     (value)))
 
