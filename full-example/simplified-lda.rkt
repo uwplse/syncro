@@ -1,41 +1,46 @@
 #lang racket
 
-;(require "rosette-namespace.rkt")
-;(require "lsl-namespace.rkt")
-
 (require "constructs.rkt" "grammar.rkt")
 
-;; Goal is for the following program to work:
-(define-constant NUM_WORDS 12)
-(define-constant NUM_TOPICS 3)
-(define-constant NUM_DOCUMENTS 2)
-(define-constant VOCABULARY_SIZE 10)
-(define-constant BETA 1)
-(define-constant word->document
-  (build-vector NUM_WORDS (lambda (w) (if (< w 5) 0 1))))
-
-;; TODO: All five of the above may need to use a "define-constant"
-;; form that may look something like this:
-;; This could help with doing things symbolically.
-;; (define-constant word->document (Vector-type Word Document)
-;;   (build-vector NUM_WORDS (lambda (w) (if (< w 5) 0 1))))
+(define-constant NUM_WORDS (Integer-type) 12)
+(define-constant NUM_TOPICS (Integer-type) 3)
+(define-constant NUM_DOCUMENTS (Integer-type) 2)
+(define-constant VOCABULARY_SIZE (Integer-type) 10)
+(define-constant BETA (Integer-type) 1)
 
 (define Word (Enum-type NUM_WORDS))
 (define Topic (Enum-type NUM_TOPICS))
 (define Document (Enum-type NUM_DOCUMENTS))
+
+(define-constant word->document (Vector-type Word Document)
+  (build-vector NUM_WORDS (lambda (w) (if (< w 5) 0 1))))
 
 (define-incremental word->topic (Vector-type Word Topic) () (assign)
   (build-vector NUM_WORDS (lambda (w) (random NUM_TOPICS))))
 
 (define-incremental num1 (Vector-type Topic (Integer-type)) (word->topic) ()
   (begin
-    (display "Recomputing num1\n")
     (build-vector
      NUM_TOPICS
      (lambda (t)
        (my-for/sum ([w NUM_WORDS])
                    (if (equal? (vector-ref word->topic w) t) 1 0))))))
   ;(size (set (Word w) | (equal? (vector-ref topics w) t))))))
+
+(define-incremental num2helper (Vector-type Document (Vector-type Topic (Integer-type))) (word->topic) ()
+  (begin
+    (build-vector
+     NUM_DOCUMENTS
+     (lambda (d)
+       (build-vector
+        NUM_TOPICS
+        (lambda (t)
+          (my-for/sum ([w NUM_WORDS])
+                      (if (and (equal? (vector-ref word->topic w) t)
+                               (equal? (vector-ref word->document w) d))
+                          1
+                          0))))))))
+      
 
 (define-incremental num2 (Vector-type Document (Integer-type)) (word->topic) ()
   (build-vector

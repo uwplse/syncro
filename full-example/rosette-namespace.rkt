@@ -1,6 +1,7 @@
 #lang s-exp rosette
 
-(require "grammar.rkt")
+(require rosette/lib/synthax)
+(require "types.rkt" "grammar.rkt")
 
 (provide rosette-ns my-for/sum my-for/or)
 
