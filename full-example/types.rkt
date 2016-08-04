@@ -3,7 +3,7 @@
 (require (only-in "variables.rkt" define-untyped-constant))
 
 (provide Integer-type define-enum-type Vector-type Type?
-         Integr Enum Vectr Vectr-input-type Vectr-output-type
+         Integr Enum Vectr Vectr-index-type Vectr-output-type
          is-subtype? repr mutable-structure? symbolic-code
          update-code old-values-code symbolic-update-code
          (rename-out [Type? Type%] [Integr? Integer%]
@@ -162,7 +162,7 @@
 (define-syntax-rule (define-enum-type name items)
   (define-untyped-constant name (Enum 'name items)))
 
-(struct Vectr (len input-type output-type)
+(struct Vectr (len index-type output-type)
   #:methods gen:Type
   [(define/generic generic-is-subtype? is-subtype?)
    (define/generic generic-repr repr)
@@ -174,14 +174,14 @@
    
    (define (is-subtype? self other-type)
      (and (Vectr? other-type)
-          (generic-is-subtype? (Vectr-input-type other-type)
-                               (Vectr-input-type self))
+          (generic-is-subtype? (Vectr-index-type other-type)
+                               (Vectr-index-type self))
           (generic-is-subtype? (Vectr-output-type self)
                                (Vectr-output-type other-type))))
 
    (define (repr self)
      `(Vectr ,(Vectr-len self)
-              ,(generic-repr (Vectr-input-type self))
+              ,(generic-repr (Vectr-index-type self))
               ,(generic-repr (Vectr-output-type self))))
 
 
@@ -255,7 +255,7 @@
                ;; Update the mutable structure at the specified symbolic index
                output-update
                (cons tmp-index output-update-symbolic-vars)
-               (cons (Vectr-input-type self) output-update-symbolic-vars-types)
+               (cons (Vectr-index-type self) output-update-symbolic-vars-types)
                (cons tmp-index output-update-args)))]
 
            [(equal? update-type 'assign)
@@ -273,7 +273,7 @@
              ;; Perform the update
              #`(vector-set! #,var #,tmp-index #,tmp-val)
              (list tmp-index tmp-val)
-             (list (Vectr-input-type self) output-type)
+             (list (Vectr-index-type self) output-type)
              (list tmp-index tmp-val))]
 
            [else

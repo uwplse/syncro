@@ -53,11 +53,9 @@
   (let* ([vec (apply my-choose*
                      (send terminal-info get-terminals
                            #:type Vector%
-                           ;; TODO: Call this mutable, not writable
-                           'writable))]
+                           'mutable))]
          [vec-type (Terminal-type vec)]
-         ;; TODO: Rename get-input-type to get-index-type
-         [index (index-expr-grammar (Vectr-input-type vec-type) terminal-info (- depth 1))]
+         [index (index-expr-grammar (Vectr-index-type vec-type) terminal-info (- depth 1))]
          [value (apply my-choose*
                        (send terminal-info get-terminals
                              #:type (Vectr-output-type vec-type)))])
@@ -78,7 +76,7 @@
                          [vec-type (Terminal-type vec)])
                     (vector-ref^
                      vec
-                     (index-expr-grammar (Vectr-input-type vec-type)
+                     (index-expr-grammar (Vectr-index-type vec-type)
                                          terminal-info (- depth 1)))))))
 
 
@@ -94,15 +92,15 @@
     (super-new)
 
     (field [symbol->terminal (make-hash)]
-           [all-flags (set 'writable 'read-only)])
+           [all-flags (set 'mutable 'read-only)])
 
-    (define/public (add-terminal symbol value type #:writable [writable #f])
+    (define/public (add-terminal symbol value type #:mutable [mutable #f])
       (when (hash-has-key? symbol->terminal symbol)
         (error (format "Terminal ~a is already present!~%" symbol)))
 
       (hash-set! symbol->terminal symbol
                  (Terminal value symbol type 
-                           (set (if writable 'writable 'read-only)))))
+                           (set (if mutable 'mutable 'read-only)))))
 
     ;; Returns the terminals which are instances of subtypes of the argument
     ;; type, and which have the associated flags.

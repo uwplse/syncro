@@ -168,8 +168,8 @@
                       [(overwritten-vals-definition overwritten-vals overwritten-vals-types)
                        (send/apply parent get-old-values-code update-type p-id update-args)])
 
-          (define (add-terminal-code var type #:writable [writable #f])
-            `(send terminal-info add-terminal ',var ,var ,(repr type) #:writable ,writable))
+          (define (add-terminal-code var type #:mutable [mutable #f])
+            `(send terminal-info add-terminal ',var ,var ,(repr type) #:mutable ,mutable))
           
           (define rosette-code
             `(let ()
@@ -181,7 +181,7 @@
                ,(syntax->datum overwritten-vals-definition)
                (define symbolic-defn-vars (set->list symbolic-defn-vars-set))
                (define terminal-info (new Terminal-Info%))
-               ,(add-terminal-code c-id c-type #:writable #t)
+               ,(add-terminal-code c-id c-type #:mutable #t)
                ,(add-terminal-code p-id p-type)
                ,@(map add-terminal-code overwritten-vals overwritten-vals-types)
                ,@(map add-terminal-code update-symbolic-vars update-symbolic-vars-types)
