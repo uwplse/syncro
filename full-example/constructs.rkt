@@ -1,6 +1,6 @@
 #lang racket
 
-(require "rosette-namespace.rkt" "types.rkt")
+(require "rosette-namespace.rkt" "types.rkt" "variables.rkt")
 
 (provide (all-from-out "types.rkt")
          define-constant define-incremental finalize
@@ -49,39 +49,23 @@
       (hash-set! update-fns update-type fn))
 
     (define/public (get-symbolic-code var [varset-name #f])
-      (send type symbolic-code var varset-name))
+      (symbolic-code type var varset-name))
     
     (define/public (get-symbolic-update-code update-type var)
-      (send type symbolic-update-code update-type var))
+      (symbolic-update-code type update-type var))
     
     (define/public (get-old-values-code update-type var . update-args)
-      (send/apply type old-values-code update-type var update-args))
+      (apply old-values-code type update-type var update-args))
     
     (define/public (get-base-update-code update-type . args)
-      (apply (send type update-code update-type) args))))
+      (apply (update-code type update-type) args))))
 
 (define id-table (make-hash))
-;; TODO: Unify constant and incremental variables, store them all in a
-;; single data structure.
-(define constant-vars-list (make-parameter '()))
-(define constant-definitions-and-types-map (make-hash))
 
 (define-for-syntax (make-id template . ids)
   (if (symbol? (car ids))
       (string->symbol (apply format template ids))
       (string->symbol (apply format template (map syntax->datum ids)))))
-
-(define-syntax-rule (define-constant var type val)
-  (begin (when (hash-has-key? constant-definitions-and-types-map 'var)
-           (error (format "Constant ~a already exists!~%" 'var)))
-           ;; (error (format "Constant ~a already exists!~%Original Definition: ~a~%New Definition     : ~a~%"
-           ;;                'var
-           ;;                (hash-ref constant-definitions-and-types-map 'var)
-           ;;                '(define var val))))
-         (define var val)
-         (constant-vars-list (cons 'var (constant-vars-list)))
-         (hash-set! constant-definitions-and-types-map 'var
-                    (cons '(define var val) type))))
 
 (define-syntax (define-incremental stx)
   (syntax-case stx ()
@@ -174,11 +158,10 @@
              ;[sketch-name (string->symbol (format "sketch-~a" c-id))]
              [parent-definition (send parent get-symbolic-code p-id 'symbolic-defn-vars-set)]
              [child-definition (send child get-fn-code)]
-             [constant-vars (reverse (constant-vars-list))]
-             [constant-defns (map (lambda (key) (car (hash-ref constant-definitions-and-types-map key)))
+             [constant-vars (reverse (constant-terminal-list))]
+             [constant-types (map (lambda (key) (hash-ref constant-terminal-types key))
                                   constant-vars)]
-             [constant-types (map (lambda (key) (cdr (hash-ref constant-definitions-and-types-map key)))
-                                  constant-vars)])
+             [constant-defns (reverse (constant-definitions))])
         (let*-values ([(update-defns-code update-code update-symbolic-vars update-symbolic-vars-types update-args)
                        ;; TODO: Add comments here
                        (send parent get-symbolic-update-code update-type p-id)]
@@ -186,7 +169,7 @@
                        (send/apply parent get-old-values-code update-type p-id update-args)])
 
           (define (add-terminal-code var type #:writable [writable #f])
-            `(send terminal-info add-terminal ',var ,var ,(send type repr) #:writable ,writable))
+            `(send terminal-info add-terminal ',var ,var ,(repr type) #:writable ,writable))
           
           (define rosette-code
             `(let ()
@@ -203,7 +186,7 @@
                ,@(map add-terminal-code overwritten-vals overwritten-vals-types)
                ,@(map add-terminal-code update-symbolic-vars update-symbolic-vars-types)
                ,@(map add-terminal-code constant-vars constant-types)
-               (define program (stmt-grammar terminal-info 3 3))
+               (define program (grammar terminal-info 3 3))
                (define synth
                  (synthesize
                   #:forall (append (list ,@update-symbolic-vars) symbolic-defn-vars)

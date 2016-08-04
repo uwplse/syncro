@@ -8,9 +8,9 @@
 (define-constant VOCABULARY_SIZE (Integer-type) 10)
 (define-constant BETA (Integer-type) 1)
 
-(define Word (Enum-type NUM_WORDS))
-(define Topic (Enum-type NUM_TOPICS))
-(define Document (Enum-type NUM_DOCUMENTS))
+(define-enum-type Word NUM_WORDS)
+(define-enum-type Topic NUM_TOPICS)
+(define-enum-type Document NUM_DOCUMENTS)
 
 (define-constant word->document (Vector-type Word Document)
   (build-vector NUM_WORDS (lambda (w) (if (< w 5) 0 1))))

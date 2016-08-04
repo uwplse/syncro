@@ -3,7 +3,9 @@
 #lang s-exp rosette
 
 (provide define-lifted lift lifted-value? begin^
-         eval-lifted lifted-code)
+         eval-lifted lifted-code
+         ;; grammar.rkt defines Terminals, which are a subtype of lifted-variable
+         lifted-variable lifted-variable-val lifted-variable-var)
 
 ;; Lifting values enables synthesis where we can also recover the code
 ;; once synthesis is complete.

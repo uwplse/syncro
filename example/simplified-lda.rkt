@@ -154,3 +154,5 @@
                  #:guarantee (begin (vector-set! word-to-topic-map word-to-change topic-to-change)
                                     (stmt-synthax num1 new-topic old-topic 3)
                                     (assert (equal? num1 (compute-num1))))))))
+
+(go)
