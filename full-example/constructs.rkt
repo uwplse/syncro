@@ -155,7 +155,6 @@
              [child (hash-ref id-table c-id)]
              [c-type (send child get-type)]
              [update-type 'assign]
-             ;[sketch-name (string->symbol (format "sketch-~a" c-id))]
              [parent-definition (send parent get-symbolic-code p-id 'symbolic-defn-vars-set)]
              [child-definition (send child get-fn-code)]
              [constant-vars (reverse (constant-terminal-list))]
@@ -188,16 +187,17 @@
                ,@(map add-terminal-code constant-vars constant-types)
                (define program (grammar terminal-info 3 3))
                (define synth
-                 (synthesize
-                  #:forall (append (list ,@update-symbolic-vars) symbolic-defn-vars)
-                  #:guarantee
-                  (begin
-                    ;; NOTE: Another possible way to perform this synthesis is
-                    ;; to have one function run before the update and one run
-                    ;; after the update.
-                    ,(syntax->datum update-code)
-                    (eval-lifted program)
-                    (assert (equal? ,c-id ,child-definition)))))
+                 (time
+                  (synthesize
+                   #:forall (append (list ,@update-symbolic-vars) symbolic-defn-vars)
+                   #:guarantee
+                   (begin
+                     ;; NOTE: Another possible way to perform this synthesis is
+                     ;; to have one function run before the update and one run
+                     ;; after the update.
+                     ,(syntax->datum update-code)
+                     (eval-lifted program)
+                     (assert (equal? ,c-id ,child-definition))))))
                (evaluate (lifted-code program) synth)))
           (pretty-print rosette-code)
           (define result (eval rosette-code rosette-ns))

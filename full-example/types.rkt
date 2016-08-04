@@ -3,13 +3,15 @@
 (require (only-in "variables.rkt" define-untyped-constant))
 
 (provide Integer-type define-enum-type Vector-type Type?
-         Integr Enum Vectr Vectr-index-type Vectr-output-type
+         ;; define-enum-type expands to (define var (Enum-Type ...)), so Enum-Type needs to be provided to rosette-namespace to avoid an unbound variable
+         Enum-Type
+         (rename-out [Vector-Type-index-type Vector-index-type]
+                     [Vector-Type-output-type Vector-output-type])
          is-subtype? repr mutable-structure? symbolic-code
          update-code old-values-code symbolic-update-code
-         (rename-out [Type? Type%] [Integr? Integer%]
-                     [Enum? Enum%] [Vectr? Vector%]))
+         (rename-out [Type? type?] [Integer-Type? Integer-type?]
+                     [Enum-Type? Enum-type?] [Vector-Type? Vector-type?]))
 
-;; TODO: Also put in the define-symbolic into this function
 (define (set-add-code set-name val)
   (if set-name
       #`(set-add! #,set-name #,val)
@@ -19,24 +21,23 @@
   (is-subtype? Type other-type)
   (repr Type)
   (mutable-structure? Type)
-  ;; TODO: Make varset-name optional
-  (symbolic-code Type var varset-name)
+  (symbolic-code Type var [varset-name])
   (update-code Type update-type)
   (old-values-code Type update-type var . update-args)
   (symbolic-update-code Type update-type var))
 
 ;; TODO: Fix naming here
-(struct Integr ()
+(struct Integer-Type ()
   #:methods gen:Type
   [(define (is-subtype? self other-type)
-     (Integr? other-type))
+     (Integer-Type? other-type))
 
    (define (repr self)
-     '(Integr))
+     '(Integer-type))
 
    (define (mutable-structure? self) #f)
 
-   (define (symbolic-code self var varset-name)
+   (define (symbolic-code self var [varset-name #f])
      #`(begin (define-symbolic* #,var integer?)
               #,(set-add-code varset-name var)))
 
@@ -95,26 +96,26 @@
             (error (format "Unknown Integer update type: ~a~%"
                            update-type))]))])
 
-(define (Integer-type) (Integr))
+(define (Integer-type) (Integer-Type))
 
-(struct Enum (name num-items) #:transparent
+(struct Enum-Type (name num-items) #:transparent
   #:methods gen:Type
-  [;; If you have Word be (Enum% 3) and Topic be (Enum% 3), they are
+  [;; If you have Word be (Enum-Type% 3) and Topic be (Enum-Type% 3), they are
    ;; still semantically different and Words should not replace
    ;; Topics. So, check subtyping by identity equality.
    (define (is-subtype? self other-type)
      (eq? self other-type))
 
    (define (repr self)
-     (Enum-name self))
+     (Enum-Type-name self))
 
    (define (mutable-structure? self) #f)
 
-   (define (symbolic-code self var varset-name)
+   (define (symbolic-code self var [varset-name #f])
      #`(begin (define-symbolic* #,var integer?)
               #,(set-add-code varset-name var)
               (assert (>= #,var 0))
-              (assert (< #,var #,(Enum-num-items self)))))
+              (assert (< #,var #,(Enum-Type-num-items self)))))
 
    (define (update-code self update-type)
      (cond [(equal? update-type 'assign)
@@ -141,7 +142,7 @@
             (define val-tmp (gensym 'val))
             (values #`(begin (define-symbolic* #,val-tmp integer?)
                              (assert (>= #,val-tmp 0))
-                             (assert (< #,val-tmp #,(Enum-num-items self))))
+                             (assert (< #,val-tmp #,(Enum-Type-num-items self))))
                     #`(set! #,var #,val-tmp)
                     (list val-tmp)
                     (list self)
@@ -160,9 +161,9 @@
 ;; programmer to give the type a name. This makes it obvious that they
 ;; are supposed to reuse that name in the program.
 (define-syntax-rule (define-enum-type name items)
-  (define-untyped-constant name (Enum 'name items)))
+  (define-untyped-constant name (Enum-Type 'name items)))
 
-(struct Vectr (len index-type output-type)
+(struct Vector-Type (len index-type output-type)
   #:methods gen:Type
   [(define/generic generic-is-subtype? is-subtype?)
    (define/generic generic-repr repr)
@@ -173,31 +174,33 @@
    (define/generic generic-symbolic-update-code symbolic-update-code)
    
    (define (is-subtype? self other-type)
-     (and (Vectr? other-type)
-          (generic-is-subtype? (Vectr-index-type other-type)
-                               (Vectr-index-type self))
-          (generic-is-subtype? (Vectr-output-type self)
-                               (Vectr-output-type other-type))))
+     (and (Vector-Type? other-type)
+          (generic-is-subtype? (Vector-Type-index-type other-type)
+                               (Vector-Type-index-type self))
+          (generic-is-subtype? (Vector-Type-output-type self)
+                               (Vector-Type-output-type other-type))))
 
    (define (repr self)
-     `(Vectr ,(Vectr-len self)
-              ,(generic-repr (Vectr-index-type self))
-              ,(generic-repr (Vectr-output-type self))))
+     (if (Enum-Type? (Vector-Type-index-type self))
+         `(Vector-type ,(generic-repr (Vector-Type-index-type self))
+                       ,(generic-repr (Vector-Type-output-type self)))
+         `(Vector-type ,(Vector-Type-len self)
+                       ,(generic-repr (Vector-Type-output-type self)))))
 
 
    (define (mutable-structure? self) #t)
    
-   (define (symbolic-code self var varset-name)
+   (define (symbolic-code self var [varset-name #f])
      (define tmp (gensym))
      #`(define #,var
          (build-vector
-          #,(Vectr-len self)
+          #,(Vector-Type-len self)
           (lambda (i)
-            #,(generic-symbolic-code (Vectr-output-type self) tmp varset-name)
+            #,(generic-symbolic-code (Vector-Type-output-type self) tmp varset-name)
             #,tmp))))
 
    (define (update-code self update-type)
-     (define output-type (Vectr-output-type self))
+     (define output-type (Vector-Type-output-type self))
      (cond [(equal? update-type 'assign)
             (if (generic-mutable-structure? output-type)
 
@@ -214,7 +217,7 @@
                            update-type))]))
 
    (define (old-values-code self update-type var . update-args)
-     (define output-type (Vectr-output-type self))
+     (define output-type (Vector-Type-output-type self))
      (cond [(equal? update-type 'assign)
             (if (generic-mutable-structure? output-type)
                 (apply generic-old-values-code
@@ -235,7 +238,7 @@
                            update-type))]))
 
    (define (symbolic-update-code self update-type var)
-     (define output-type (Vectr-output-type self))
+     (define output-type (Vector-Type-output-type self))
      (cond [(and (equal? update-type 'assign)
                  (generic-mutable-structure? output-type))
             (define tmp-index (gensym 'index))
@@ -250,12 +253,12 @@
                ;; Create the symbolic index into the vector
                #`(begin (define-symbolic* #,tmp-index integer?)
                         (assert (>= #,tmp-index 0))
-                        (assert (< #,tmp-index #,(Vectr-len self)))
+                        (assert (< #,tmp-index #,(Vector-Type-len self)))
                         #,output-defns)
                ;; Update the mutable structure at the specified symbolic index
                output-update
                (cons tmp-index output-update-symbolic-vars)
-               (cons (Vectr-index-type self) output-update-symbolic-vars-types)
+               (cons (Vector-Type-index-type self) output-update-symbolic-vars-types)
                (cons tmp-index output-update-args)))]
 
            [(equal? update-type 'assign)
@@ -266,14 +269,14 @@
              ;; Create the symbolic index into the vector
              #`(begin (define-symbolic* #,tmp-index integer?)
                       (assert (>= #,tmp-index 0))
-                      (assert (< #,tmp-index #,(Vectr-len self)))
+                      (assert (< #,tmp-index #,(Vector-Type-len self)))
                       ;; Create the symbolic value
                       ;; TODO: This isn't an issue now, since output-type cannot be a mutable structure, but what if symbolic-code creates other symbolic variables besides tmp-val?
                       #,(generic-symbolic-code output-type tmp-val #f))
              ;; Perform the update
              #`(vector-set! #,var #,tmp-index #,tmp-val)
              (list tmp-index tmp-val)
-             (list (Vectr-index-type self) output-type)
+             (list (Vector-Type-index-type self) output-type)
              (list tmp-index tmp-val))]
 
            [else
@@ -281,16 +284,16 @@
                            update-type))]))])
 
 (define (Vector-type length-or-input output)
-  (unless (and (or (Enum? length-or-input)
+  (unless (and (or (Enum-Type? length-or-input)
                    (integer? length-or-input))
                (Type? output))
     (error (format "Invalid arguments to Vector-type: ~a and ~a~%" length-or-input output)))
   (define length
-    (if (Enum? length-or-input)
-        (Enum-num-items length-or-input)
+    (if (Enum-Type? length-or-input)
+        (Enum-Type-num-items length-or-input)
         length-or-input))
   (define input
-    (if (Enum? length-or-input)
+    (if (Enum-Type? length-or-input)
         length-or-input
         (Integer-type)))
-  (Vectr length input output))
+  (Vector-Type length input output))

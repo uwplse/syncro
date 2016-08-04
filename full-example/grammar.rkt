@@ -52,13 +52,13 @@
 (define (vector-stmt-grammar terminal-info depth)
   (let* ([vec (apply my-choose*
                      (send terminal-info get-terminals
-                           #:type Vector%
+                           #:type Vector-type?
                            'mutable))]
          [vec-type (Terminal-type vec)]
-         [index (index-expr-grammar (Vectr-index-type vec-type) terminal-info (- depth 1))]
+         [index (index-expr-grammar (Vector-index-type vec-type) terminal-info (- depth 1))]
          [value (apply my-choose*
                        (send terminal-info get-terminals
-                             #:type (Vectr-output-type vec-type)))])
+                             #:type (Vector-output-type vec-type)))])
     (my-choose* ((my-choose* vector-increment!^ vector-decrement!^) vec index)
                 (vector-set!^ vec index value))))
 
@@ -72,11 +72,11 @@
                                           #:type desired-type))
                   (let* ([vec (apply my-choose*
                                      (send terminal-info get-terminals
-                                           #:type Vector%))]
+                                           #:type Vector-type?))]
                          [vec-type (Terminal-type vec)])
                     (vector-ref^
                      vec
-                     (index-expr-grammar (Vectr-index-type vec-type)
+                     (index-expr-grammar (Vector-index-type vec-type)
                                          terminal-info (- depth 1)))))))
 
 
@@ -105,7 +105,7 @@
     ;; Returns the terminals which are instances of subtypes of the argument
     ;; type, and which have the associated flags.
     ;; Type is either a type, or a predicate that identifies types.
-    (define/public (get-terminals #:type [type-or-pred Type%] . flags)
+    (define/public (get-terminals #:type [type-or-pred Type?] . flags)
       (define flags-set (list->set flags))
       (unless (subset? flags-set all-flags)
         (error (format "Unrecognized flag(s): ~a~%"
