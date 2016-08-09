@@ -65,19 +65,19 @@
 ;; TODO: Create a single expr-grammar that takes a type as input and
 ;; produces expressions that would create a value of that type.
 (define (index-expr-grammar desired-type terminal-info depth)
-  (if (= depth 0)
-      (apply my-choose* (send terminal-info get-terminals
-                              #:type desired-type))
-      (my-choose* (apply my-choose* (send terminal-info get-terminals
-                                          #:type desired-type))
-                  (let* ([vec (apply my-choose*
-                                     (send terminal-info get-terminals
-                                           #:type Vector-type?))]
-                         [vec-type (Terminal-type vec)])
-                    (vector-ref^
-                     vec
-                     (index-expr-grammar (Vector-index-type vec-type)
-                                         terminal-info (- depth 1)))))))
+  (let ([base (apply my-choose*
+                     (send terminal-info get-terminals #:type desired-type))])
+    (if (= depth 0)
+        base
+        (my-choose* base
+                    (let* ([vec (apply my-choose*
+                                       (send terminal-info get-terminals
+                                             #:type Vector-type?))]
+                           [vec-type (Terminal-type vec)])
+                      (vector-ref^
+                       vec
+                       (index-expr-grammar (Vector-index-type vec-type)
+                                           terminal-info (- depth 1))))))))
 
 
 ;; Extends the lifted variable struct from rosette-util.rkt

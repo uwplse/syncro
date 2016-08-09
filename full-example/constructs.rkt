@@ -157,10 +157,8 @@
              [update-type 'assign]
              [parent-definition (send parent get-symbolic-code p-id 'symbolic-defn-vars-set)]
              [child-definition (send child get-fn-code)]
-             [constant-vars (reverse (constant-terminal-list))]
-             [constant-types (map (lambda (key) (hash-ref constant-terminal-types key))
-                                  constant-vars)]
-             [constant-defns (reverse (constant-definitions))])
+             [constant-variables (reverse (constants))]
+             [constant-terminals (filter typed-variable? constant-variables)])
         (let*-values ([(update-defns-code update-code update-symbolic-vars update-symbolic-vars-types update-args)
                        ;; TODO: Add comments here
                        (send parent get-symbolic-update-code update-type p-id)]
@@ -172,7 +170,7 @@
           
           (define rosette-code
             `(let ()
-               ,@constant-defns
+               ,@(map variable-definition constant-variables)
                (define symbolic-defn-vars-set (mutable-set))
                ,(syntax->datum parent-definition)
                (define ,c-id ,child-definition)
@@ -184,7 +182,9 @@
                ,(add-terminal-code p-id p-type)
                ,@(map add-terminal-code overwritten-vals overwritten-vals-types)
                ,@(map add-terminal-code update-symbolic-vars update-symbolic-vars-types)
-               ,@(map add-terminal-code constant-vars constant-types)
+               ,@(map add-terminal-code
+                      (map variable-symbol constant-terminals)
+                      (map variable-type constant-terminals))
                (define program (grammar terminal-info 3 3))
                (define synth
                  (time

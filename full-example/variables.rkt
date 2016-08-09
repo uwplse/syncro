@@ -1,24 +1,40 @@
 #lang racket
 
-(provide (all-defined-out))
+(provide constants define-constant define-untyped-constant
+         variable typed-variable variable-with-flags
+         variable-symbol variable-definition
+         (rename-out [typed-variable-type variable-type]
+                     [variable-with-flags-flags variable-flags]
+                     [variable-with-flags? variable-has-flags?])
+         typed-variable?
+         with-flags)
 
-;; TODO: Unify constant and incremental variables, store them all in a
-;; single data structure.
-(define constant-terminal-list (make-parameter '()))
-(define constant-terminal-types (make-hash))
-
-;; Constant definitions contains the definitions for all the constant
-;; terminals, and the untyped constants (such as type definitions)
-(define constant-definitions (make-parameter '()))
+(define constant-symbols (mutable-set))
+(define constants (make-parameter '()))
 
 (define-syntax-rule (define-constant var type val)
-  (begin (when (hash-has-key? constant-terminal-types 'var)
+  (begin (when (set-member? constant-symbols 'var)
            (error (format "Constant ~a already exists!~%" 'var)))
          (define var val)
-         (constant-terminal-list (cons 'var (constant-terminal-list)))
-         (hash-set! constant-terminal-types 'var type)
-         (constant-definitions (cons '(define var val) (constant-definitions)))))
+         (set-add! constant-symbols 'var)
+         (constants (cons (typed-variable 'var  '(define var val) type)
+                          (constants)))))
 
 (define-syntax-rule (define-untyped-constant var val)
   (begin (define var val)
-         (constant-definitions (cons '(define var val) (constant-definitions)))))
+         (set-add! constant-symbols 'var)
+         (constants (cons (variable 'var '(define var val))
+                          (constants)))))
+
+(struct variable (symbol definition))
+(struct typed-variable variable (type))
+(struct variable-with-flags variable (flags))
+
+(define (with-flags var . flags)
+  (variable-with-flags (variable-symbol var)
+                       (variable-definition var)
+                       (typed-variable-type var)
+                       (if (variable-with-flags? var)
+                           (set-union (variable-with-flags-flags var)
+                                      (set flags))
+                           (set flags))))
