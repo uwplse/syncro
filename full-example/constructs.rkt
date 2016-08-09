@@ -223,8 +223,7 @@
            (set! sum (+ sum (begin expr ...))))
          sum))]))
 
-;; TODO: Reimplement with break? If so, also change in
-;; rosette-namespace.rkt
+;; NOTE: See caveat in rosette-namespace.rkt
 (define-syntax (my-for/or stx)
   (syntax-case stx ()
     [(_ ([i itr] ...) expr ...)

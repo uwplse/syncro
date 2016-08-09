@@ -15,7 +15,10 @@
            (set! sum (+ sum (begin expr ...))))
          sum))]))
 
-;; TODO: Reimplement with break? If so, also change in constructs.rkt
+;; TODO: Not exactly semantically correct -- this will iterate through
+;; the entire sequence, even if we could break somewhere in the
+;; middle. Should be reimplemented with break. Also change in
+;; constructs.rkt.
 (define-syntax (my-for/or stx)
   (syntax-case stx ()
     [(_ ([i itr] ...) expr ...)
@@ -25,6 +28,8 @@
            (set! val (or val (begin expr ...))))
          val))]))
 
-;; TODO: We may want to create new namespaces each time we pose a new synthesis problem
+;; Currently, all of the synthesis and verification problems are posed
+;; in the same namespace. They are wrapped in a (let () ...) so that
+;; they do not pollute the namespace.
 (define-namespace-anchor anchor)
 (define rosette-ns (namespace-anchor->namespace anchor))
