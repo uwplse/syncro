@@ -125,9 +125,6 @@
 (assert (< topic-to-change NUM_TOPICS))
 
 ; Verification:
-; (time
-;   (with-handlers ([exn:fail? (lambda (ex) "Prevent the exception")])
-;     (go)))
 ; When using lists as sets:
 ; cpu time: 10768 real time: 48582 gc time: 1146
 ; When using enum-sets for sets:
@@ -135,6 +132,8 @@
 (define (go)
   (time
    (verify (begin (change word-to-change topic-to-change) (check)))))
+
+(go)
 
 (define (model1)
   ; cpu time: 238 real time: 1711 gc time: 82
@@ -155,4 +154,3 @@
                                     (stmt-synthax num1 new-topic old-topic 3)
                                     (assert (equal? num1 (compute-num1))))))))
 
-(go)

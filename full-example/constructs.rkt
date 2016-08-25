@@ -1,6 +1,6 @@
 #lang racket
 
-(require "rosette-namespace.rkt" "types.rkt" "variables.rkt")
+(require "constants.rkt" "rosette-namespace.rkt" "types.rkt" "variables.rkt")
 
 (provide (all-from-out "types.rkt")
          define-constant define-incremental finalize
@@ -109,10 +109,10 @@
                  ;; TODO: This can recompute things multiple times. If we
                  ;; assert that the dependency graph must be a DAG, we
                  ;; could find a linearization and process updates in that
-                 ;; order. This may also be necessary for correctness...
+                 ;; order. This may also be necessary for correctness.
+                 ;; This may mean that you should have a separate
+                 ;; update function for each edge instead of each vertex.
                  (for ([dep (send struc get-children)])
-                   ;; TODO: Hard coded for testing, should actually be the following:
-                   ;(apply (send (hash-ref id-table dep) get-update-fn 'name 'update-type) args)
                    (apply (send (hash-ref id-table dep) get-update-fn 'update-type)
                           (append (map (lambda (var) (eval var program-ns))
                                        update-old-val-vars)
@@ -148,9 +148,8 @@
     (define program-ns (namespace-anchor->namespace program-anchor))
     ;; TODO: Document all variable names with an example program
     (define parent (hash-ref id-table 'word->topic))
-    (for ([dummy '(dummy)]) ;c-id (send parent get-children)])
-      (let* ([c-id 'num1]
-             [p-id (send parent get-id)]
+    (for ([c-id (send parent get-children)])
+      (let* ([p-id (send parent get-id)]
              [p-type (send parent get-type)]
              [child (hash-ref id-table c-id)]
              [c-type (send child get-type)]
@@ -199,7 +198,7 @@
                      (eval-lifted program)
                      (assert (equal? ,c-id ,child-definition))))))
                (evaluate (lifted-code program) synth)))
-          (pretty-print rosette-code)
+          ;(pretty-print rosette-code)
           (define result (eval rosette-code rosette-ns))
           ;(pretty-print result)
           (define update-fn-code

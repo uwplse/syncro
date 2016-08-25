@@ -1,6 +1,6 @@
 #lang rosette
 
-(require (only-in "variables.rkt" define-untyped-constant))
+(require (only-in "constants.rkt" define-untyped-constant))
 
 (provide Integer-type define-enum-type Vector-type Type?
          ;; define-enum-type expands to (define var (Enum-Type ...)), so Enum-Type needs to be provided to rosette-namespace to avoid an unbound variable
@@ -26,7 +26,6 @@
   (old-values-code Type update-type var . update-args)
   (symbolic-update-code Type update-type var))
 
-;; TODO: Fix naming here
 (struct Integer-Type ()
   #:methods gen:Type
   [(define (is-subtype? self other-type)
