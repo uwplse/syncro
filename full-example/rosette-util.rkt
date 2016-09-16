@@ -2,10 +2,12 @@
 ;; once synthesis is complete.
 #lang s-exp rosette
 
+(require "types.rkt")
+
 (provide define-lifted lift lifted? begin^
-         eval-lifted lifted-code
+         eval-lifted lifted-code infer-type
          ;; grammar.rkt defines Terminals, which are a subtype of lifted-variable
-         lifted-variable lifted-variable-val lifted-variable-var ; lifted-variable-type
+         lifted-variable lifted-variable-val lifted-variable-var lifted-variable-type
          lifted-error)
 
 ;; Lifting values enables synthesis where we can also recover the code
@@ -26,7 +28,7 @@
 (define-generics inferable
   (infer-type inferable))
 
-(struct lifted-variable (val var) #:transparent
+(struct lifted-variable (val var type) #:transparent
   #:methods gen:lifted
   [(define (eval-lifted self)
      (lifted-variable-val self))
@@ -34,8 +36,8 @@
    (define (lifted-code self)
      (lifted-variable-var self))]
 
-  ;; #:methods gen:inferable
-  #; [(define (infer-type self)
+  #:methods gen:inferable
+  [(define (infer-type self)
      (lifted-variable-type self))])
      
 (struct lifted-apply (proc args) #:transparent
@@ -51,10 +53,12 @@
      `(,(gen-lifted-code (lifted-apply-proc self))
        ,@(map gen-lifted-code (lifted-apply-args self))))]
 
-  ;; #:methods gen:inferable
-  #; [(define (infer-type self)
-     ;; TODO
-     3)])
+  #:methods gen:inferable
+  [(define/generic gen-infer-type infer-type)
+
+   (define (infer-type self)
+     (apply-type (gen-infer-type (lifted-apply-proc self))
+                 (map gen-infer-type (lifted-apply-args self))))])
      
 (struct lifted-begin (args) #:transparent
   #:methods gen:lifted
@@ -70,7 +74,9 @@
 
   #:methods gen:inferable
   [(define (infer-type self)
-     (infer-type (last (lifted-begin-args self))))])
+     (if (null? (lifted-begin-args self))
+         (Void-type)
+         (infer-type (last (lifted-begin-args self)))))])
 
 (struct lifted-error () #:transparent
   #:methods gen:lifted
@@ -82,15 +88,14 @@
 
   #:methods gen:inferable
   [(define (infer-type self)
-     ;; TODO: Implement
-     3)])
+     (Error-type))])
 
-(define (lift value var-name)
+(define (lift value var-name type)
   (cond [(and (procedure? value) (symbol? var-name))
          (lambda arguments
-           (lifted-apply (lifted-variable value var-name) arguments))]
+           (lifted-apply (lifted-variable value var-name type) arguments))]
         [(symbol? var-name)
-         (lifted-variable value var-name)]
+         (lifted-variable value var-name type)]
         [else
          (error (format "Cannot lift ~a which has value ~a~%"
                         var-name value))]))
@@ -100,7 +105,7 @@
 
 (define-syntax (define-lifted stx)
   (syntax-case stx ()
-    [(define-lifted [thing new-name] ...)
+    [(define-lifted [thing new-name type] ...)
      (syntax/loc stx
-       (begin (define new-name (lift thing 'thing))
+       (begin (define new-name (lift thing 'thing type))
               ...))]))
