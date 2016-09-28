@@ -3,7 +3,7 @@
 (require rosette/lib/synthax)
 (require "types.rkt" "grammar.rkt")
 
-(provide rosette-ns my-for/sum my-for/or)
+(provide my-for/sum my-for/or run-in-rosette)
 
 ;; NOTE: The reimplementations of for can also be found in constructs.rkt
 (define-syntax (my-for/sum stx)
@@ -28,8 +28,5 @@
            (set! val (or val (begin expr ...))))
          val))]))
 
-;; Currently, all of the synthesis and verification problems are posed
-;; in the same namespace. They are wrapped in a (let () ...) so that
-;; they do not pollute the namespace.
-(define-namespace-anchor anchor)
-(define rosette-ns (namespace-anchor->namespace anchor))
+(define (run-in-rosette code)
+  (eval-syntax (datum->syntax #'3 code)))

@@ -5,7 +5,7 @@
          (rename-out [typed-variable-type variable-type]
                      [variable-with-flags-flags variable-flags]
                      [variable-with-flags? variable-has-flags?])
-         typed-variable?
+         variable? typed-variable?
          with-flags)
 
 (struct variable (symbol definition))
