@@ -112,7 +112,7 @@
 
   (define (vector-ref-expr desired-type depth #:mutable [mutable #f])
     ;; TODO: Force the output type to be the desired-type
-    (let* ([vec (expr-grammar (Vector-type (Bottom-type) (Any-type))
+    (let* ([vec (expr-grammar (Vector-type (Bottom-type) desired-type)
                               (- depth 1) #:mutable mutable)]
            [vec-type (infer-type vec)])
       (if (Error-type? vec-type)
@@ -124,17 +124,17 @@
   (define (base-expr-grammar desired-type depth)
     (let ([options '()])
       (when (is-supertype? desired-type (Boolean-type))
-        (let (#;[b1 (expr-grammar desired-type (- depth 1))]
-              #;[b2 (expr-grammar desired-type (- depth 1))]
+        (let (#;[b1 (expr-grammar (Boolean-type) (- depth 1))]
+              #;[b2 (expr-grammar (Boolean-type) (- depth 1))]
               [i1 (expr-grammar (Integer-type) (- depth 1))]
               [i2 (expr-grammar (Integer-type) (- depth 1))]
-              #;[e1 (expr-grammar (Any-type) (- depth 1))]
-              #;[e2 (expr-grammar (Any-type) (- depth 1))])
+              [e1 (expr-grammar (Any-type) (- depth 1))]
+              [e2 (expr-grammar (Any-type) (- depth 1))])
           (set! options
                 (append options
                         (list (=^ i1 i2)
                               (<^ i1 i2)
-                              #;(equal?^ e1 e2)
+                              (equal?^ e1 e2)
                               #;(and b1 b2)
                               #;(or b1 b2)
                               #;(not b1))))))
@@ -159,7 +159,7 @@
   ;; Choose definitions for each variable
   (define definitions
     (for/list ([sym temps])
-      (let* ([subexp (expr-grammar (Bottom-type) 1)]
+      (let* ([subexp (expr-grammar (Any-type) 1)]
              [result (define^ sym subexp)])
         (send terminal-info add-terminal sym (eval-lifted subexp) (infer-type subexp)
               #:mutable #f)

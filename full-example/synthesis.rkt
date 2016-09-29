@@ -65,7 +65,7 @@
                           #:varset-id 'symbolic-vars)))
     
     (define intermediate-ids '())
-    (for ([output-id '(num1 num2helper) #;(cdr (get-ids graph))])
+    (for ([output-id '(num1 num2helper num2) #;(cdr (get-ids graph))])
       (printf "Synthesizing update rule for ~a upon update ~a to ~a~%"
               output-id update-type input-id)
       
@@ -135,7 +135,7 @@
            (define terminal-info (new Terminal-Info%))
            ,(add-terminal-code output-id output-type #:mutable #t)
            ,@add-terminals
-           (define program (grammar terminal-info 3 2 #:guard-depth 2))
+           (define program (grammar terminal-info 3 4 #:num-temps 0 #:guard-depth 1))
 
            (define synth
              (time
