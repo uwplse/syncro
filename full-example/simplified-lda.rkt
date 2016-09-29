@@ -1,6 +1,6 @@
 #lang racket
 
-(require "constructs.rkt" "grammar.rkt")
+(require "constructs.rkt")
 
 (define-constant NUM_WORDS (Integer-type) 12)
 (define-constant NUM_TOPICS (Integer-type) 3)
