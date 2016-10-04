@@ -5,6 +5,8 @@
 
 (provide perform-synthesis)
 
+;; Various helpers that simply get information out of data structures.
+
 (define (get-constant-info vars)
   (let ([typed-vars (filter typed-variable? vars)])
     (list (map variable-definition vars)
@@ -25,6 +27,8 @@
             symbolic-update
             (send/apply node get-old-values-code update-type update-args))))
 
+;; Transposes a list of lists.
+;; eg. (transpose '((1 2 3) (4 5 6)) 3) gives '((1 4) (2 5) (3 6))
 (define (transpose list-of-lists len)
   (unless (or (null? list-of-lists)
               (= len (length (car list-of-lists))))
@@ -33,6 +37,7 @@
          (build-list len (lambda (x) '()))
          list-of-lists))
 
+;; Converts any (possibly nested) syntax objects to datums.
 (define (datumify thing)
   (cond [(syntax? thing) (syntax->datum thing)]
         [(list? thing)
@@ -42,6 +47,10 @@
 (define (make-id template . ids)
   (string->symbol (apply format template ids)))
 
+;; Creates the necessary Rosette code for synthesis, runs it, and
+;; creates the relevant update functions.
+;; constants: List of constant variables (both typed and untyped)
+;; graph:     Dependency graph
 (define (perform-synthesis constants graph)
   (define (get-id-info id)
     (get-node-info (get-node graph id)))
@@ -159,7 +168,7 @@
       (define result (run-in-rosette rosette-code))
       (if result
           (begin
-            (pretty-print result)
+            (print-nicely result)
             (send input-relation add-update-code update-type result))
           (begin
             (display "No program found\n")
@@ -174,3 +183,11 @@
          ,define-overwritten-vals
          ,update-code
          ,synthesized-code))))
+
+;; TODO: Hack because I don't understand how Rosette printing works. Fix.
+(define (print-nicely result)
+  (pretty-print
+   (with-input-from-string 
+    (with-output-to-string
+      (lambda () (display result)))
+    read)))

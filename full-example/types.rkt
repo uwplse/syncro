@@ -10,6 +10,7 @@
          type? Any-type? Bottom-type? Boolean-type? Index-type? Integer-type? Enum-type?
          Vector-type? Procedure-type? Error-type? Void-type?)
 
+;; Creates type predicates that properly handle Bottom types.
 (define-syntax (make-type-predicates stx)
   (syntax-case stx ()
     [(_ (pred sym) ...)
@@ -30,19 +31,31 @@
       #`(set-add! #,set-name #,val)
       #'(void)))
 
+
 (define-generics Type
+  ;; Returns #t if type is a supertype of other-type, #f otherwise
   (is-supertype? Type other-type)
+  ;; Returns an S-expression that could be used to create a new
+  ;; instance of the type.
   (repr Type)
+  ;; Unifies two types for type inference.
+  ;; mapping is a type map that stores the unification bindings so far
+  ;; (see bottom of this file).
   (unify Type other-type mapping)
+  ;; Replaces type variables in this type with their values as given
+  ;; by the type mapping.
   (replace-type-vars Type mapping)
 
   #:fallbacks
   [(define (unify self other-type mapping)
      (default-unify self other-type mapping))
 
+   ;; Most types can never have type variables inside themselves
    (define (replace-type-vars self mapping)
      self)])
 
+;; Unifies types assuming there are no type variables inside self.
+;; other-type may be a type variable.
 (define (default-unify self other-type mapping)
   (cond [(Type-Var? other-type)
          (add-type-binding! mapping other-type self)
@@ -56,11 +69,37 @@
           (format "Incompatible types for unification: ~a and ~a" self other-type))]))
 
 (define-generics symbolic
+  ;; Returns #t if it is possible to modify elements in a value of
+  ;; this type (eg. Vectors), #f otherwise (eg. Booleans)
   (mutable-structure? symbolic)
+  ;; Returns syntax that creates a symbolic value of this type
+  ;; assigned to the variable var. The generated code also adds all
+  ;; symbolic variables to varset-name, which is a symbol that at
+  ;; runtime will have a set as a value. If varset-name is #f, that
+  ;; code is not generated.
   (symbolic-code symbolic var [varset-name])
+  ;; For a given kind of update to this type (eg. assignment),
+  ;; generates argument names that would be used in the update
+  ;; function.
+  ;; For example, for update type 'assign to a vector v, we might
+  ;; add the mapping 'assign -> '(index1 val2)
+  ;; Then the update procedure should look like
+  ;; (define (assign-v! index1 val2) ...)
   (generate-update-arg-names symbolic update-type)
+  ;; Returns a function that, given the update argument names,
+  ;; produces the code that performs the update.
+  ;; For example, for update type 'assign to a vector v with update
+  ;; names '(v index1 val2), we would generate
+  ;; (vector-set! v index1 val2)
+  ;; TODO: The interface here is different from everything else. Fix.
   (update-code symbolic update-type)
+  ;; Returns various things that are important for defining which
+  ;; values are overwritten by a particular update.
+  ;; TODO: Document better
   (old-values-code symbolic update-type var . update-args)
+  ;; Like update code, but does things symbolically. Interface is also
+  ;; different.
+  ;; TODO: Document better
   (symbolic-update-code symbolic update-type var update-args))
 
 (struct Any-Type ()

@@ -8,7 +8,11 @@
          grammar Terminal-Info%
          eval-lifted lifted-code)
 
+;; Counts the number of symbolic booleans created during a run of the grammar.
 (define num-boolean-vars (make-parameter 0))
+
+;; Takes a list of lifted programs and produces a value representing a
+;; choice of exactly one of them.
 (define (my-choose* . args)
   (define valid-args args)
   ;; TODO: Following line sometimes speeds it up, sometimes slows it down.
@@ -17,6 +21,10 @@
       (lifted-error)
       (begin (num-boolean-vars (+ -1 (length valid-args) (num-boolean-vars)))
              (apply choose* valid-args))))
+
+;;;;;;;;;;;;;;;;;;;;;;;
+;; Lifting operators ;;
+;;;;;;;;;;;;;;;;;;;;;;;
 
 (define (vector-sum vec)
   (define result 0)
@@ -63,6 +71,19 @@
   [= =^ cmp-type] [< <^ cmp-type]
   [+ +^ arith-type] [- -^ arith-type] [* *^ arith-type] [/ /^ arith-type])
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Grammar construction ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; terminal-info: A Terminal-Info object
+;; num-stmts:     Number of statements to allow
+;; depth:         Expression depth to allow
+;; #:num-temps:   Number of temporary variables to add to the sketch
+;; #:guard-depth: Depth of the guard expression. If this is #f, no
+;;                guard is inserted.
+;; Note that the num-stmts and depth do not have exact meanings, they
+;; are simply used as costs. (For example, despite an if having
+;; multiple statements inside it, it counts as only one statement.)
 (define (grammar terminal-info num-stmts depth
                  #:num-temps [num-temps 2]
                  #:guard-depth [guard-depth #f])
@@ -74,6 +95,7 @@
                     (begin^ (base-stmt-grammar num-stmts depth)
                             (stmt-grammar (- num-stmts 1) depth)))))
 
+  ;; Vector statements, set!, and if
   (define (base-stmt-grammar num-stmts depth)
     ;; TODO: boolean-expr-grammar should have some other depth
     (if (<= num-stmts 1)
@@ -83,6 +105,7 @@
                          (stmt-grammar 1 depth)
                          (stmt-grammar 1 depth)))))
 
+  ;; vector-set!, vector-increment!, vector-decrement!
   (define (vector-stmt-grammar depth)
     (let* ([vec (expr-grammar (Vector-type (Bottom-type) (Any-type))
                               (- depth 1) #:mutable #t)]
@@ -97,7 +120,6 @@
                         (vector-set!^ vec index value))))))
 
   ;; If #:mutable is #t, then the return value must be mutable.
-  ;; It is assumed that it is possible for the desired type to be mutable.
   ;; If #:mutable is #f, then the return value may or may not be mutable.
   (define (expr-grammar desired-type depth #:mutable [mutable #f])
     (let ([base (apply my-choose*
@@ -110,6 +132,7 @@
                       (base-expr-grammar desired-type depth)
                       (vector-ref-expr desired-type depth #:mutable mutable)))))
 
+  ;; vector-ref
   (define (vector-ref-expr desired-type depth #:mutable [mutable #f])
     ;; TODO: Force the output type to be the desired-type
     (let* ([vec (expr-grammar (Vector-type (Bottom-type) desired-type)
@@ -121,6 +144,7 @@
                        (expr-grammar (Vector-index-type vec-type)
                                      (- depth 1))))))
 
+  ;; Comparisons, arithmetic, integer holes
   (define (base-expr-grammar desired-type depth)
     (let ([options '()])
       (when (is-supertype? desired-type (Boolean-type))

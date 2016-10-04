@@ -1,21 +1,29 @@
 #lang racket
 
-(require "constructs.rkt")
+(require "constructs.rkt" "grammar.rkt")
 
+;; define-constant behaves just like define, but the system needs to
+;; know types during grammar construction.
 (define-constant NUM_WORDS (Integer-type) 12)
 (define-constant NUM_TOPICS (Integer-type) 3)
 (define-constant NUM_DOCUMENTS (Integer-type) 2)
 (define-constant VOCABULARY_SIZE (Integer-type) 10)
 (define-constant BETA (Integer-type) 1)
 
+;; Enum types can be used as indices into vectors.
+;; We assume that the words have already been interned.
 (define-enum-type Word NUM_WORDS)
 (define-enum-type Topic NUM_TOPICS)
 (define-enum-type Document NUM_DOCUMENTS)
 
+;; Vector mapping each word to the document it is in.
 (define-constant word->document (Vector-type Word Document)
   (build-vector NUM_WORDS (lambda (w) (if (< w 5) 0 1))))
 
-;; TODO: In the future, have programmer-defined updates
+;; Vector mapping each word to the topic it is currently assigned.
+;; Every iteration one of the words has its topic changed.
+;; The allowed mutations are "assign", meaning an assignment to one
+;; slot in the vector.
 (define-incremental word->topic (Vector-type Word Topic) () (assign)
   (build-vector NUM_WORDS (lambda (w) (random NUM_TOPICS))))
 
@@ -58,19 +66,29 @@
      ;;                                (and (equal? (vector-ref word->topic w) t)
      ;;                                     (equal? (vector-ref word->document w) d))))))))
 
-(define-incremental value (Integer-type) (num1 num2) ()
-  (let ([num1sum (my-for/sum ([x num1]) x)]
-        [num2sum (my-for/sum ([x num2]) x)])
-    (/ (* BETA num1sum) (+ (* BETA VOCABULARY_SIZE) num2sum))))
-;; (sum (/ (* BETA num1) (+ (* BETA VOCABULARY_SIZE) (sum num2))))))
+(define-incremental num1sum (Integer-type) (num1) ()
+  (my-for/sum ([x num1]) x))
+
+(define-incremental num2sum (Integer-type) (num2) ()
+  (my-for/sum ([x num2]) x))
 
 (finalize)
 
+(define (value)
+  (/ (* BETA num1sum) (+ (* BETA VOCABULARY_SIZE) num2sum)))
+
 (define (go)
   (for/sum ([i 3])
-    ;; TODO: Here we assume that the programmer only uses our update functions, like assign-word->topic!
-    ;; We should not allow the programmer to do arbitrary updates (such as just using vector-set!). We can get this behavior by encapsulating the data structures in a class, and only providing certain kinds of updates.
     (assign-word->topic! (random NUM_WORDS) (random NUM_TOPICS))
-    value))
+    (value)))
 
 (go)
+
+;; TODO: Allow programmer-defined updates
+;; TODO: Allow programmer-defined sketches for update rules
+;; TODO: Here we assume that the programmer only uses our update
+;; functions, like assign-word->topic!
+;; We should not allow the programmer to do arbitrary updates (such as
+;; just using vector-set!). We can get this behavior by encapsulating
+;; the data structures in a class, and only providing certain kinds of
+;; updates.

@@ -1,3 +1,4 @@
+;; Provides a way to run dynamically generated Racket code.
 #lang s-exp rosette
 
 (require rosette/lib/synthax)

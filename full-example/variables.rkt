@@ -12,6 +12,7 @@
 (struct typed-variable variable (type))
 (struct variable-with-flags variable (flags))
 
+;; Adds flags to the given typed-variable.
 (define (with-flags var . flags)
   (variable-with-flags (variable-symbol var)
                        (variable-definition var)

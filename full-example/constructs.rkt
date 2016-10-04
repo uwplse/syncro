@@ -15,6 +15,8 @@
 ;; TODO: Refactor so that variables (symbolic or not) are attached to their types
 
 (begin-for-syntax
+  ;; Wrappers around dependency graphs to handle syntax inputs
+  
   (define dependency-graph (make-dependency-graph))
 
   (define (add-node-to-graph! name-stx type-stx updates-stx expr-stx)
@@ -34,8 +36,12 @@
       (for-each (lambda (parent) (add-dependency! dependency-graph parent name))
                 parents)))
 
+  ;; Collects the list of variables and typed-variables created by
+  ;; define-constant and its variants
   (define constants (make-parameter '())))
 
+;; Defines a typed constant in both Racket and Rosette, and stores
+;; metadata in constants.
 (define-syntax (define-constant stx)
   (syntax-case stx ()
     [(_ var type-exp val)
@@ -49,6 +55,8 @@
        (syntax/loc stx
          (define var val)))]))
 
+;; Defines an untyped constant in both Racket and Rosette, and stores
+;; metadata in constants.
 (define-syntax (define-untyped-constant stx)
   (syntax-case stx ()
     [(_ var val)
@@ -71,6 +79,8 @@
 (define-syntax-rule (define-enum-type name items)
   (define-untyped-constant name (Enum-type 'name items)))
 
+;; Adds metadata to the dependency graph, and defines the data
+;; structure in Racket.
 (define-syntax (define-incremental stx)
   (syntax-case stx ()
     [(_ name type-exp (parent ...) (update-type ...) expr ...)
@@ -82,6 +92,7 @@
            (define name (begin expr ...))
            (void))))]))
 
+;; Performs synthesis and defines the relevant update functions.
 (define-syntax (finalize stx)
   (syntax-case stx ()
     [(_)

@@ -10,14 +10,13 @@
          lifted-variable lifted-variable-val lifted-variable-var lifted-variable-type
          lifted-error lifted-error?)
 
-;; Lifting values enables synthesis where we can also recover the code
-;; once synthesis is complete.
-
 ;; Since Rosette doesn't support objects, we'll use structs and
 ;; generic functions on those structs.
 
 (define-generics lifted
+  ;; Evaluates the lifted expression to produce a value.
   (eval-lifted lifted)
+  ;; Produces Racket code that represents the lifted expression.
   (lifted-code lifted)
 
   #:defaults
@@ -26,7 +25,9 @@
     (define (lifted-code x) x)]))
 
 (define-generics inferable
+  ;; Type inference
   (infer-type inferable))
+
 
 (struct lifted-variable (val var type) #:transparent
   #:methods gen:lifted
@@ -39,7 +40,8 @@
   #:methods gen:inferable
   [(define (infer-type self)
      (lifted-variable-type self))])
-     
+
+
 (struct lifted-apply (proc args) #:transparent
   #:methods gen:lifted
   [(define/generic gen-eval-lifted eval-lifted)
@@ -59,7 +61,8 @@
    (define (infer-type self)
      (apply-type (gen-infer-type (lifted-apply-proc self))
                  (map gen-infer-type (lifted-apply-args self))))])
-     
+
+
 (struct lifted-begin (args) #:transparent
   #:methods gen:lifted
   [(define/generic gen-eval-lifted eval-lifted)
@@ -82,6 +85,7 @@
 
 (define (begin^ . args)
   (lifted-begin args))
+
 
 (struct lifted-if (condition then-branch else-branch) #:transparent
   #:methods gen:lifted
@@ -113,6 +117,7 @@
 (define (if^ t c e)
   (lifted-if t c e))
 
+
 (struct lifted-define (var val) #:transparent
   #:methods gen:lifted
   [(define/generic gen-lifted-code lifted-code)
@@ -137,6 +142,7 @@
 (define (define^ var val)
   (lifted-define var val))
 
+
 (struct lifted-error () #:transparent
   #:methods gen:lifted
   [(define (eval-lifted self)
@@ -149,6 +155,17 @@
   [(define (infer-type self)
      (Error-type))])
 
+
+;; Despite the name, this does not always produce a lifted value.
+;; When given a procedure, it produces a procedure that when called
+;; will produce a lifted value. For anything else, it directly creates
+;; a lifted value.
+;; The goal here is that a program using lifted values looks exactly
+;; the same, and such programs produces lifted value.
+;; eg. (vector-ref^ my-vec^ 0) will produce a lifted value, although
+;; vector-ref^ by itself will not.
+;; TODO: We could fix this by making vector-ref^ a lifted variable
+;; with a prop:procedure property?
 (define (lift value var-name type)
   (cond [(and (procedure? value) (symbol? var-name))
          (lambda arguments
@@ -159,6 +176,8 @@
          (error (format "Cannot lift ~a which has value ~a~%"
                         var-name value))]))
 
+;; Convenience macro to define many new lifted values at a time.
+;; See grammar.rkt for an example.
 (define-syntax (define-lifted stx)
   (syntax-case stx ()
     [(define-lifted [thing new-name type] ...)
