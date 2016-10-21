@@ -74,7 +74,7 @@
                           #:varset-id 'symbolic-vars)))
     
     (define intermediate-ids '())
-    (for ([output-id '(num1 num2helper num2) #;(cdr (get-ids graph))])
+    (for ([output-id (cdr (get-ids graph))])
       (printf "Synthesizing update rule for ~a upon update ~a to ~a~%"
               output-id update-type input-id)
       
@@ -114,6 +114,10 @@
            ;; The resulting data structure contains symbolic variables.
            ,define-input
 
+           ;; This needs to be done here in case the output depends on
+           ;; intermediate relations.
+           ,@define-intermediates
+
            ;; Example: (define num2 (build-vector ...))
            ;; Basically the same as for intermediates.
            ,define-output
@@ -138,14 +142,18 @@
            ;; Taken straight from the user program, but operates on
            ;; symbolic variables.
            ;; Note that this must come after the update.
-           ,@define-intermediates
+           ;; TODO: For now, we have to define intermediates before
+           ;; the update in case the output relation depends on
+           ;; them. So here, we should use a set!
+           ,@(map (lambda (code) `(set! ,@(cdr code))) define-intermediates)
 
            ;; Create the grammar and sample a program
            (define terminal-info (new Terminal-Info%))
            ,(add-terminal-code output-id output-type #:mutable #t)
            ,@add-terminals
            (define program (grammar terminal-info 3 4 #:num-temps 0 #:guard-depth 1))
-
+           ;(define program (grammar terminal-info 2 1 #:num-temps 0 #:guard-depth #f))
+           
            (define synth
              (time
               (synthesize
@@ -159,16 +167,17 @@
                  ;; Symbolically run the sampled program
                  (eval-lifted program)
                  ;; Example: (assert (equal? num2 (build-vector ...)))
-                 (assert (equal? ,output-id ,output-expr))))))
+                 (assert (equal? (eval-lifted (send terminal-info get-by-id ',output-id))
+                                 ,output-expr))))))
            
            (and (sat? synth)
                 (evaluate (lifted-code program) synth))))
 
       ;(pretty-print rosette-code)
-      (define result (run-in-rosette rosette-code))
+      (define result (make-sexp (run-in-rosette rosette-code)))
       (if result
           (begin
-            (print-nicely result)
+            (pretty-print result)
             (send input-relation add-update-code update-type result))
           (begin
             (display "No program found\n")
@@ -179,15 +188,16 @@
 
     (let ([update-id (make-id "~a-~a!" update-type input-id)]
           [synthesized-code (send input-relation get-update-code update-type)])
-      `(define (,update-id ,@update-args)
+      (pretty-print `(define (,update-id ,@update-args)
          ,define-overwritten-vals
          ,update-code
-         ,synthesized-code))))
+         ,synthesized-code)))))
 
-;; TODO: Hack because I don't understand how Rosette printing works. Fix.
-(define (print-nicely result)
-  (pretty-print
-   (with-input-from-string 
-    (with-output-to-string
-      (lambda () (display result)))
-    read)))
+;; TODO: Hack because I don't understand how Rosette works. Fix.
+(define (make-sexp result)
+  (if result
+      (with-input-from-string 
+        (with-output-to-string
+          (lambda () (display result)))
+        read)
+      result))

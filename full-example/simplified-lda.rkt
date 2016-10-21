@@ -69,6 +69,7 @@
 (define-incremental num1sum (Integer-type) (num1) ()
   (my-for/sum ([x num1]) x))
 
+;; TODO: Annoying bitwidth stuff makes this tricky (see tmp3.rkt)
 (define-incremental num2sum (Integer-type) (num2) ()
   (my-for/sum ([x num2]) x))
 

@@ -98,11 +98,11 @@
     [(_)
      (begin
        (with-syntax ([(define-update-fn ...)
-                      (datum->syntax stx
-                                     (perform-synthesis (reverse (constants))
-                                                        dependency-graph))])
+                      (map (lambda (x) (datum->syntax stx x))
+                           (perform-synthesis (reverse (constants))
+                                              dependency-graph))])
          (syntax/loc stx
-           (begin define-update-fn ...))))]))
+           (void) #;(begin define-update-fn ...))))]))
 
 ;; NOTE: The reimplementations of for can also be found in
 ;; rosette-namespace.rkt

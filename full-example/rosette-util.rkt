@@ -4,7 +4,7 @@
 
 (require "types.rkt")
 
-(provide define-lifted lift lifted? if^ begin^ define^
+(provide define-lifted lift lifted? if^ begin^ define^ set!^
          eval-lifted lifted-code infer-type
          ;; grammar.rkt defines Terminals, which are a subtype of lifted-variable
          lifted-variable lifted-variable-val lifted-variable-var lifted-variable-type
@@ -29,7 +29,7 @@
   (infer-type inferable))
 
 
-(struct lifted-variable (val var type) #:transparent
+(struct lifted-variable ([val #:mutable] var type) #:transparent
   #:methods gen:lifted
   [(define (eval-lifted self)
      (lifted-variable-val self))
@@ -141,6 +141,27 @@
 
 (define (define^ var val)
   (lifted-define var val))
+
+
+(struct lifted-set! (var val) #:transparent
+  #:methods gen:lifted
+  [(define/generic gen-lifted-code lifted-code)
+   (define (eval-lifted self)
+     (set-lifted-variable-val! (lifted-set!-var self)
+                               (lifted-set!-val self))
+     (void))
+
+   (define (lifted-code self)
+     (list 'set!
+           (gen-lifted-code (lifted-set!-var self))
+           (gen-lifted-code (lifted-set!-val self))))]
+
+  #:methods gen:inferable
+  [(define (infer-type self)
+     (Void-type))])
+
+(define (set!^ var val)
+  (lifted-set! var val))
 
 
 (struct lifted-error () #:transparent

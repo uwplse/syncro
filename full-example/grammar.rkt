@@ -69,7 +69,7 @@
                               beta-v4)]
   [equal? equal?^ (Procedure-type (list alpha-v5 alpha-v5) (Boolean-type))]
   [= =^ cmp-type] [< <^ cmp-type]
-  [+ +^ arith-type] [- -^ arith-type] [* *^ arith-type] [/ /^ arith-type])
+  [+ +^ arith-type] [- -^ arith-type] [* *^ arith-type] #;[/ /^ arith-type])
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Grammar construction ;;
@@ -98,9 +98,11 @@
   ;; Vector statements, set!, and if
   (define (base-stmt-grammar num-stmts depth)
     ;; TODO: boolean-expr-grammar should have some other depth
-    (if (<= num-stmts 1)
-        (vector-stmt-grammar depth)
+    (if (<= num-stmts 2)
         (my-choose* (vector-stmt-grammar depth)
+                    (set!-stmt-grammar depth))
+        (my-choose* (vector-stmt-grammar depth)
+                    (set!-stmt-grammar depth)
                     (if^ (expr-grammar (Boolean-type) depth)
                          (stmt-grammar 1 depth)
                          (stmt-grammar 1 depth)))))
@@ -118,6 +120,13 @@
                                      #:type (Vector-output-type vec-type)))])
             (my-choose* ((my-choose* vector-increment!^ vector-decrement!^) vec index)
                         (vector-set!^ vec index value))))))
+
+  (define (set!-stmt-grammar depth)
+    (let* ([variable
+            (apply my-choose*
+                   (send terminal-info get-terminals
+                         #:type (Any-type) 'mutable))])
+      (set!^ variable (expr-grammar (infer-type variable) depth)))) 
 
   ;; If #:mutable is #t, then the return value must be mutable.
   ;; If #:mutable is #f, then the return value may or may not be mutable.
@@ -163,9 +172,15 @@
                               #;(or b1 b2)
                               #;(not b1))))))
       (when (is-supertype? desired-type (Integer-type))
-        (let ()
+        (let ([i1 (expr-grammar (Integer-type) (- depth 1))]
+              [i2 (expr-grammar (Integer-type) (- depth 1))])
           (define-symbolic* hole integer?)
-          (set! options (cons hole options))))
+          (set! options
+                (append options
+                        (list hole
+                              (+^ i1 i2)
+                              (-^ i1 i2)
+                              (*^ i1 i2))))))
 
       (apply my-choose* options)))
 
@@ -227,6 +242,9 @@
       (hash-set! symbol->terminal symbol
                  (Terminal value symbol type 
                            (set (if mutable 'mutable 'read-only)))))
+
+    (define/public (get-by-id id)
+      (hash-ref symbol->terminal id))
 
     ;; Returns the terminals which are instances of subtypes of the argument
     ;; type, and which have the associated flags.
