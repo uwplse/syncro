@@ -102,7 +102,7 @@
   ;; TODO: Document better
   (symbolic-update-code symbolic update-type var update-args))
 
-(struct Any-Type ()
+(struct Any-Type () #:transparent
   #:methods gen:Type
   [(define (is-supertype? self other-type)
      (Any-Type? other-type))
@@ -112,7 +112,7 @@
 
 (define (Any-type) (Any-Type))
 
-(struct Bottom-Type ()
+(struct Bottom-Type () #:transparent
   #:methods gen:Type
   [(define (is-supertype? self other-type)
      (Bottom-Type? other-type))
@@ -122,7 +122,7 @@
 
 (define (Bottom-type) (Bottom-Type))
 
-(struct Boolean-Type Any-Type ()
+(struct Boolean-Type Any-Type () #:transparent
   #:methods gen:Type
   [(define (is-supertype? self other-type)
      (or (Bottom-Type? other-type)
@@ -179,7 +179,7 @@
 
 (define (Boolean-type) (Boolean-Type))
 
-(struct Index-Type Any-Type ()
+(struct Index-Type Any-Type () #:transparent
   #:methods gen:Type
   [(define (is-supertype? self other-type)
      (or (Bottom-Type? other-type)
@@ -190,7 +190,7 @@
 
 (define (Index-type) (Index-Type))
 
-(struct Integer-Type Index-Type ()
+(struct Integer-Type Index-Type () #:transparent
   #:methods gen:Type
   [(define (is-supertype? self other-type)
      (or (Bottom-Type? other-type)
@@ -270,9 +270,9 @@
 
 (define (Integer-type) (Integer-Type))
 
-(struct Enum-Type Index-Type (name num-items) #:transparent
+(struct Enum-Type Index-Type (name num-items)
   #:methods gen:Type
-  [;; If you have Word be (Enum-Type% 3) and Topic be (Enum-Type% 3), they are
+  [;; If you have Word be (Enum-Type 3) and Topic be (Enum-Type 3), they are
    ;; still semantically different and Words should not replace
    ;; Topics. So, check subtyping by identity equality.
    ;; NOTE: This means that you cannot replace Topic with (Enum-Type% 3),
@@ -509,8 +509,7 @@
 ;; TODO: Currently impossible to create a vector type with known
 ;; length but a type variable for an index type.
 (define (Vector-type length-or-input output)
-  (unless (and (or (Index-Type? length-or-input)
-                   (Bottom-Type? length-or-input)
+  (unless (and (or (Index-type? length-or-input)
                    (Type-Var? length-or-input)
                    (integer? length-or-input))
                (Type? output))
@@ -529,7 +528,9 @@
         (Integer-type)))
   (Vector-Type length input output))
 
-(struct Procedure-Type Any-Type (domain-types range-type)
+;; domain-types: List of types of arguments consumed.
+;; range-type:   Type of value produced.
+(struct Procedure-Type Any-Type (domain-types range-type) #:transparent
   #:methods gen:Type
   [(define/generic gen-is-supertype? is-supertype?)
    (define/generic gen-repr repr)
@@ -553,7 +554,7 @@
      (let ([domain-types (Procedure-Type-domain-types self)]
            [range-type (Procedure-Type-range-type self)])
        `(Procedure-type (list ,@(map gen-repr domain-types))
-                        (gen-repr range-type))))
+                        ,(gen-repr range-type))))
 
    (define (unify self other-type mapping)
      (if (not (Procedure-Type? other-type))
@@ -604,7 +605,7 @@
 
     (replace-type-vars range mapping)))
 
-(struct Error-Type Any-Type ()
+(struct Error-Type Any-Type () #:transparent
   #:methods gen:Type
   [(define (is-supertype? self other-type)
      (or (Bottom-Type? other-type)
@@ -615,7 +616,7 @@
 
 (define (Error-type) (Error-Type))
 
-(struct Void-Type Any-Type ()
+(struct Void-Type Any-Type () #:transparent
   #:methods gen:Type
   [(define (is-supertype? self other-type)
      (or (Bottom-Type? other-type)
@@ -631,7 +632,7 @@
 ;;;;;;;;;;;;;;;;;
 
 ;; ADTs for unification -- type variables, and type binding maps
-(struct Type-Var (id)
+(struct Type-Var (id) #:transparent
   #:methods gen:Type
   [(define/generic gen-replace-type-vars replace-type-vars)
    

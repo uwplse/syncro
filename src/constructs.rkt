@@ -3,7 +3,7 @@
 (require "types.rkt")
 
 (require (for-syntax "dependency-graph.rkt" "grammar.rkt" "rosette-namespace.rkt"
-                     "synthesis.rkt" "types.rkt" "variables.rkt"
+                     "synthesis.rkt" "types.rkt" "variable.rkt"
                      racket/match
                      (only-in racket pretty-print send send/apply new)))
 
