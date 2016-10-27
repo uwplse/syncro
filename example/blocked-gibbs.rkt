@@ -1,6 +1,6 @@
 #lang racket
 
-;; An optimization to factored Gibbs sampling -- memoizing the
+;; An optimization to factored blocked Gibbs sampling -- memoizing the
 ;; sampling factors that would be generated to sample from each
 ;; possible block.
 
