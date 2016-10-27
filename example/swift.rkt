@@ -33,7 +33,7 @@
 ;; updates that are used in synthesis. (See symbolic-update-code in
 ;; types.rkt -- we need to be able to create that function
 ;; automatically for the new update.)
-(define-incremental graph (DAG-type NUM_NODES) () (add-child remove-child))
+(define-incremental graph (DAG-type Node NUM_NODES) () (add-child remove-child))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Incremental structures ;;
