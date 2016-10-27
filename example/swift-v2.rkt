@@ -19,6 +19,22 @@
 ;; Mutable values ;;
 ;;;;;;;;;;;;;;;;;;;;
 
+;; Asserts that the graph defined by the adjacency list is acyclic.
+;; In particular, since the ordering on nodes does not matter, we will
+;; require that the nodes already be topologically sorted, that is, if
+;; j > i, then there is no edge from j --> i.
+(define (assert-acyclic children)
+  (for ([node NUM_NODES])
+    
+    (define ch (vector-ref children node))
+    ;; No self-edges
+    (assert (not (set-member? node ch)))
+
+    ;; No back-edges
+    (for ([prior-node node])
+      (assert (not (set-member? prior-node ch))))))
+      
+
 ;; An update that allows us to replace one child with another, or one
 ;; parent with another.
 (define-update (replace struc [node Node] [old-value Node] [new-value Node])
@@ -26,13 +42,14 @@
     (set-remove! s old-value)
     (set-add! s new-value)))
 
-(define-incremental node->parents (Vector-type Node (Set-type Node)) () (replace))
-
 (define-incremental node->children (Vector-type Node (Set-type Node)) () (replace)
+  #:assume (assert-acyclic node->children))
+
+(define-incremental node->parents (Vector-type Node (Set-type Node)) () (replace)
   (let ([vec (build-vector NUM_NODES
                            (lambda (i) (make-set NUM_NODES)))])
     (for* ([node NUM_NODES]
-           [n (vector-ref node->parents node)])
+           [n (vector-ref node->children node)])
       (set-add! (vector-ref vec n) node))
     vec))
 
