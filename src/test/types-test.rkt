@@ -50,7 +50,8 @@
 
        (for ([t all])
          (check-true (type? t))
-         (check-true (Any-type? t)))
+         (check-true (Any-type? t))
+         (check-true (is-supertype? any t)))
 
        (define predicate->type
          (hash Bottom-type? bot
@@ -135,8 +136,89 @@
          "Repr method"
        (for ([t all])
          ;; Special rules for Enums that are not tested here, see types.rkt
+         ;; vec contains an enum, so it will also not work
          (unless (member t (list enum vec))
-           (check-equal? t (eval (repr t) ns))))))))
+           (check-equal? t (eval (repr t) ns)))))
+
+     (test-case
+         "Unification without type variables"
+       (for* ([t1 all]
+              [t2 all])
+         (cond [(is-supertype? t1 t2)
+                (check-equal? (unify-types t1 t2) t2
+                              (format "~a is a supertype of ~a but unification does not give ~a"
+                                      (repr t1) (repr t2) (repr t2)))]
+               [(is-supertype? t2 t1)
+                (check-equal? (unify-types t1 t2) t1
+                              (format "~a is a supertype of ~a but unification does not give ~a"
+                                      (repr t2) (repr t1) (repr t1)))]
+               [else
+                (check-exn exn:fail? (lambda () (unify-types t1 t2))
+                           (format "~a and ~a have no subtyping relation but unification did not fail"
+                                   (repr t1) (repr t2)))])))
+
+     (test-case
+         "Unification with type variables"
+       (match-define (list a1 a2 a3)
+         (build-list 3 (lambda (i) (Type-var))))
+
+       (check-equal? (unify-types int a1) int)
+       (check-equal? (unify-types (Vector-type a1 int) (Vector-type int a2))
+                     (Vector-type int int))
+       (check-exn exn:fail?
+                  (lambda ()
+                    (unify-types (Vector-type a1 int)
+                                 (Vector-type int bool))))
+       (check-equal? (unify-types
+                      (Procedure-type (list (Vector-type a1 a2) a1) a2)
+                      (Procedure-type (list (Vector-type int a1) a3) int))
+                     (Procedure-type (list (Vector-type int int) int) int))
+       (check-exn exn:fail?
+                  (lambda ()
+                    (unify-types
+                     (Procedure-type (list (Vector-type a1 a2) a1) a2)
+                     (Procedure-type (list (Vector-type int a1) a3) bool)))))
+
+     (test-case
+         "apply-type"
+       (match-define (list a1 a2 a3)
+         (build-list 3 (lambda (i) (Type-var))))
+
+       ;; Simple examples solvable with direct equality
+       (check-equal? (apply-type (Procedure-type '() int) '()) int)
+       (check-equal? (apply-type (Procedure-type (list int) bool)
+                                 (list int))
+                     bool)
+       (check-exn exn:fail? (lambda ()
+                              (apply-type (Procedure-type (list int) bool)
+                                          (list int int))))
+       (check-exn exn:fail? (lambda ()
+                              (apply-type (Procedure-type (list int) bool)
+                                          (list bool))))
+
+       ;; Examples that require subtyping reasoning
+       (check-equal? (apply-type (Procedure-type (list idx) bool)
+                                 (list int))
+                     bool)
+       (check-equal? (apply-type (Procedure-type (list int) bool)
+                                 (list idx))
+                     bool)
+
+       ;; Examples that require unification and subtyping
+       (check-equal? (apply-type
+                      (Procedure-type (list (Vector-type idx a2) a1) a2)
+                      (list vec (Vector-index-type vec)))
+                     (Vector-output-type vec))
+       
+       (check-exn exn:fail?
+                  (lambda ()
+                    (apply-type
+                     (Procedure-type (list (Vector-type a1 a2) a1) a2)
+                     (list vec bool)))))
+       
+     )))
+
+;; TODO: Tests for the symbolic code generation
 
 (define (run-types-tests)
   (displayln "Running tests for types.rkt")

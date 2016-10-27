@@ -6,7 +6,7 @@
                      [Vector-Type-output-type Vector-output-type])
          is-supertype? repr mutable-structure? symbolic-code
          generate-update-arg-names update-code old-values-code symbolic-update-code
-         Type-var unify apply-type (rename-out [unify unify-types])
+         Type-var unify-types apply-type
          type? Any-type? Bottom-type? Boolean-type? Index-type? Integer-type? Enum-type?
          Vector-type? Procedure-type? Error-type? Void-type?)
 
@@ -53,6 +53,11 @@
    ;; Most types can never have type variables inside themselves
    (define (replace-type-vars self mapping)
      self)])
+
+(define (unify-types t1 t2)
+  (let ([mapping (make-type-map)])
+    (define result (unify t1 t2 mapping))
+    (replace-type-vars result mapping)))
 
 ;; Unifies types assuming there are no type variables inside self.
 ;; other-type may be a type variable.
@@ -112,7 +117,7 @@
 
 (define (Any-type) (Any-Type))
 
-(struct Bottom-Type () #:transparent
+(struct Bottom-Type Any-Type () #:transparent
   #:methods gen:Type
   [(define (is-supertype? self other-type)
      (Bottom-Type? other-type))
