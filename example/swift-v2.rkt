@@ -3,6 +3,8 @@
 ;; An optimization in the Swift compiler -- identifying and repairing
 ;; Markov blankets of affected variables when the graph structure
 ;; changes.
+;; Unlike swift.rkt, here we assume that we do not have access to a
+;; Graph type, and so we have to model it ourselves.
 
 (require "../src/constructs.rkt" "../src/grammar.rkt")
 
@@ -17,23 +19,30 @@
 ;; Mutable values ;;
 ;;;;;;;;;;;;;;;;;;;;
 
-;; TODO: Typically define-incremental requires an initialization
-;; expression, but that doesn't make sense for graph.
-;; This also arises when defining symbolic constants, such as
-;; word->document in LDA.
-;; Need to have a mechanism to use symbolic values at compile time and
-;; replace them with concrete initial values at run time.
-;; TODO: Ideally, the programmer would be able to say "the only update
-;; I care about is remove-child followed by add-child on the same
-;; node", so something like:
-;; (define-update (change-child node old-child new-child)
-;;   (remove-child-graph! node old-child)
-;;   (add-child-graph! node new-child))
-;; However, then we must somehow infer the various properties of
-;; updates that are used in synthesis. (See symbolic-update-code in
-;; types.rkt -- we need to be able to create that function
-;; automatically for the new update.)
-(define-incremental graph (DAG-type Node NUM_NODES) () (add-child remove-child))
+;; An update that allows us to replace one child with another, or one
+;; parent with another.
+(define-update (replace struc [node Node] [old-value Node] [new-value Node])
+  (let ([s (vector-ref struc node)])
+    (set-remove! s old-value)
+    (set-add! s new-value)))
+
+(define-incremental node->parents (Vector-type Node (Set-type Node)) () (replace))
+
+(define-incremental node->children (Vector-type Node (Set-type Node)) () (replace)
+  (let ([vec (build-vector NUM_NODES
+                           (lambda (i) (make-set NUM_NODES)))])
+    (for* ([node NUM_NODES]
+           [n (vector-ref node->parents node)])
+      (set-add! (vector-ref vec n) node))
+    vec))
+
+  ;; Alternative functional style:
+  ;; (build-vector
+  ;;  NUM_NODES
+  ;;  (lambda (node)
+  ;;    (list->set
+  ;;     (filter (lambda (n) (set-member? node (vector-ref node->parents n)))
+  ;;             (range NUM_NODES)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Incremental structures ;;
@@ -45,10 +54,10 @@
    (lambda (node)
      ;; Markov blanket consists of parents, children, and children's
      ;; parents (aunts)
-     (let* ([parents (node-parents graph node)]
-            [children (node-children graph node)]
+     (let* ([parents (vector-ref node->parents node)]
+            [children (vector-ref node->children node)]
             [aunts (apply set-union
-                          (map (curry node-parents graph)
+                          (map (curry vector-ref node->parents)
                                (set->list children)))])
 
        ;; Don't include the current node
