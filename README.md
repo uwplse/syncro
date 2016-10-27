@@ -1,1 +1,1 @@
-To run the code, install Rosette and Graph using `raco`, and then run `simplified-lda.rkt` under `full-example`.
+To run the code, install Rosette and Graph using `raco`, and then run `simplified-lda.rkt` under `example`.
