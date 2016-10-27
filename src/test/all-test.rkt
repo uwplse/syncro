@@ -1,6 +1,7 @@
 #lang racket
 
-(require "types-test.rkt" "variable-test.rkt")
+(require "rosette-util-test.rkt" "types-test.rkt" "variable-test.rkt")
 
-(+ (run-types-tests)
-   (run-variable-tests))
+(+ (run-variable-tests)
+   (run-rosette-util-tests)
+   (run-types-tests))

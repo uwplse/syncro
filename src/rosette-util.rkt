@@ -4,7 +4,7 @@
 
 (require "types.rkt")
 
-(provide define-lifted lift lifted? if^ begin^ define^ set!^
+(provide define-lifted lifted? if^ begin^ define^ set!^
          eval-lifted lifted-code infer-type
          ;; grammar.rkt defines Terminals, which are a subtype of lifted-variable
          lifted-variable lifted-variable-val lifted-variable-var lifted-variable-type
@@ -69,7 +69,7 @@
    (define/generic gen-lifted-code lifted-code)
    
    (define (eval-lifted self)
-     (for ([arg (lifted-begin-args self)])
+     (for/last ([arg (lifted-begin-args self)])
        (gen-eval-lifted arg)))
 
    (define (lifted-code self)
