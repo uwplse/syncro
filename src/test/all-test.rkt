@@ -1,10 +1,11 @@
 #lang racket
 
-(require "grammar-test.rkt" "rosette-util-test.rkt" "types-test.rkt"
-         "variable-test.rkt")
+(require "grammar-test.rkt" "operators-test.rkt" "rosette-util-test.rkt"
+         "types-test.rkt" "variable-test.rkt")
 
 (define num-errors
-  (+ (run-variable-tests)
+  (+ (run-operators-tests)
+     (run-variable-tests)
      (run-types-tests)
      (run-rosette-util-tests)
      (run-grammar-tests)))

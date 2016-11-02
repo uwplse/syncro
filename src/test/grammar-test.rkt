@@ -1,7 +1,7 @@
 #lang rosette
 
 (require rackunit rackunit/text-ui)
-(require "../grammar.rkt" "../rosette-util.rkt" "../types.rkt")
+(require "../grammar.rkt" "../rosette-util.rkt" "../types.rkt" "../variable.rkt")
 
 (provide run-grammar-tests)
 
@@ -9,31 +9,22 @@
   (test-suite
    "Tests for grammar.rkt"
 
-   (test-case "vector operations"
-     (let ([vec (vector 3 2 0 3)])
-       (check-equal? (vector-sum vec) 8)
-       (vector-increment! vec 0)
-       (check-equal? (vector-sum vec) 9)
-       (vector-decrement! vec 1)
-       (check-equal? (vector-sum vec) 8)
-       (check-equal? vec (vector 4 1 0 3))))
-
-   (test-case "Terminals"
+   (test-case "Terminal info"
      (let* ([info (new Terminal-Info%)]
             [int (Integer-type)]
             [idx (Index-type)]
             [bool (Boolean-type)]
             [any (Any-type)]
             [vec (Vector-type int bool)]
-            [z (Terminal (lifted-variable 3 'z int) (set))])
+            [z (make-lifted-variable 'z int #:value 3)])
        
        (define (make a b c #:mutable m)
          (send info make-and-add-terminal a b c #:mutable m))
        
        (define (get #:type type . flags)
          (list->set
-          (map lifted-variable-var
-               (send/apply info get-vars #:type type flags))))
+          (map variable-symbol
+               (send/apply info get-terminals #:type type flags))))
 
        (make 'v 1 idx #:mutable #t)
        (make 'w "foo" any #:mutable #f)
