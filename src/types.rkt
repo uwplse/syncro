@@ -1,7 +1,5 @@
 #lang rosette
 
-(require (only-in racket/struct make-constructor-style-printer))
-
 (provide Any-type Bottom-type Index-type Boolean-type Integer-type Enum-type
          Vector-type Procedure-type Error-type Void-type Type? symbolic?
          (rename-out [Vector-Type-index-type Vector-index-type]
@@ -118,12 +116,9 @@
      '(Any-type))]
 
   #:methods gen:custom-write
-  [(define write-proc
-     (make-constructor-style-printer
-      (lambda (obj)
-        (car (repr obj)))
-      (lambda (obj)
-        (cdr (repr obj)))))])
+  [(define (write-proc self port mode)
+     ((if mode write display)
+      (repr self) port))])
 
 (define (Any-type) (Any-Type))
 

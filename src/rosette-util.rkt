@@ -2,8 +2,6 @@
 ;; once synthesis is complete.
 #lang rosette
 
-(require (only-in racket/struct make-constructor-style-printer))
-
 (require "variable.rkt" "types.rkt")
 
 (provide define-lifted lifted? if^ begin^ define-expr^ set!^
@@ -39,14 +37,11 @@
 ;; (defined by define-generics above).
 (struct lifted-writer () #:transparent
   #:methods gen:custom-write
-  [(define write-proc
-     ;; Inefficient because we call lifted-code twice, but it's fine
-     ;; because it is not exponential.
-     (make-constructor-style-printer
-      (lambda (obj)
-        (car (lifted-code obj)))
-      (lambda (obj)
-        (cdr (lifted-code obj)))))])
+  [(define (write-proc self port mode)
+     (define proc (if mode write display))
+     (display "(lifted " port)
+     (proc (lifted-code self) port)
+     (display ")" port))])
 
 (struct lifted-variable variable () #:transparent
   #:methods gen:lifted
@@ -63,8 +58,8 @@
   [(define (infer-type self)
      (variable-type self))]
 
-  ;#:methods gen:custom-write
-  #;[(define (write-proc self port mode)
+  #:methods gen:custom-write
+  [(define (write-proc self port mode)
      ((if mode write display)
       (variable-symbol self) port))])
 
