@@ -8,7 +8,7 @@
 ;; Various helpers that simply get information out of data structures.
 
 (define (get-constant-info vars)
-  (let ([typed-vars (filter typed-variable? vars)])
+  (let ([typed-vars (filter variable-has-type? vars)])
     (list (map variable-definition vars)
           (map variable-symbol typed-vars)
           (map variable-type typed-vars))))
@@ -91,7 +91,7 @@
         ;; Note: Here we use (repr type) to get an expression that
         ;; evaluates to the type, but we could also store this
         ;; expression taken straight from the user program.
-        `(send terminal-info add-terminal ',var ,var ,(repr type)
+        `(send terminal-info make-and-add-terminal ',var ,var ,(repr type)
                #:mutable ,mutable))
 
       (define add-terminals
@@ -167,11 +167,11 @@
                  ;; Symbolically run the sampled program
                  (eval-lifted program)
                  ;; Example: (assert (equal? num2 (build-vector ...)))
-                 (assert (equal? (eval-lifted (send terminal-info get-by-id ',output-id))
+                 (assert (equal? (eval-lifted (send terminal-info get-terminal-by-id ',output-id))
                                  ,output-expr))))))
            
            (and (sat? synth)
-                (evaluate (lifted-code program) synth))))
+                (lifted-code (evaluate program synth)))))
 
       ;(pretty-print rosette-code)
       (define result (make-sexp (run-in-rosette rosette-code)))

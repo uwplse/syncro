@@ -1,5 +1,7 @@
 #lang rosette
 
+(require (only-in racket/struct make-constructor-style-printer))
+
 (provide Any-type Bottom-type Index-type Boolean-type Integer-type Enum-type
          Vector-type Procedure-type Error-type Void-type Type? symbolic?
          (rename-out [Vector-Type-index-type Vector-index-type]
@@ -113,7 +115,15 @@
      (Any-Type? other-type))
 
    (define (repr self)
-     '(Any-type))])
+     '(Any-type))]
+
+  #:methods gen:custom-write
+  [(define write-proc
+     (make-constructor-style-printer
+      (lambda (obj)
+        (car (repr obj)))
+      (lambda (obj)
+        (cdr (repr obj)))))])
 
 (define (Any-type) (Any-Type))
 
@@ -338,7 +348,12 @@
 
            [else
             (error (format "Unknown Enum update type: ~a~%"
-                           update-type))]))])
+                           update-type))]))]
+  
+  #:methods gen:custom-write
+  [(define (write-proc self port mode)
+     ((if mode write display)
+      (Enum-Type-name self) port))])
 
 (define (Enum-type name num-items)
   (Enum-Type name num-items))

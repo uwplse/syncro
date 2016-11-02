@@ -47,9 +47,10 @@
     [(_ var type-exp val)
      (begin
        (define type (run-in-rosette (syntax->datum #'type-exp)))
-       (constants (cons (typed-variable (syntax->datum #'var)
-                                        (syntax->datum #'(define var val))
-                                        type)
+       (constants
+        (cons (make-variable (syntax->datum #'var)
+                             #:type type
+                             #:definition (syntax->datum #'(define var val)))
                         (constants)))
        (run-in-rosette (syntax->datum #'(define var val)))
        (syntax/loc stx
@@ -61,9 +62,10 @@
   (syntax-case stx ()
     [(_ var val)
      (begin
-       (constants (cons (variable (syntax->datum #'var)
-                                  (syntax->datum #'(define var val)))
-                        (constants)))
+       (constants
+        (cons (make-variable (syntax->datum #'var)
+                             #:definition (syntax->datum #'(define var val)))
+              (constants)))
        (run-in-rosette (syntax->datum #'(define var val)))
        (syntax/loc stx
          (define var val)))]))

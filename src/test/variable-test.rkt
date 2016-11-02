@@ -14,24 +14,21 @@
           [mutable-var (with-flags int-var 'mutable)]
           [many-flags-var (with-flags mutable-var 'flag1 'flag2 'flag3)])
 
-     (test-case
-         "Basic variables"
+     (test-case "Basic variables"
        (check-false (variable? 'x))
        (check-true (variable? var))
        (check-equal? (variable-symbol var) 'x)
        (check-equal? (variable-symbol many-flags-var) 'x)
        (check-equal? (variable-definition var) '(define x 3)))
 
-     (test-case
-         "Typed variables"
+     (test-case "Typed variables"
        (check-false (typed-variable? var))
        (check-true (typed-variable? mutable-var))
        (check-exn exn:fail? (lambda () (variable-type var)))
        (check-equal? (variable-type int-var) (Integer-type))
        (check-equal? (variable-type many-flags-var) (Integer-type)))
 
-     (test-case
-         "with-flags"
+     (test-case "with-flags"
        (check-false (variable-has-flags? int-var))
        (check-true (variable-has-flags? mutable-var))
        (check-exn exn:fail? (lambda () (variable-flags int-var)))

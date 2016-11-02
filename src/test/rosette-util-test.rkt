@@ -35,8 +35,7 @@
        [= =^ cmp-type] [< <^ cmp-type]
        [+ +^ arith-type] [- -^ arith-type] [* *^ arith-type])
 
-     (test-case
-         "eval-lifted and lifted-code invariant"
+     (test-case "eval-lifted and lifted-code invariant"
        (define lifted-objects
          (list (+^ 2 3)
                (if^ (=^ 3 (+^ 1 2))
@@ -49,5 +48,5 @@
      )))
 
 (define (run-rosette-util-tests)
-  (displayln "Running tests for types.rkt")
+  (displayln "Running tests for rosette-util.rkt")
   (run-tests tests))

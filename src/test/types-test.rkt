@@ -22,8 +22,7 @@
           [err (Error-type)]
           [void (Void-type)]
           [all (list any bot idx bool int enum vec proc err void)])
-     (test-case
-         "Constructors, selectors and equality for types"
+     (test-case "Constructors, selectors and equality for types"
        (check-exn exn:fail? (lambda () (Vector-type bool int)))
        (check-exn exn:fail? (lambda () (Vector-type any int)))
        
@@ -44,8 +43,7 @@
        (check-not-equal? proc (Procedure-type (list int bool) (Integer-type)))
        (check-not-equal? vec (Vector-type 10 int)))
 
-     (test-case
-         "Predicates on types"
+     (test-case "Predicates on types"
        (check-false (type? 12))
 
        (for ([t all])
@@ -91,8 +89,7 @@
        (check-true (mutable-structure? vec))
        (check-false (symbolic? err)))
 
-     (test-case
-         "Recursive supertyping"
+     (test-case "Recursive supertyping"
        (check-true (is-supertype? (Vector-type int bool)
                                   (Vector-type idx bot)))
        (check-false (is-supertype? (Vector-type idx bool)
@@ -132,16 +129,14 @@
                                                              (Vector-type idx bool)))
                                        any))))
 
-     (test-case
-         "Repr method"
+     (test-case "Repr method"
        (for ([t all])
          ;; Special rules for Enums that are not tested here, see types.rkt
          ;; vec contains an enum, so it will also not work
          (unless (member t (list enum vec))
            (check-equal? t (eval (repr t) ns)))))
 
-     (test-case
-         "Unification without type variables"
+     (test-case "Unification without type variables"
        (for* ([t1 all]
               [t2 all])
          (cond [(is-supertype? t1 t2)
@@ -157,8 +152,7 @@
                            (format "~a and ~a have no subtyping relation but unification did not fail"
                                    (repr t1) (repr t2)))])))
 
-     (test-case
-         "Unification with type variables"
+     (test-case "Unification with type variables"
        (match-define (list a1 a2 a3)
          (build-list 3 (lambda (i) (Type-var))))
 
@@ -179,8 +173,7 @@
                      (Procedure-type (list (Vector-type a1 a2) a1) a2)
                      (Procedure-type (list (Vector-type int a1) a3) bool)))))
 
-     (test-case
-         "apply-type"
+     (test-case "apply-type"
        (match-define (list a1 a2 a3)
          (build-list 3 (lambda (i) (Type-var))))
 
