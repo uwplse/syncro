@@ -4,9 +4,9 @@
          Vector-type Procedure-type Error-type Void-type Type? symbolic?
          (rename-out [Vector-Type-index-type Vector-index-type]
                      [Vector-Type-output-type Vector-output-type])
-         is-supertype? repr mutable-structure? symbolic-code
+         get-parent is-supertype? repr mutable-structure? symbolic-code
          generate-update-arg-names update-code old-values-code symbolic-update-code
-         Type-var unify-types apply-type
+         Type-var unify-types apply-type union-types
          type? Any-type? Bottom-type? Boolean-type? Index-type? Integer-type? Enum-type?
          Vector-type? Procedure-type? Error-type? Void-type?)
 
@@ -33,6 +33,8 @@
 
 
 (define-generics Type
+  ;; Returns an instance of the parent type with the same fields.
+  (get-parent Type)
   ;; Returns #t if type is a supertype of other-type, #f otherwise
   (is-supertype? Type other-type)
   ;; Returns an S-expression that could be used to create a new
@@ -45,6 +47,9 @@
   ;; Replaces type variables in this type with their values as given
   ;; by the type mapping.
   (replace-type-vars Type mapping)
+  ;; Returns the lowest common supertype, that is, the most specific
+  ;; type such that both arguments are subtypes of that type.
+  (union-types Type other-type)
 
   #:fallbacks
   [(define (unify self other-type mapping)
@@ -52,7 +57,10 @@
 
    ;; Most types can never have type variables inside themselves
    (define (replace-type-vars self mapping)
-     self)])
+     self)
+
+   (define (union-types self other-type)
+     (default-union-types self other-type))])
 
 (define (unify-types t1 t2)
   (let ([mapping (make-type-map)])
@@ -71,7 +79,24 @@
          self]
         [else
          (error
-          (format "Incompatible types for unification: ~a and ~a" self other-type))]))
+          (format "Incompatible types for unification: ~a and ~a"
+                  self other-type))]))
+
+;; Unifies types that don't have parameters. Types with parameters
+;; (eg. Vectors) will have to do something extra.
+(define (default-union-types self other-type)
+  (cond [(Bottom-type? self)
+         other-type]
+        [(Bottom-type? other-type)
+         self]
+        [(is-supertype? self other-type)
+         self]
+        [(is-supertype? other-type self)
+         other-type]
+        [else
+         ;; Neither self nor other-type can be Any-type (since that is
+         ;; a supertype of everything], so they must have a parent.
+         (union-types (get-parent self) (get-parent other-type))]))
 
 (define-generics symbolic
   ;; Returns #t if it is possible to modify elements in a value of
@@ -109,7 +134,10 @@
 
 (struct Any-Type () #:transparent
   #:methods gen:Type
-  [(define (is-supertype? self other-type)
+  [(define (get-parent self)
+     (error "Any-type does not have a parent"))
+
+   (define (is-supertype? self other-type)
      (Any-Type? other-type))
 
    (define (repr self)
@@ -124,7 +152,10 @@
 
 (struct Bottom-Type Any-Type () #:transparent
   #:methods gen:Type
-  [(define (is-supertype? self other-type)
+  [(define (get-parent self)
+     (struct-copy Any-Type self))
+
+   (define (is-supertype? self other-type)
      (Bottom-Type? other-type))
 
    (define (repr self)
@@ -134,7 +165,10 @@
 
 (struct Boolean-Type Any-Type () #:transparent
   #:methods gen:Type
-  [(define (is-supertype? self other-type)
+  [(define (get-parent self)
+     (struct-copy Any-Type self))
+
+   (define (is-supertype? self other-type)
      (or (Bottom-Type? other-type)
          (Boolean-Type? other-type)))
 
@@ -191,7 +225,10 @@
 
 (struct Index-Type Any-Type () #:transparent
   #:methods gen:Type
-  [(define (is-supertype? self other-type)
+  [(define (get-parent self)
+     (struct-copy Any-Type self))
+
+   (define (is-supertype? self other-type)
      (or (Bottom-Type? other-type)
          (Index-Type? other-type)))
 
@@ -202,7 +239,10 @@
 
 (struct Integer-Type Index-Type () #:transparent
   #:methods gen:Type
-  [(define (is-supertype? self other-type)
+  [(define (get-parent self)
+     (struct-copy Index-Type self))
+
+   (define (is-supertype? self other-type)
      (or (Bottom-Type? other-type)
          (Integer-Type? other-type)))
 
@@ -282,7 +322,10 @@
 
 (struct Enum-Type Index-Type (name num-items)
   #:methods gen:Type
-  [;; If you have Word be (Enum-Type 3) and Topic be (Enum-Type 3), they are
+  [(define (get-parent self)
+     (struct-copy Index-Type self))
+
+   ;; If you have Word be (Enum-Type 3) and Topic be (Enum-Type 3), they are
    ;; still semantically different and Words should not replace
    ;; Topics. So, check subtyping by identity equality.
    ;; NOTE: This means that you cannot replace Topic with (Enum-Type% 3),
@@ -359,7 +402,11 @@
    (define/generic gen-repr repr)
    (define/generic gen-unify unify)
    (define/generic gen-replace-type-vars replace-type-vars)
+   (define/generic gen-union-types union-types)
    
+   (define (get-parent self)
+     (struct-copy Any-Type self))
+
    (define (is-supertype? self other-type)
      (or (Bottom-Type? other-type)
          (and (Vector-Type? other-type)
@@ -405,8 +452,17 @@
    (define (replace-type-vars self mapping)
      (Vector-Type (Vector-Type-len self)
                   (gen-replace-type-vars (Vector-Type-index-type self) mapping)
-                  (gen-replace-type-vars (Vector-Type-output-type self) mapping)))]
-             
+                  (gen-replace-type-vars (Vector-Type-output-type self) mapping)))
+
+   (define (union-types self other-type)
+     (if (Vector-Type? other-type)
+         (match-let ([(Vector-Type self-len self-index self-output) self]
+                     [(Vector-Type other-len other-index other-output) other-type])
+           (Vector-Type (if (equal? self-len other-len) self-len 'unknown)
+                        (gen-union-types self-index other-index)
+                        (gen-union-types self-output other-output)))
+         (default-union-types self other-type)))]
+  
   #:methods gen:symbolic
   [(define/generic gen-mutable-structure? mutable-structure?)
    (define/generic gen-symbolic-code symbolic-code)
@@ -551,6 +607,10 @@
    (define/generic gen-repr repr)
    (define/generic gen-unify unify)
    (define/generic gen-replace-type-vars replace-type-vars)
+   (define/generic gen-union-types union-types)
+
+   (define (get-parent self)
+     (struct-copy Any-Type self))
 
    (define (is-supertype? self other-type)
      (or (Bottom-Type? other-type)
@@ -595,9 +655,20 @@
            (Procedure-type new-domain new-range))))
 
    (define (replace-type-vars self mapping)
-     (Procedure-type (map (lambda (x) (gen-replace-type-vars x mapping))
-                          (Procedure-Type-domain-types self))
-                     (gen-replace-type-vars (Procedure-Type-range-type self) mapping)))])
+     (Procedure-type
+      (map (lambda (x) (gen-replace-type-vars x mapping))
+           (Procedure-Type-domain-types self))
+      (gen-replace-type-vars (Procedure-Type-range-type self) mapping)))
+
+   (define (union-types self other-type)
+     (if (Procedure-Type? other-type)
+         (match-let ([(Procedure-Type self-domain self-range) self]
+                     [(Procedure-Type other-domain other-range) other-type])
+           (unless (= (length self-domain) (length other-domain))
+             (error "Cannot unify procedures that require different numbers of arguments"))
+           (Procedure-Type (map gen-union-types self-domain other-domain)
+                           (gen-union-types self-range other-range)))
+         (default-union-types self other-type)))])
 
 (define (Procedure-type domain-types range-type)
   (Procedure-Type domain-types range-type))
@@ -622,7 +693,10 @@
 
 (struct Error-Type Any-Type () #:transparent
   #:methods gen:Type
-  [(define (is-supertype? self other-type)
+  [(define (get-parent self)
+     (struct-copy Any-Type self))
+
+   (define (is-supertype? self other-type)
      (or (Bottom-Type? other-type)
          (Error-Type? other-type)))
 
@@ -633,7 +707,10 @@
 
 (struct Void-Type Any-Type () #:transparent
   #:methods gen:Type
-  [(define (is-supertype? self other-type)
+  [(define (get-parent self)
+     (struct-copy Any-Type self))
+
+   (define (is-supertype? self other-type)
      (or (Bottom-Type? other-type)
          (Void-Type? other-type)))
 
@@ -651,6 +728,9 @@
   #:methods gen:Type
   [(define/generic gen-replace-type-vars replace-type-vars)
    
+   (define (get-parent self)
+     (error "Cannot call get-parent on a type variable"))
+
    (define (is-supertype? self other-type)
      (error "Cannot call is-supertype? on a type variable"))
 

@@ -8,6 +8,16 @@
 (define-namespace-anchor anchor)
 (define ns (namespace-anchor->namespace anchor))
 
+(define-syntax (commutative stx)
+  (syntax-case stx ()
+    [(_ (check (proc x y) z))
+     (syntax/loc stx
+       (commutative (check (proc x y) z (format "Failed test: ~a" '(proc x y)))))]
+    [(_ (check (proc x y) z message))
+     (syntax/loc stx
+       (begin (check (proc x y) z message)
+              (check (proc y x) z message)))]))
+
 (define tests
   (test-suite
    "Tests for types.rkt"
@@ -42,6 +52,17 @@
        (check-not-equal? idx int)
        (check-not-equal? proc (Procedure-type (list int bool) (Integer-type)))
        (check-not-equal? vec (Vector-type 10 int)))
+
+     (test-case "get-parent"
+       (check-equal? (get-parent bot) any)
+       (check-equal? (get-parent idx) any)
+       (check-equal? (get-parent bool) any)
+       (check-equal? (get-parent int) idx)
+       (check-equal? (get-parent enum) idx)
+       (check-equal? (get-parent vec) any)
+       (check-equal? (get-parent proc) any)
+       (check-equal? (get-parent err) any)
+       (check-equal? (get-parent void) any))
 
      (test-case "Predicates on types"
        (check-false (type? 12))
@@ -140,13 +161,15 @@
        (for* ([t1 all]
               [t2 all])
          (cond [(is-supertype? t1 t2)
-                (check-equal? (unify-types t1 t2) t2
-                              (format "~a is a supertype of ~a but unification does not give ~a"
-                                      (repr t1) (repr t2) (repr t2)))]
+                (check-equal?
+                 (unify-types t1 t2) t2
+                 (format "~a is a supertype of ~a but unification does not give ~a"
+                          (repr t1) (repr t2) (repr t2)))]
                [(is-supertype? t2 t1)
-                (check-equal? (unify-types t1 t2) t1
-                              (format "~a is a supertype of ~a but unification does not give ~a"
-                                      (repr t2) (repr t1) (repr t1)))]
+                (check-equal?
+                 (unify-types t1 t2) t1
+                 (format "~a is a supertype of ~a but unification does not give ~a"
+                         (repr t2) (repr t1) (repr t1)))]
                [else
                 (check-exn exn:fail? (lambda () (unify-types t1 t2))
                            (format "~a and ~a have no subtyping relation but unification did not fail"
@@ -156,22 +179,57 @@
        (match-define (list a1 a2 a3)
          (build-list 3 (lambda (i) (Type-var))))
 
-       (check-equal? (unify-types int a1) int)
-       (check-equal? (unify-types (Vector-type a1 int) (Vector-type int a2))
-                     (Vector-type int int))
+       (commutative (check-equal? (unify-types int a1) int))
+       (commutative
+        (check-equal? (unify-types (Vector-type a1 int) (Vector-type int a2))
+                      (Vector-type int int)))
        (check-exn exn:fail?
                   (lambda ()
                     (unify-types (Vector-type a1 int)
                                  (Vector-type int bool))))
-       (check-equal? (unify-types
-                      (Procedure-type (list (Vector-type a1 a2) a1) a2)
-                      (Procedure-type (list (Vector-type int a1) a3) int))
-                     (Procedure-type (list (Vector-type int int) int) int))
+
+       (commutative
+        (check-equal? (unify-types
+                       (Procedure-type (list (Vector-type a1 a2) a1) a2)
+                       (Procedure-type (list (Vector-type int a1) a3) int))
+                      (Procedure-type (list (Vector-type int int) int) int)))
        (check-exn exn:fail?
                   (lambda ()
                     (unify-types
                      (Procedure-type (list (Vector-type a1 a2) a1) a2)
                      (Procedure-type (list (Vector-type int a1) a3) bool)))))
+
+     (test-case "union-types"
+       (for ([t all])
+         (check-equal? (union-types t t) t)
+         (commutative (check-equal? (union-types t any) any))
+         (commutative (check-equal? (union-types t bot) t)))
+
+       (commutative (check-equal? (union-types vec proc) any))
+       (commutative (check-equal? (union-types int enum) idx))
+       (commutative (check-equal? (union-types int bool) any))
+       (commutative (check-equal? (union-types int idx) idx))
+       
+       (commutative (check-equal? (union-types vec (Vector-type int int))
+                                  (Vector-type int any)))
+       (commutative (check-equal? (union-types vec (Vector-type enum bool))
+                                  (Vector-type idx bool)))
+       (commutative (check-equal? (union-types vec (Vector-type enum int))
+                                  (Vector-type idx any)))
+
+       ;; For now, we disallow unions of procedures with different
+       ;; numbers of arguments:
+       (check-exn exn:fail?
+                  (lambda ()
+                    (union-types proc (Procedure-type (list int) int))))
+       (commutative
+        (check-equal? (union-types proc (Procedure-type (list enum int) bool))
+                      (Procedure-type (list idx int) any)))
+       (commutative
+        (check-equal? (union-types
+                       (Procedure-type (list int) (Vector-type int enum))
+                       (Procedure-type (list int) (Vector-type idx bool)))
+                      (Procedure-type (list int) (Vector-type idx any)))))
 
      (test-case "apply-type"
        (match-define (list a1 a2 a3)

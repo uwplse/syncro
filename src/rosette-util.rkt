@@ -5,7 +5,7 @@
 (require "variable.rkt" "types.rkt")
 
 (provide define-lifted lifted? if^ begin^ define-expr^ set!^
-         eval-lifted lifted-code infer-type
+         eval-lifted lifted-code infer-type lifted-writer
          gen:lifted gen:inferable
          lifted-error lifted-error?
          make-lifted-variable)
