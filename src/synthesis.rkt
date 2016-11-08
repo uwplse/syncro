@@ -151,9 +151,8 @@
            (define terminal-info (new Terminal-Info%))
            ,(add-terminal-code output-id output-type #:mutable #t)
            ,@add-terminals
-           (define program (grammar terminal-info 3 4 #:num-temps 0 #:guard-depth 1))
-           ;(define program (grammar terminal-info 2 1 #:num-temps 0 #:guard-depth #f))
-           
+           (define program
+             (grammar terminal-info 3 4 #:num-temps 0 #:guard-depth 1))
            (define synth
              (time
               (synthesize
@@ -168,7 +167,8 @@
                  (eval-lifted program)
                  ;; Example: (assert (equal? num2 (build-vector ...)))
                  (assert (equal? (eval-lifted (send terminal-info get-terminal-by-id ',output-id))
-                                 ,output-expr))))))
+                                 ,output-expr))
+                 (display "Completed symbolic generation!\n")))))
            
            (and (sat? synth)
                 (lifted-code (evaluate program synth)))))

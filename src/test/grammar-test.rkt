@@ -111,9 +111,6 @@
         '(let ()
            (let ()
              (vector-set! num1 (vector-ref word->topic word1) 0)
-             #;(vector-set! num1
-                          (vector-ref word->topic word1)
-                          (* 2 (vector-ref num1 (vector-ref word->topic))))
              (let ()
                (vector-decrement! num1
                                   (vector-ref word->topic word2))
