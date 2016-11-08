@@ -199,10 +199,11 @@
 
 (struct lifted-set! lifted-writer (var val) #:transparent
   #:methods gen:lifted
-  [(define/generic gen-lifted-code lifted-code)
+  [(define/generic gen-eval-lifted eval-lifted)
+   (define/generic gen-lifted-code lifted-code)
    (define (eval-lifted self)
      (set-variable-value! (lifted-set!-var self)
-                          (lifted-set!-val self))
+                          (gen-eval-lifted (lifted-set!-val self)))
      (void))
 
    (define (lifted-code self)
