@@ -87,12 +87,12 @@
       (match-define (list output-relation _ output-type output-expr define-output)
         (get-id-info output-id))
 
-      (define (add-terminal-code var type #:mutable [mutable #f])
+      (define (add-terminal-code var type #:mutable? [mutable? #f])
         ;; Note: Here we use (repr type) to get an expression that
         ;; evaluates to the type, but we could also store this
         ;; expression taken straight from the user program.
         `(send terminal-info make-and-add-terminal ',var ,var ,(repr type)
-               #:mutable ,mutable))
+               #:mutable? ,mutable?))
 
       (define add-terminals
         (map add-terminal-code
@@ -149,10 +149,11 @@
 
            ;; Create the grammar and sample a program
            (define terminal-info (new Terminal-Info%))
-           ,(add-terminal-code output-id output-type #:mutable #t)
+           ,(add-terminal-code output-id output-type #:mutable? #t)
            ,@add-terminals
+           (printf "Creating symbolic program~%")
            (define program
-             (grammar terminal-info 3 4 #:num-temps 0 #:guard-depth 1))
+             (time (grammar terminal-info 3 4 #:num-temps 0 #:guard-depth 1)))
            (define synth
              (time
               (synthesize
@@ -164,14 +165,16 @@
                #:guarantee
                (begin
                  ;; Symbolically run the sampled program
-                 (eval-lifted program)
+                 (displayln "Running the generated program")
+                 (time (eval-lifted program))
                  ;; Example: (assert (equal? num2 (build-vector ...)))
                  (assert (equal? (eval-lifted (send terminal-info get-terminal-by-id ',output-id))
                                  ,output-expr))
                  (display "Completed symbolic generation!\n")))))
            
-           (and (sat? synth)
-                (lifted-code (evaluate program synth)))))
+           (define result (and (sat? synth)
+                               (lifted-code (evaluate program synth))))
+           result))
 
       ;(pretty-print rosette-code)
       (define result (make-sexp (run-in-rosette rosette-code)))

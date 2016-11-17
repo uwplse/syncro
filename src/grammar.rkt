@@ -2,23 +2,46 @@
 
 (require racket/syntax rosette/lib/angelic)
 
-(require "operators.rkt" "rosette-util.rkt" "types.rkt" "variable.rkt")
+(require "alist.rkt" "operators.rkt" "rosette-util.rkt" "types.rkt" "variable.rkt")
 
 (provide grammar Terminal-Info% eval-lifted lifted-code)
 
 ;; Counts the number of symbolic booleans created during a run of the grammar.
+(define num-vars-without-filtering (make-parameter 0))
 (define num-boolean-vars (make-parameter 0))
+(define num-vars-if-optimized (make-parameter 0))
+
+(define (fold-expr f expr default)
+  (if (and (not (term? expr)) (integer? expr))
+      expr
+      (match expr
+        [(expression op child ...)
+         (apply f (map (lambda (e) (fold-expr f e default))
+                       child))]
+        [(term content type)
+         default])))
+
+(define (get-max-from-expr expr [default 0])
+  (fold-expr max expr default))
+
+(define (get-sum-from-expr expr)
+  (fold-expr + expr 0))
 
 ;; Takes a list of lifted programs and produces a value representing a
 ;; choice of exactly one of them.
 (define (my-choose* . args)
-  (define valid-args args)
   ;; TODO: Following line sometimes speeds it up, sometimes slows it down.
-  #;(define valid-args (filter (lambda (arg) (not (lifted-error? arg))) args))
+  (define valid-args (filter (compose not lifted-error?) args))
   (if (null? valid-args)
       (lifted-error)
-      (begin (num-boolean-vars (+ -1 (length valid-args) (num-boolean-vars)))
-             (apply choose* valid-args))))
+      (let* ([symbolic-num-new (length valid-args)])
+        (num-vars-without-filtering (+ (length args) -1
+                                       (num-vars-without-filtering)))
+        (num-boolean-vars (+ (get-sum-from-expr symbolic-num-new) -1
+                             (num-boolean-vars)))
+        (num-vars-if-optimized (+ (get-max-from-expr symbolic-num-new) -1
+                                  (num-vars-if-optimized)))
+        (apply choose* valid-args))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;
 ;; Lifting operators ;;
@@ -55,6 +78,29 @@
   [= =^ cmp-type] [< <^ cmp-type]
   [+ +^ arith-type] [- -^ arith-type] [* *^ arith-type] #;[/ /^ arith-type])
 
+(struct special-form (name constructor) #:transparent)
+(define operator-info
+  (list void^ vector-increment!^ vector-decrement!^ vector-set!^
+        vector-ref^ equal?^ =^ <^ +^ -^ *^
+        (special-form 'if if^) (special-form 'set! set!^)))
+
+(define (can-have-output-type? operator type)
+  (cond [(not (special-form? operator))
+         (let ([range-type (Procedure-range-type (variable-type operator))])
+           (or (Type-var? range-type)
+               (is-supertype? type range-type)))]
+        [(equal? (special-form-name operator) 'if)
+         #t]
+        [(equal? (special-form-name operator) 'set!)
+         (is-supertype? type (Void-type))]
+        [else
+         (error (format "Unknown special form: ~a" operator))]))
+
+(define (get-operators-with-output-type type)
+  (filter (lambda (op) (can-have-output-type? op type))
+          operator-info))
+
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Grammar construction ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -72,6 +118,130 @@
                  #:num-temps [num-temps 0]
                  #:guard-depth [guard-depth #f])
 
+  (num-vars-without-filtering 0)
+  (num-boolean-vars 0)
+  (num-vars-if-optimized 0)
+  
+  (define proc #;grammar-sharing grammar-basic)
+  (define result
+    (proc terminal-info num-stmts depth #:num-temps num-temps
+          #:guard-depth guard-depth))
+  
+  (printf "Used ~a boolean variables~%Without filtering would be ~a~%If optimized would be ~a~%"
+          (num-boolean-vars)
+          (num-vars-without-filtering)
+          (num-vars-if-optimized))
+  result)
+            
+(define (grammar-sharing terminal-info num-stmts depth
+                         #:num-temps [num-temps 0]
+                         #:guard-depth [guard-depth #f])
+
+  (define if-type
+    (let ([if-alpha (Type-var)])
+      (Procedure-type (list (Boolean-type) if-alpha if-alpha)
+                      if-alpha)))
+  
+  (define (make-subexp-if type->subexp desired-type depth)
+    (match-define (list subexps new-type->subexp)
+      (make-subexp-helper if-type type->subexp desired-type depth))
+    (list (apply if^ subexps) new-type->subexp))
+  
+  (define (make-subexp-set! type->subexp desired-type depth)
+    (let* ([variable
+            (apply my-choose*
+                   (send terminal-info get-terminals #:mutable? #t))]
+           [type (infer-type variable)])
+      (if (alist-has-key? type->subexp type)
+          (list (set!^ variable (alist-get type->subexp type))
+                type->subexp)
+          (let ([subexp (general-grammar type depth)])
+            (list (set!^ variable subexp)
+                  (alist-insert type->subexp type subexp))))))
+
+  (define (make-subexp-proc proc type->subexp desired-type depth)
+    (match-define (list subexps new-type->subexp)
+      (make-subexp-helper (variable-type proc) type->subexp desired-type depth))
+    (list (apply proc subexps) new-type->subexp))
+  
+  (define (make-subexp-helper operator-type type->subexp desired-type depth)
+    (let ([domain (get-domain-given-range operator-type desired-type)]
+          [type->subexp-copy type->subexp]
+          [mapping (make-type-map)])
+      
+      (define (get-or-make-subexp type)
+        (define concrete-type
+          (replace-type-vars type mapping (Any-type)))
+
+        (match-define (list subexp new-copy)
+          (if (alist-has-key? type->subexp-copy concrete-type)
+              (alist-get-and-remove type->subexp-copy concrete-type)
+              (let ([res (general-grammar concrete-type (- depth 1))])
+                (set! type->subexp
+                      (alist-insert type->subexp concrete-type res))
+                (list res type->subexp-copy))))
+
+        (set! type->subexp-copy new-copy)
+        ;; The value of this unify can be seen in if^, where if the
+        ;; first expression chosen is of type Int, this will force the
+        ;; second expression to also have type Int
+        (unless (lifted-error? subexp)
+          (unify type (infer-type subexp) mapping))
+        subexp)
+      
+      (list (map get-or-make-subexp domain) type->subexp)))
+    
+  (define (make-subexp operator type->subexp desired-type depth)
+    (cond [(not (special-form? operator))
+           (make-subexp-proc operator type->subexp desired-type depth)]
+          [(equal? (special-form-name operator) 'if)
+           (make-subexp-if type->subexp desired-type depth)]
+          [(equal? (special-form-name operator) 'set!)
+           (make-subexp-set! type->subexp desired-type depth)]
+          [else
+           (error (format "Unknown special form: ~a" operator))]))
+
+  ;; Type can be symbolic. This may make things tricky.
+  ;; TODO: Is this sound? There may be some programs that we should
+  ;; generate but don't, specifically when the desired-type is
+  ;; symbolic and so we have too much sharing.
+  ;; TODO: Handle mutability correctly
+  (define (general-grammar desired-type depth #:mutable? [mutable? #t])
+    (define operators (get-operators-with-output-type desired-type))
+
+    (define type->subexp (make-alist))
+    ;; Here we are relying on map to process elements sequentially. I
+    ;; think this is guaranteed by map, but am not sure.
+    ;; It would also be okay for map to process things in an arbitrary
+    ;; order, but still sequentially. Parallelism would be bad though.
+    (apply my-choose*
+           (append
+            ;; Base case: Terminals
+            (send terminal-info get-terminals #:type desired-type
+                  #:mutable? mutable?)
+            (if (is-supertype? desired-type (Integer-type))
+                (list (let () (define-symbolic* hole integer?) hole))
+                '())
+            (if (= depth 0)
+                '()
+                (map
+                 (lambda (operator)
+                   (match-let ([(list result new-type->subexp)
+                                (make-subexp operator type->subexp desired-type depth)])
+                     (set! type->subexp new-type->subexp)
+                     result))
+                 operators)))))
+
+  (build-grammar terminal-info num-stmts depth num-temps guard-depth
+                 general-grammar
+                 (lambda (num-stmts depth)
+                   (build-list num-stmts
+                               (lambda (i)
+                                 (general-grammar (Void-type) depth))))))
+
+(define (grammar-basic terminal-info num-stmts depth
+                       #:num-temps [num-temps 0]
+                       #:guard-depth [guard-depth #f])  
   (define (stmt-grammar num-stmts depth)
     (if (= num-stmts 0)
         (void^)
@@ -94,7 +264,7 @@
   ;; vector-set!, vector-increment!, vector-decrement!
   (define (vector-stmt-grammar depth)
     (let* ([vec (expr-grammar (Vector-type (Bottom-type) (Any-type))
-                              (- depth 1) #:mutable #t)]
+                              (- depth 1) #:mutable? #t)]
            [vec-type (infer-type vec)])
       (if (Error-type? vec-type)
           (lifted-error)
@@ -106,27 +276,27 @@
   (define (set!-stmt-grammar depth)
     (let* ([variable
             (apply my-choose*
-                   (send terminal-info get-terminals 'mutable))])
+                   (send terminal-info get-terminals #:mutable? #t))])
       (set!^ variable (expr-grammar (infer-type variable) depth)))) 
 
   ;; If #:mutable is #t, then the return value must be mutable.
   ;; If #:mutable is #f, then the return value may or may not be mutable.
-  (define (expr-grammar desired-type depth #:mutable [mutable #f])
+  (define (expr-grammar desired-type depth #:mutable? [mutable? #f])
     (let ([base (apply my-choose*
-                       (send/apply terminal-info get-terminals
-                                   #:type desired-type
-                                   (if mutable '(mutable) '())))])
+                       (send terminal-info get-terminals
+                             #:type desired-type
+                             #:mutable? mutable?))])
       (if (= depth 0)
           base
           (my-choose* base
                       (base-expr-grammar desired-type depth)
-                      (vector-ref-expr desired-type depth #:mutable mutable)))))
+                      (vector-ref-expr desired-type depth #:mutable? mutable?)))))
 
   ;; vector-ref
-  (define (vector-ref-expr desired-type depth #:mutable [mutable #f])
+  (define (vector-ref-expr desired-type depth #:mutable? [mutable? #f])
     ;; TODO: Force the output type to be the desired-type
     (let* ([vec (expr-grammar (Vector-type (Bottom-type) desired-type)
-                              (- depth 1) #:mutable mutable)]
+                              (- depth 1) #:mutable? mutable?)]
            [vec-type (infer-type vec)])
       (if (Error-type? vec-type)
           (lifted-error)
@@ -162,12 +332,13 @@
                               (+^ i1 i2)
                               (-^ i1 i2)
                               (*^ i1 i2))))))
-
-      
-
       (apply my-choose* options)))
 
-  (num-boolean-vars 0)
+  (build-grammar terminal-info num-stmts depth num-temps guard-depth
+                 expr-grammar stmt-grammar))
+
+(define (build-grammar terminal-info num-stmts depth num-temps guard-depth
+                       expr-grammar stmt-grammar)
   ;; Choose guard
   (define guard-expr
     (and guard-depth (expr-grammar (Boolean-type) guard-depth)))
@@ -181,24 +352,23 @@
   ;; Choose definitions for each variable
   (define definitions
     (for/list ([sym temps])
-      (let* ([subexp (void^) #;(expr-grammar (Any-type) 1)]
+      (let* ([subexp (expr-grammar (Any-type) 1)]
              [result (define-expr^ sym subexp)])
         (send terminal-info make-and-add-terminal sym (eval-lifted subexp)
-              (infer-type subexp) #:mutable #f)
+              (infer-type subexp) #:mutable? #f)
         result)))
 
   ;; Build the program
   (define result
     (apply begin^
-           (append definitions (list (stmt-grammar num-stmts depth)))))
+           (append definitions
+                   (let ([stmts (stmt-grammar num-stmts depth)])
+                     (if (list? stmts) stmts (list stmts))))))
 
   ;; Add guards if required
   (when guard-depth
     (set! result
           (if^ guard-expr (void^) result)))
-  
-  (display
-   (format "Used ~a boolean variables in the grammar~%" (num-boolean-vars)))
   result)
 
 ;;;;;;;;;;;;;;;
@@ -213,12 +383,11 @@
   (class object%
     (super-new)
 
-    (field [symbol->terminal (make-hash)]
-           [all-flags (set 'mutable 'read-only)])
+    (field [symbol->terminal (make-hash)])
 
-    (define/public (make-and-add-terminal symbol value type #:mutable [mutable #f])
+    (define/public (make-and-add-terminal symbol value type #:mutable? [mutable? #f])
       (add-terminal (make-lifted-variable symbol type #:value value
-                                          (if mutable 'mutable 'read-only))))
+                                          #:mutable? mutable?)))
 
     (define/public (add-terminal terminal)
       (define symbol (variable-symbol terminal))
@@ -231,18 +400,12 @@
 
     ;; Returns the terminals which are instances of subtypes of the argument
     ;; type, and which have the associated flags.
-    (define/public (get-terminals #:type [type (Any-type)] . flags) 
-      (define flags-set (list->set flags))
-      (unless (subset? flags-set all-flags)
-        (error (format "Unrecognized flag(s): ~a~%"
-                       (set->list (set-subtract flags-set
-                                                all-flags)))))
-      
+    (define/public (get-terminals #:type [type (Any-type)]
+                                  #:mutable? [mutable? #f])
       (filter (lambda (terminal)
-                (let ([sym-type (variable-type terminal)]
-                      [sym-flags (variable-flags terminal)])
-                  (and (is-supertype? type sym-type)
-                       (subset? flags-set sym-flags))))
+                (and (is-supertype? type (variable-type terminal))
+                     (or (not mutable?)
+                         (variable-mutable? terminal))))
               (hash-values symbol->terminal)))))
 
 

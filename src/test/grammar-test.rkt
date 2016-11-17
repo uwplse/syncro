@@ -18,27 +18,25 @@
             [vec (Vector-type int bool)]
             [z (make-lifted-variable 'z int #:value 3)])
        
-       (define (make a b c #:mutable m)
-         (send info make-and-add-terminal a b c #:mutable m))
+       (define (make a b c #:mutable? m)
+         (send info make-and-add-terminal a b c #:mutable? m))
        
-       (define (get #:type type . flags)
+       (define (get #:type type #:mutable? [m #f])
          (list->set
           (map variable-symbol
-               (send/apply info get-terminals #:type type flags))))
+               (send info get-terminals #:type type #:mutable? m))))
 
-       (make 'v 1 idx #:mutable #t)
-       (make 'w "foo" any #:mutable #f)
-       (make 'x 3 int #:mutable #t)
-       (make 'y 4 int #:mutable #f)
+       (make 'v 1 idx #:mutable? #t)
+       (make 'w "foo" any #:mutable? #f)
+       (make 'x 3 int #:mutable? #t)
+       (make 'y 4 int #:mutable? #f)
        (send info add-terminal z)
        
        (check-equal? (send info get-terminal-by-id 'z) z)
        (check-equal? (get #:type int) (set 'x 'y 'z))
-       (check-equal? (get #:type int 'mutable) (set 'x))
-       (check-equal? (get #:type int 'read-only) (set 'y))
-       (check-equal? (get #:type idx 'mutable) (set 'v 'x))
+       (check-equal? (get #:type int #:mutable? #t) (set 'x))
+       (check-equal? (get #:type idx #:mutable? #t) (set 'v 'x))
        (check-equal? (get #:type bool) (set))
-       (check-equal? (get #:type any 'read-only) (set 'w 'y))
        (check-equal? (get #:type any) (set 'v 'w 'x 'y 'z))))
 
    (test-case "Grammar construction"
@@ -50,19 +48,19 @@
             [num1-type (Vector-type Topic int)]
             [related-word-type (Vector-type Word (Vector-type Topic Word))])
        
-       (define (make a b c #:mutable m)
-         (send info make-and-add-terminal a b c #:mutable m))
+       (define (make a b c #:mutable? m)
+         (send info make-and-add-terminal a b c #:mutable? m))
 
        (define word->topic (build-vector 12 (lambda (i) (remainder i 3))))
-       (make 'word->topic word->topic word->topic-type #:mutable #f)
+       (make 'word->topic word->topic word->topic-type #:mutable? #f)
        (define num1 (make-vector 3 4))
-       (make 'num1 num1 num1-type #:mutable #t)
+       (make 'num1 num1 num1-type #:mutable? #t)
        (define related-word (build-vector 12 (lambda (i) (make-vector 3 0))))
-       (make 'related-word related-word related-word-type #:mutable #f)
+       (make 'related-word related-word related-word-type #:mutable? #f)
 
-       (make 'int1 0 int #:mutable #f)
-       (make 'word1 3 Word #:mutable #f)
-       (make 'word2 5 Word #:mutable #t)
+       (make 'int1 0 int #:mutable? #f)
+       (make 'word1 3 Word #:mutable? #f)
+       (make 'word2 5 Word #:mutable? #t)
 
        ;; If in-grammar? is #f, checks that prog *cannot* be specialized to code
        ;; If it is #t, checks that prog *can* be specialized to code
@@ -72,7 +70,7 @@
            (solve (assert (equal? (lifted-code prog) code))))
          
          ;; Check that synthesis succeeded
-         (check-equal? in-grammar? (sat? solution)
+         (check-equal? (sat? solution) in-grammar?
                        (format (if in-grammar?
                                    "Grammar should include: ~a"
                                    "Grammar should not include: ~a")

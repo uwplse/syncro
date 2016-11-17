@@ -6,6 +6,8 @@
 
 (provide my-for/sum my-for/or run-in-rosette)
 
+(current-bitwidth 10)
+
 ;; NOTE: The reimplementations of for can also be found in constructs.rkt
 (define-syntax (my-for/sum stx)
   (syntax-case stx ()

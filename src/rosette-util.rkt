@@ -2,10 +2,10 @@
 ;; once synthesis is complete.
 #lang rosette
 
-(require "variable.rkt" "types.rkt")
+(require "variable.rkt" "types.rkt" "util.rkt")
 
 (provide define-lifted lifted? if^ begin^ define-expr^ set!^
-         eval-lifted lifted-code infer-type lifted-writer
+         eval-lifted lifted-code infer-type mutable? lifted-writer
          gen:lifted gen:inferable
          lifted-error lifted-error?
          make-lifted-variable)
@@ -26,8 +26,24 @@
 
 (define-generics inferable
   ;; Type inference
-  (infer-type inferable))
-
+  (infer-type inferable)
+  ;; Mutability inference
+  (mutable? inferable)
+  #:defaults
+  ([integer?
+    (define (infer-type x) (Integer-type))
+    (define (mutable? x) #f)]
+   [boolean?
+    (define (infer-type x) (Boolean-type))
+    (define (mutable? x) #f)]
+   [constant?  ;; A symbolic variable (but not a symbolic expression)
+    (define (infer-type x)
+      (let ([type (type-of x)])
+        (cond [(equal? type integer?) (Integer-type)]
+              [(equal? type boolean?) (Boolean-type)]
+              [else
+               (internal-error (format "Unsupported type: ~a~%" type))])))
+    (define (mutable? x) #f)]))
 
 
 ;; IMPORTANT: This is only a way to provide a custom write function to
@@ -36,14 +52,25 @@
 ;; should NOT use lifted-writer? or similar things. Use lifted?
 ;; (defined by define-generics above).
 (struct lifted-writer () #:transparent
+  #:property prop:procedure
+  (lambda (self . args) (lifted-apply self args))
+  
   #:methods gen:custom-write
   [(define (write-proc self port mode)
-     (define proc (if mode write display))
      (display "(lifted " port)
-     (proc (lifted-code self) port)
+     (case mode
+       [(#t) (write (lifted-code self) port)]
+       [(#f) (display (lifted-code self) port)]
+       [else (print (lifted-code self) port mode)])
      (display ")" port))])
 
 (struct lifted-variable variable () #:transparent
+  #:property prop:procedure
+  (lambda (self . args)
+    (if (ormap lifted-error? args)
+        (lifted-error)
+        (lifted-apply self args)))
+  
   #:methods gen:lifted
   [(define (eval-lifted self)
      (if (variable-has-value? self)
@@ -56,7 +83,10 @@
 
   #:methods gen:inferable
   [(define (infer-type self)
-     (variable-type self))]
+     (variable-type self))
+
+   (define (mutable? self)
+     (variable-mutable? self))]
 
   #:methods gen:custom-write
   [(define (write-proc self port mode)
@@ -66,9 +96,10 @@
 ;; Almost verbatim from variable.rkt
 (define (make-lifted-variable symbol type
                               #:value [value (unknown-value)]
+                              #:mutable? [mutable? #f]
                               #:definition [definition #f]
                               . flags)
-  (lifted-variable symbol type value definition (apply set flags)))
+  (lifted-variable symbol type value mutable? definition))
 
 (struct lifted-apply lifted-writer (proc args) #:transparent
   #:methods gen:lifted
@@ -88,7 +119,10 @@
 
    (define (infer-type self)
      (apply-type (gen-infer-type (lifted-apply-proc self))
-                 (map gen-infer-type (lifted-apply-args self))))])
+                 (map gen-infer-type (lifted-apply-args self))))
+
+   (define (mutable? self)
+     0 #;TODO)])
 
 
 (struct lifted-begin lifted-writer (args) #:transparent
@@ -105,14 +139,21 @@
 
   #:methods gen:inferable
   [(define/generic gen-infer-type infer-type)
+   (define/generic gen-mutable? mutable?)
 
    (define (infer-type self)
      (if (null? (lifted-begin-args self))
          (Void-type)
-         (gen-infer-type (last (lifted-begin-args self)))))])
+         (gen-infer-type (last (lifted-begin-args self)))))
+
+   (define (mutable? self)
+     (and (not (null? (lifted-begin-args self)))
+          (gen-mutable? (last (lifted-begin-args self)))))])
 
 (define (begin^ . args)
-  (lifted-begin args))
+  (if (ormap lifted-error? args)
+      (lifted-error)
+      (lifted-begin args)))
 
 
 (struct lifted-if lifted-writer (condition then-branch else-branch) #:transparent
@@ -133,6 +174,7 @@
 
   #:methods gen:inferable
   [(define/generic gen-infer-type infer-type)
+   (define/generic gen-mutable? mutable?)
 
    (define (infer-type self)
      (let ([ctype (gen-infer-type (lifted-if-condition self))]
@@ -140,10 +182,16 @@
            [etype (gen-infer-type (lifted-if-else-branch self))])
        (unless (Boolean-type? ctype)
          (error "If condition must be a boolean, got" ctype))
-       (unify-types ttype etype)))])
+       (unify-types ttype etype)))
+
+   (define (mutable? self)
+     (and (gen-mutable? (lifted-if-then-branch self))
+          (gen-mutable? (lifted-if-else-branch self))))])
 
 (define (if^ t c e)
-  (lifted-if t c e))
+  (if (or (lifted-error? t) (lifted-error? c) (lifted-error? e))
+      (lifted-error)
+      (lifted-if t c e)))
 
 
 ;; var is a lifted-variable
@@ -164,14 +212,18 @@
 
   #:methods gen:inferable
   [(define (infer-type self)
-     (Void-type))])
+     (Void-type))
+
+   (define (mutable? self) #f)])
 
 ;; var is a symbol
 ;; expr is a lifted expression
 (define (define-expr^ var lifted-val)
-  (lifted-define
-   (make-lifted-variable 'var (infer-type lifted-val))
-   lifted-val))
+  (if (lifted-error? lifted-val)
+      (lifted-error)
+      (lifted-define
+       (make-lifted-variable 'var (infer-type lifted-val))
+       lifted-val)))
 
 ;; var is syntax containing a symbol
 ;; expr is syntax containing an expression that evaluates to a lifted
@@ -213,10 +265,14 @@
 
   #:methods gen:inferable
   [(define (infer-type self)
-     (Void-type))])
+     (Void-type))
+
+   (define (mutable? self) #f)])
 
 (define (set!^ var val)
-  (lifted-set! var val))
+  (if (or (lifted-error? var) (lifted-error? val))
+      (lifted-error)
+      (lifted-set! var val)))
 
 
 (struct lifted-error lifted-writer () #:transparent
@@ -229,28 +285,15 @@
 
   #:methods gen:inferable
   [(define (infer-type self)
-     (Error-type))])
+     (Error-type))
 
+   (define (mutable? self) #f)])
 
-;; Despite the name, this does not always produce a lifted value.
-;; When given a procedure, it produces a procedure that when called
-;; will produce a lifted value. For anything else, it directly creates
-;; a lifted value.
-;; The goal here is that a program using lifted values looks exactly
-;; the same, and such programs produces lifted value.
-;; eg. (vector-ref^ my-vec^ 0) will produce a lifted value, although
-;; vector-ref^ by itself will not.
-;; TODO: We could fix this by making vector-ref^ a lifted variable
-;; with a prop:procedure property?
 (define (lift value var-name type)
-  (cond [(and (procedure? value) (symbol? var-name))
-         (lambda arguments
-           (lifted-apply (make-lifted-variable var-name type #:value value) arguments))]
-        [(symbol? var-name)
-         (make-lifted-variable var-name type #:value value)]
-        [else
-         (error (format "Cannot lift ~a which has value ~a~%"
-                        var-name value))]))
+  (if (symbol? var-name)
+      (make-lifted-variable var-name type #:value value)
+      (error (format "Cannot lift ~a which has value ~a~%"
+                     var-name value))))
 
 ;; Convenience macro to define many new lifted values at a time.
 ;; See grammar.rkt for an example.

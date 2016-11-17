@@ -105,9 +105,9 @@
                       (check-false (is-supertype? type-for-pred t))))))
 
        (check-true (symbolic? int))
-       (check-false (mutable-structure? int))
+       (check-false (has-setters? int))
        (check-true (symbolic? vec))
-       (check-true (mutable-structure? vec))
+       (check-true (has-setters? vec))
        (check-false (symbolic? err)))
 
      (test-case "Recursive supertyping"

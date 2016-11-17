@@ -3,12 +3,16 @@
 (provide Any-type Bottom-type Index-type Boolean-type Integer-type Enum-type
          Vector-type Procedure-type Error-type Void-type Type? symbolic?
          (rename-out [Vector-Type-index-type Vector-index-type]
-                     [Vector-Type-output-type Vector-output-type])
-         get-parent is-supertype? repr mutable-structure? symbolic-code
+                     [Vector-Type-output-type Vector-output-type]
+                     [Procedure-Type-domain-types Procedure-domain-types]
+                     [Procedure-Type-range-type Procedure-range-type])
+         get-parent is-supertype? repr has-setters? symbolic-code
          generate-update-arg-names update-code old-values-code symbolic-update-code
-         Type-var unify-types apply-type union-types
+         Type-var unify-types apply-type get-domain-given-range union-types
          type? Any-type? Bottom-type? Boolean-type? Index-type? Integer-type? Enum-type?
-         Vector-type? Procedure-type? Error-type? Void-type?)
+         Vector-type? Procedure-type? Error-type? Void-type?
+         make-type-map unify replace-type-vars
+         (rename-out [Type-Var? Type-var?]))
 
 ;; Creates type predicates that properly handle Bottom types.
 (define-syntax (make-type-predicates stx)
@@ -46,7 +50,7 @@
   (unify Type other-type mapping)
   ;; Replaces type variables in this type with their values as given
   ;; by the type mapping.
-  (replace-type-vars Type mapping)
+  (replace-type-vars Type mapping [default])
   ;; Returns the lowest common supertype, that is, the most specific
   ;; type such that both arguments are subtypes of that type.
   (union-types Type other-type)
@@ -56,7 +60,7 @@
      (default-unify self other-type mapping))
 
    ;; Most types can never have type variables inside themselves
-   (define (replace-type-vars self mapping)
+   (define (replace-type-vars self mapping [default #f])
      self)
 
    (define (union-types self other-type)
@@ -101,7 +105,7 @@
 (define-generics symbolic
   ;; Returns #t if it is possible to modify elements in a value of
   ;; this type (eg. Vectors), #f otherwise (eg. Booleans)
-  (mutable-structure? symbolic)
+  (has-setters? symbolic)
   ;; Returns syntax that creates a symbolic value of this type
   ;; assigned to the variable var. The generated code also adds all
   ;; symbolic variables to varset-name, which is a symbol that at
@@ -176,7 +180,7 @@
      '(Boolean-type))]
 
   #:methods gen:symbolic
-  [(define (mutable-structure? self) #f)
+  [(define (has-setters? self) #f)
 
    (define (symbolic-code self var [varset-name #f])
      #`(begin (define-symbolic* #,var boolean?)
@@ -250,7 +254,7 @@
      '(Integer-type))]
 
   #:methods gen:symbolic
-  [(define (mutable-structure? self) #f)
+  [(define (has-setters? self) #f)
 
    (define (symbolic-code self var [varset-name #f])
      #`(begin (define-symbolic* #,var integer?)
@@ -339,7 +343,7 @@
      (Enum-Type-name self))]
 
   #:methods gen:symbolic
-  [(define (mutable-structure? self) #f)
+  [(define (has-setters? self) #f)
 
    (define (symbolic-code self var [varset-name #f])
      #`(begin (define-symbolic* #,var integer?)
@@ -449,10 +453,10 @@
                         mapping))
            (Vector-Type new-len new-index new-output))))
 
-   (define (replace-type-vars self mapping)
+   (define (replace-type-vars self mapping [default #f])
      (Vector-Type (Vector-Type-len self)
-                  (gen-replace-type-vars (Vector-Type-index-type self) mapping)
-                  (gen-replace-type-vars (Vector-Type-output-type self) mapping)))
+                  (gen-replace-type-vars (Vector-Type-index-type self) mapping default)
+                  (gen-replace-type-vars (Vector-Type-output-type self) mapping default)))
 
    (define (union-types self other-type)
      (if (Vector-Type? other-type)
@@ -464,14 +468,14 @@
          (default-union-types self other-type)))]
   
   #:methods gen:symbolic
-  [(define/generic gen-mutable-structure? mutable-structure?)
+  [(define/generic gen-has-setters? has-setters?)
    (define/generic gen-symbolic-code symbolic-code)
    (define/generic gen-generate-update-arg-names generate-update-arg-names)
    (define/generic gen-update-code update-code)
    (define/generic gen-old-values-code old-values-code)
    (define/generic gen-symbolic-update-code symbolic-update-code)
    
-   (define (mutable-structure? self) #t)
+   (define (has-setters? self) #t)
    
    (define (symbolic-code self var [varset-name #f])
      (unless (integer? (Vector-Type-len self))
@@ -488,7 +492,7 @@
    (define (generate-update-arg-names self update-type)
      (define output-type (Vector-Type-output-type self))
      (cond [(equal? update-type 'assign)
-            (if (gen-mutable-structure? output-type)
+            (if (gen-has-setters? output-type)
                 (cons (gensym 'index)
                       (gen-generate-update-arg-names output-type update-type))
                 (list (gensym 'index) (gensym 'val)))]
@@ -500,7 +504,7 @@
    (define (update-code self update-type)
      (define output-type (Vector-Type-output-type self))
      (cond [(equal? update-type 'assign)
-            (if (gen-mutable-structure? output-type)
+            (if (gen-has-setters? output-type)
 
                 (lambda (vect index . args)
                   (apply (gen-update-code output-type update-type)
@@ -517,7 +521,7 @@
    (define (old-values-code self update-type var . update-args)
      (define output-type (Vector-Type-output-type self))
      (cond [(equal? update-type 'assign)
-            (if (gen-mutable-structure? output-type)
+            (if (gen-has-setters? output-type)
                 (apply gen-old-values-code
                        output-type
                        update-type
@@ -540,7 +544,7 @@
      
      (define output-type (Vector-Type-output-type self))
      (cond [(and (equal? update-type 'assign)
-                 (gen-mutable-structure? output-type))
+                 (gen-has-setters? output-type))
             (define tmp-index (car update-args))
             (match-let ([(list output-defns output-update output-update-symbolic-vars-types)
                           (gen-symbolic-update-code
@@ -654,11 +658,11 @@
                         mapping))
            (Procedure-type new-domain new-range))))
 
-   (define (replace-type-vars self mapping)
+   (define (replace-type-vars self mapping [default #f])
      (Procedure-type
-      (map (lambda (x) (gen-replace-type-vars x mapping))
+      (map (lambda (x) (gen-replace-type-vars x mapping default))
            (Procedure-Type-domain-types self))
-      (gen-replace-type-vars (Procedure-Type-range-type self) mapping)))
+      (gen-replace-type-vars (Procedure-Type-range-type self) mapping default)))
 
    (define (union-types self other-type)
      (if (Procedure-Type? other-type)
@@ -690,6 +694,15 @@
       (unify expected-type actual-type mapping))
 
     (replace-type-vars range mapping)))
+
+(define (get-domain-given-range proc-type range-type [default-for-type-var #f])
+  (let ([domain (Procedure-Type-domain-types proc-type)]
+        [range (Procedure-Type-range-type proc-type)])
+    (define mapping (make-type-map))
+    (unify range range-type mapping)
+    (map (lambda (domain-type)
+           (replace-type-vars domain-type mapping default-for-type-var))
+         domain)))
 
 (struct Error-Type Any-Type () #:transparent
   #:methods gen:Type
@@ -742,10 +755,10 @@
        (add-type-binding! mapping self other-type))
      other-type)
 
-   (define (replace-type-vars self mapping)
+   (define (replace-type-vars self mapping [default #f])
      (if (hash-has-key? mapping self)
-         (gen-replace-type-vars (hash-ref mapping self) mapping)
-         self))]
+         (gen-replace-type-vars (hash-ref mapping self) mapping default)
+         (if default default self)))]
 
   #:methods gen:equal+hash
   [(define (equal-proc x y recursive-equal?)
@@ -761,6 +774,7 @@
 (define (Type-var)
   (Type-Var (gensym 'alpha)))
 
+;; TODO: Should this be not a hash map (since that is not supported by Rosette)?
 (define (make-type-map)
   (make-hash))
 
