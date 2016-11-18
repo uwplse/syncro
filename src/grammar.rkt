@@ -143,45 +143,41 @@
                       if-alpha)))
   
   (define (make-subexp-if type->subexp desired-type depth)
-    (match-define (list subexps new-type->subexp)
-      (make-subexp-helper if-type type->subexp desired-type depth))
-    (list (apply if^ subexps) new-type->subexp))
+    (apply if^ (make-subexp-helper if-type type->subexp desired-type depth)))
   
   (define (make-subexp-set! type->subexp desired-type depth)
+    ;; We only need to get one item out of type->subexp, so no need to
+    ;; make a copy which we then mutate.
     (let* ([variable
             (apply my-choose*
                    (send terminal-info get-terminals #:mutable? #t))]
            [type (infer-type variable)])
       (if (alist-has-key? type->subexp type)
-          (list (set!^ variable (alist-get type->subexp type))
-                type->subexp)
+          (set!^ variable (alist-get type->subexp type))
           (let ([subexp (general-grammar type depth)])
-            (list (set!^ variable subexp)
-                  (alist-insert type->subexp type subexp))))))
+            (alist-insert! type->subexp type subexp)
+            (set!^ variable subexp)))))
 
   (define (make-subexp-proc proc type->subexp desired-type depth)
-    (match-define (list subexps new-type->subexp)
-      (make-subexp-helper (variable-type proc) type->subexp desired-type depth))
-    (list (apply proc subexps) new-type->subexp))
+    (apply proc (make-subexp-helper (variable-type proc) type->subexp
+                                    desired-type depth)))
   
   (define (make-subexp-helper operator-type type->subexp desired-type depth)
     (let ([domain (get-domain-given-range operator-type desired-type)]
-          [type->subexp-copy type->subexp]
+          [type->subexp-copy (alist-copy type->subexp)]
           [mapping (make-type-map)])
       
       (define (get-or-make-subexp type)
         (define concrete-type
           (replace-type-vars type mapping (Any-type)))
 
-        (match-define (list subexp new-copy)
+        (define subexp
           (if (alist-has-key? type->subexp-copy concrete-type)
-              (alist-get-and-remove type->subexp-copy concrete-type)
+              (alist-get-and-remove! type->subexp-copy concrete-type)
               (let ([res (general-grammar concrete-type (- depth 1))])
-                (set! type->subexp
-                      (alist-insert type->subexp concrete-type res))
-                (list res type->subexp-copy))))
+                (alist-insert! type->subexp concrete-type res)
+                res)))
 
-        (set! type->subexp-copy new-copy)
         ;; The value of this unify can be seen in if^, where if the
         ;; first expression chosen is of type Int, this will force the
         ;; second expression to also have type Int
@@ -189,8 +185,8 @@
           (unify type (infer-type subexp) mapping))
         subexp)
       
-      (list (map get-or-make-subexp domain) type->subexp)))
-    
+      (map get-or-make-subexp domain)))
+  
   (define (make-subexp operator type->subexp desired-type depth)
     (cond [(not (special-form? operator))
            (make-subexp-proc operator type->subexp desired-type depth)]
@@ -224,13 +220,9 @@
                 '())
             (if (= depth 0)
                 '()
-                (map
-                 (lambda (operator)
-                   (match-let ([(list result new-type->subexp)
-                                (make-subexp operator type->subexp desired-type depth)])
-                     (set! type->subexp new-type->subexp)
-                     result))
-                 operators)))))
+                (map (lambda (op)
+                       (make-subexp op type->subexp desired-type depth))
+                     operators)))))
 
   (build-grammar terminal-info num-stmts depth num-temps guard-depth
                  general-grammar
