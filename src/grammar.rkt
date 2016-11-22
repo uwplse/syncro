@@ -47,8 +47,10 @@
 ;; Lifting operators ;;
 ;;;;;;;;;;;;;;;;;;;;;;;
 
-(match-define (list alpha-v1 alpha-v2 alpha-v3 beta-v3 alpha-v4 beta-v4 alpha-v5)
-  (build-list 7 (lambda (i) (Type-var))))
+(match-define (list alpha-v1 alpha-v2 alpha-v3 alpha-v4)
+  (build-list 4 (lambda (i) (Type-var (Index-type)))))
+(match-define (list beta-v3 beta-v4 alpha-v5)
+  (build-list 3 (lambda (i) (Type-var))))
 
 (define cmp-type
   (Procedure-type (list (Integer-type) (Integer-type)) (Boolean-type)))
@@ -165,25 +167,30 @@
   (define (make-subexp-helper operator-type type->subexp desired-type depth)
     (let ([domain (get-domain-given-range operator-type desired-type)]
           [type->subexp-copy (alist-copy type->subexp)]
-          [mapping (make-type-map)])
+          [mapping (make-type-map)]
+          [error-flag #f])
       
       (define (get-or-make-subexp type)
-        (define concrete-type
-          (replace-type-vars type mapping (Any-type)))
+        (if error-flag
+            (lifted-error)
+            (let ([concrete-type
+                   (replace-type-vars type mapping #t)])
+              (define subexp
+                (if (alist-has-key? type->subexp-copy concrete-type)
+                    (alist-get-and-remove! type->subexp-copy concrete-type)
+                    (let ([res (general-grammar concrete-type (- depth 1))])
+                      (alist-insert! type->subexp concrete-type res)
+                      res)))
 
-        (define subexp
-          (if (alist-has-key? type->subexp-copy concrete-type)
-              (alist-get-and-remove! type->subexp-copy concrete-type)
-              (let ([res (general-grammar concrete-type (- depth 1))])
-                (alist-insert! type->subexp concrete-type res)
-                res)))
-
-        ;; The value of this unify can be seen in if^, where if the
-        ;; first expression chosen is of type Int, this will force the
-        ;; second expression to also have type Int
-        (unless (lifted-error? subexp)
-          (unify type (infer-type subexp) mapping))
-        subexp)
+              (when (lifted-error? subexp)
+                (set! error-flag #t))
+              
+              ;; The value of this unify can be seen in if^, where if the
+              ;; first expression chosen is of type Int, this will force the
+              ;; second expression to also have type Int
+              (unless (lifted-error? subexp)
+                (unify type (infer-type subexp) mapping))
+              subexp)))
       
       (map get-or-make-subexp domain)))
   

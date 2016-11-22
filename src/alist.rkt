@@ -1,8 +1,7 @@
 #lang rosette/safe
 
-;; Note: Although we use rosette/safe, internal-error uses error which
-;; is *not* in safe Rosette.
-(require (only-in "util.rkt" internal-error))
+;; Note: We use rosette/safe, but error is *not* in safe Rosette.
+(require (only-in racket error))
 
 (provide make-alist alist-copy alist-insert! alist-has-key?
          alist-get alist-get-and-remove!)
@@ -30,7 +29,7 @@
 (define (alist-get alist key)
   (define (loop lst)
     (cond [(null? lst)
-           (internal-error (format "No such key ~a" key))]
+           (error (format "Get: No such key ~a" key))]
           [(equal? key (caar lst))
            (cdar lst)]
           [else
@@ -42,7 +41,7 @@
   ;; key), and the new alist after removing that entry.
   (define (loop lst)
     (cond [(null? lst)
-           (internal-error (format "No such key ~a" key))]
+           (error (format "Get-and-remove: No such key ~a" key))]
           [(equal? key (caar lst))
            (list (cdar lst)
                  (cons (cons (no-value) (no-value))

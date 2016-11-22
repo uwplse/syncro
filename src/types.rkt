@@ -455,8 +455,10 @@
 
    (define (replace-type-vars self mapping [default #f])
      (Vector-Type (Vector-Type-len self)
-                  (gen-replace-type-vars (Vector-Type-index-type self) mapping default)
-                  (gen-replace-type-vars (Vector-Type-output-type self) mapping default)))
+                  (gen-replace-type-vars (Vector-Type-index-type self)
+                                         mapping default)
+                  (gen-replace-type-vars (Vector-Type-output-type self)
+                                         mapping default)))
 
    (define (union-types self other-type)
      (if (Vector-Type? other-type)
@@ -584,9 +586,11 @@
 ;; TODO: Currently impossible to create a vector type with known
 ;; length but a type variable for an index type.
 (define (Vector-type length-or-input output)
-  (unless (and (or (Index-type? length-or-input)
-                   (Type-Var? length-or-input)
-                   (integer? length-or-input))
+  (unless (and (or (is-supertype? (Index-type) length-or-input)
+                   (integer? length-or-input)
+                   (and (Type-Var? length-or-input)
+                        (is-supertype? (Index-type)
+                                       (Type-Var-default length-or-input))))
                (Type? output))
     (error (format "Invalid arguments to Vector-type: ~a and ~a~%"
                    length-or-input output)))
@@ -662,7 +666,8 @@
      (Procedure-type
       (map (lambda (x) (gen-replace-type-vars x mapping default))
            (Procedure-Type-domain-types self))
-      (gen-replace-type-vars (Procedure-Type-range-type self) mapping default)))
+      (gen-replace-type-vars (Procedure-Type-range-type self) mapping
+                             default)))
 
    (define (union-types self other-type)
      (if (Procedure-Type? other-type)
@@ -695,13 +700,13 @@
 
     (replace-type-vars range mapping)))
 
-(define (get-domain-given-range proc-type range-type [default-for-type-var #f])
+(define (get-domain-given-range proc-type range-type [default #f])
   (let ([domain (Procedure-Type-domain-types proc-type)]
         [range (Procedure-Type-range-type proc-type)])
     (define mapping (make-type-map))
     (unify range range-type mapping)
     (map (lambda (domain-type)
-           (replace-type-vars domain-type mapping default-for-type-var))
+           (replace-type-vars domain-type mapping default))
          domain)))
 
 (struct Error-Type Any-Type () #:transparent
@@ -737,7 +742,7 @@
 ;;;;;;;;;;;;;;;;;
 
 ;; ADTs for unification -- type variables, and type binding maps
-(struct Type-Var (id) #:transparent
+(struct Type-Var (id default) #:transparent
   #:methods gen:Type
   [(define/generic gen-replace-type-vars replace-type-vars)
    
@@ -756,9 +761,10 @@
      other-type)
 
    (define (replace-type-vars self mapping [default #f])
-     (if (hash-has-key? mapping self)
-         (gen-replace-type-vars (hash-ref mapping self) mapping default)
-         (if default default self)))]
+     (cond [(hash-has-key? mapping self)
+            (gen-replace-type-vars (hash-ref mapping self) mapping default)]
+           [default (Type-Var-default self)]
+           [else self]))]
 
   #:methods gen:equal+hash
   [(define (equal-proc x y recursive-equal?)
@@ -771,8 +777,8 @@
    (define (hash2-proc x recursive-equal-hash)
      (recursive-equal-hash (Type-Var-id x)))])
 
-(define (Type-var)
-  (Type-Var (gensym 'alpha)))
+(define (Type-var [default (Any-type)])
+  (Type-Var (gensym 'alpha) default))
 
 ;; TODO: Should this be not a hash map (since that is not supported by Rosette)?
 (define (make-type-map)

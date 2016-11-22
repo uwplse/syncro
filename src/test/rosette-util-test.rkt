@@ -13,8 +13,10 @@
    "Tests for rosette-util.rkt"
    (let ()
 
-     (match-define (list alpha-v1 beta-v1 alpha-v2 beta-v2)
-       (build-list 4 (lambda (i) (Type-var))))
+     (match-define (list alpha-v1 alpha-v2)
+       (build-list 2 (lambda (i) (Type-var (Index-type)))))
+     (match-define (list beta-v1 beta-v2)
+       (build-list 2 (lambda (i) (Type-var))))
      
      (define cmp-type
        (Procedure-type (list (Integer-type) (Integer-type)) (Boolean-type)))

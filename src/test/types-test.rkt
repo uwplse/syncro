@@ -176,8 +176,9 @@
                                    (repr t1) (repr t2)))])))
 
      (test-case "Unification with type variables"
-       (match-define (list a1 a2 a3)
-         (build-list 3 (lambda (i) (Type-var))))
+       (define a1 (Type-var (Index-type)))
+       (match-define (list a2 a3)
+         (build-list 2 (lambda (i) (Type-var))))
 
        (commutative (check-equal? (unify-types int a1) int))
        (commutative
@@ -266,6 +267,35 @@
                     (apply-type
                      (Procedure-type (list (Vector-type a1 a2) a1) a2)
                      (list vec bool)))))
+
+     (test-case "get-domain-given-range"
+       (check-equal? (get-domain-given-range proc int)
+                     (list int int))
+
+       (match-define (list alpha-v1 alpha-v2)
+         (build-list 2 (lambda (i) (Type-var (Index-type)))))
+       (match-define (list beta-v1 beta-v2)
+         (build-list 2 (lambda (i) (Type-var))))
+       
+       ;; Examples: Vector operations
+       ;; vector-set!
+       (define vector-set!-type
+         (Procedure-type (list (Vector-type alpha-v1 beta-v1) alpha-v1 beta-v1)
+                         void))
+       (check-equal? (get-domain-given-range vector-set!-type void)
+                     (list (Vector-type alpha-v1 beta-v1) alpha-v1 beta-v1))
+       (check-equal? (get-domain-given-range vector-set!-type void #t)
+                     (list (Vector-type idx any) idx any))
+       
+       ;; vector-ref
+       (define vector-ref-type
+         (Procedure-type (list (Vector-type alpha-v2 beta-v2) alpha-v2)
+                         beta-v2))
+       (check-equal? (get-domain-given-range vector-ref-type int)
+                     (list (Vector-type alpha-v2 int) alpha-v2))
+       (check-equal? (get-domain-given-range vector-ref-type int #t)
+                     (list (Vector-type idx int) idx)))
+       
        
      )))
 
