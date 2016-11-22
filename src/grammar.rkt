@@ -172,9 +172,10 @@
           ;; The value of this unify can be seen in equal?^, where if
           ;; the first expression chosen is of type Int, this will
           ;; force the second expression to also have type Int
-          (when (and subexp (not (lifted-error? subexp)))
-            (unify type (infer-type subexp) mapping))
-          subexp))
+          (and subexp
+               (not (lifted-error? subexp))
+               (begin (unify type (infer-type subexp) mapping)
+                      subexp))))
 
       (define (special-andmap fn lst)
         (if (null? lst)
@@ -260,7 +261,7 @@
 
   ;; vector-set!, vector-increment!, vector-decrement!
   (define (vector-stmt-grammar depth)
-    (let* ([vec (expr-grammar (Vector-type (Bottom-type) (Any-type))
+    (let* ([vec (expr-grammar (Vector-type (Index-type) (Any-type))
                               (- depth 1) #:mutable? #t)]
            [vec-type (infer-type vec)])
       (if (Error-type? vec-type)
@@ -292,7 +293,7 @@
   ;; vector-ref
   (define (vector-ref-expr desired-type depth #:mutable? [mutable? #f])
     ;; TODO: Force the output type to be the desired-type
-    (let* ([vec (expr-grammar (Vector-type (Bottom-type) desired-type)
+    (let* ([vec (expr-grammar (Vector-type (Index-type) desired-type)
                               (- depth 1) #:mutable? mutable?)]
            [vec-type (infer-type vec)])
       (if (Error-type? vec-type)
@@ -400,7 +401,7 @@
     (define/public (get-terminals #:type [type (Any-type)]
                                   #:mutable? [mutable? #f])
       (filter (lambda (terminal)
-                (and (is-supertype? type (variable-type terminal))
+                (and (unify-types type (variable-type terminal))
                      (or (not mutable?)
                          (variable-mutable? terminal))))
               (hash-values symbol->terminal)))))

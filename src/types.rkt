@@ -431,10 +431,11 @@
          (begin
            (define my-len (Vector-Type-len self))
            (define other-len (Vector-Type-len other-type))
-           (when (and (integer? my-len) (integer? other-len)
-                      (not (= my-len other-len)))
-             (error "Incompatible lengths for vectors to be unified"))
 
+           (define compatible-lengths?
+             (not (and (integer? my-len) (integer? other-len)
+                       (not (= my-len other-len)))))
+           
            (define new-len
              (if (integer? my-len) my-len other-len))
            ;; For unification, we want to find a type that is
@@ -449,7 +450,8 @@
              (gen-unify (Vector-Type-output-type self)
                         (Vector-Type-output-type other-type)
                         mapping))
-           (and new-index new-output
+           (and compatible-lengths?
+                new-index new-output
                 (Vector-Type new-len new-index new-output)))))
 
    (define (replace-type-vars self mapping [default #f])
