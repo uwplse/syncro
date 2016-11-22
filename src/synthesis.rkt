@@ -154,6 +154,7 @@
            (printf "Creating symbolic program~%")
            (define program
              (time (grammar terminal-info 3 4 #:num-temps 0 #:guard-depth 1)))
+
            (define synth
              (time
               (synthesize
@@ -171,13 +172,12 @@
                  (assert (equal? (eval-lifted (send terminal-info get-terminal-by-id ',output-id))
                                  ,output-expr))
                  (display "Completed symbolic generation!\n")))))
-           
-           (define result (and (sat? synth)
-                               (lifted-code (evaluate program synth))))
-           result))
+
+           (and (sat? synth)
+                (lifted-code (coerce-evaluate program synth)))))
 
       ;(pretty-print rosette-code)
-      (define result (make-sexp (run-in-rosette rosette-code)))
+      (define result (run-in-rosette rosette-code))
       (if result
           (begin
             (pretty-print result)
@@ -195,12 +195,3 @@
          ,define-overwritten-vals
          ,update-code
          ,synthesized-code)))))
-
-;; TODO: Hack because I don't understand how Rosette works. Fix.
-(define (make-sexp result)
-  (if result
-      (with-input-from-string 
-        (with-output-to-string
-          (lambda () (display result)))
-        read)
-      result))

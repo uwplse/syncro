@@ -31,5 +31,12 @@
            (set! val (or val (begin expr ...))))
          val))]))
 
+(define (coerce-evaluate thing model)
+  (define sym-map
+    (make-hash (map (lambda (sym) (cons sym sym))
+                    (symbolics thing))))
+  
+  (evaluate thing (complete model sym-map)))
+
 (define (run-in-rosette code)
   (eval-syntax (datum->syntax #'3 code)))
