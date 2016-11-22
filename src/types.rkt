@@ -47,6 +47,7 @@
   ;; Unifies two types for type inference.
   ;; mapping is a type map that stores the unification bindings so far
   ;; (see bottom of this file).
+  ;; Returns the unified type, or #f if unification is impossible.
   (unify Type other-type mapping)
   ;; Replaces type variables in this type with their values as given
   ;; by the type mapping.
@@ -69,22 +70,19 @@
 (define (unify-types t1 t2)
   (let ([mapping (make-type-map)])
     (define result (unify t1 t2 mapping))
-    (replace-type-vars result mapping)))
+    (and result (replace-type-vars result mapping))))
 
 ;; Unifies types assuming there are no type variables inside self.
 ;; other-type may be a type variable.
 (define (default-unify self other-type mapping)
   (cond [(Type-Var? other-type)
-         (add-type-binding! mapping other-type self)
-         self]
+         (and (add-type-binding! mapping other-type self)
+              self)]
         [(is-supertype? self other-type)
          other-type]
         [(is-supertype? other-type self)
          self]
-        [else
-         (error
-          (format "Incompatible types for unification: ~a and ~a"
-                  self other-type))]))
+        [else #f]))
 
 ;; Unifies types that don't have parameters. Types with parameters
 ;; (eg. Vectors) will have to do something extra.
@@ -451,7 +449,8 @@
              (gen-unify (Vector-Type-output-type self)
                         (Vector-Type-output-type other-type)
                         mapping))
-           (Vector-Type new-len new-index new-output))))
+           (and new-index new-output
+                (Vector-Type new-len new-index new-output)))))
 
    (define (replace-type-vars self mapping [default #f])
      (Vector-Type (Vector-Type-len self)
@@ -645,22 +644,20 @@
          (begin
            (define self-domain (Procedure-Type-domain-types self))
            (define other-domain (Procedure-Type-domain-types other-type))
-           (unless (= (length self-domain) (length other-domain))
-             (error "Incompatible arities for procedures to be unified"))
-
-           ;; For unification, we want to find a type that is
-           ;; simultaneously self and other-type, so contravariance
-           ;; does not apply. (Contravariance happens if you want to
-           ;; find something that can be *substituted*.)
-           (define new-domain
-             (map (lambda (x y) (gen-unify x y mapping))
-                  self-domain
-                  other-domain))
-           (define new-range
-             (gen-unify (Procedure-Type-range-type self)
-                        (Procedure-Type-range-type other-type)
-                        mapping))
-           (Procedure-type new-domain new-range))))
+           (and (= (length self-domain) (length other-domain))
+                ;; For unification, we want to find a type that is
+                ;; simultaneously self and other-type, so contravariance
+                ;; does not apply. (Contravariance happens if you want to
+                ;; find something that can be *substituted*.)
+                (let ([new-domain
+                       (map (lambda (x y) (gen-unify x y mapping))
+                            self-domain other-domain)]
+                      [new-range
+                       (gen-unify (Procedure-Type-range-type self)
+                                  (Procedure-Type-range-type other-type)
+                                  mapping)])
+                  (and (andmap identity new-domain) new-range
+                       (Procedure-type new-domain new-range)))))))
 
    (define (replace-type-vars self mapping [default #f])
      (Procedure-type
@@ -674,7 +671,7 @@
          (match-let ([(Procedure-Type self-domain self-range) self]
                      [(Procedure-Type other-domain other-range) other-type])
            (unless (= (length self-domain) (length other-domain))
-             (error "Cannot unify procedures that require different numbers of arguments"))
+             (error "Cannot union procedures that require different numbers of arguments"))
            (Procedure-Type (map gen-union-types self-domain other-domain)
                            (gen-union-types self-range other-range)))
          (default-union-types self other-type)))])
@@ -694,9 +691,12 @@
       (error "Incorrect number of arguments -- apply-type"))
     
     (define mapping (make-type-map))
+    ;; TODO: Is a for loop okay here?
     (for ([expected-type domain]
           [actual-type arg-types])
-      (unify expected-type actual-type mapping))
+      (unless (unify expected-type actual-type mapping)
+        (error (format "Cannot apply type ~a to arguments ~a"
+                       proc-type arg-types))))
 
     (replace-type-vars range mapping)))
 
@@ -704,10 +704,10 @@
   (let ([domain (Procedure-Type-domain-types proc-type)]
         [range (Procedure-Type-range-type proc-type)])
     (define mapping (make-type-map))
-    (unify range range-type mapping)
-    (map (lambda (domain-type)
-           (replace-type-vars domain-type mapping default))
-         domain)))
+    (and (unify range range-type mapping)
+         (map (lambda (domain-type)
+                (replace-type-vars domain-type mapping default))
+              domain))))
 
 (struct Error-Type Any-Type () #:transparent
   #:methods gen:Type
@@ -756,9 +756,10 @@
      `(Type-Var ,(Type-Var-id self)))
 
    (define (unify self other-type mapping)
-     (unless (equal? self other-type)
-       (add-type-binding! mapping self other-type))
-     other-type)
+     (if (equal? self other-type)
+         other-type
+         (and (add-type-binding! mapping self other-type)
+              other-type)))
 
    (define (replace-type-vars self mapping [default #f])
      (cond [(hash-has-key? mapping self)
@@ -794,4 +795,4 @@
         ;; adding the constraint encoded by value?
         (unify value (hash-ref mapping type-var) mapping)
         value))
-  (hash-set! mapping type-var new-value))
+  (and new-value (hash-set! mapping type-var new-value)))

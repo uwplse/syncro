@@ -171,8 +171,8 @@
                  (format "~a is a supertype of ~a but unification does not give ~a"
                          (repr t2) (repr t1) (repr t1)))]
                [else
-                (check-exn exn:fail? (lambda () (unify-types t1 t2))
-                           (format "~a and ~a have no subtyping relation but unification did not fail"
+                (check-false (unify-types t1 t2)
+                             (format "~a and ~a have no subtyping relation but unification did not fail"
                                    (repr t1) (repr t2)))])))
 
      (test-case "Unification with type variables"
@@ -184,21 +184,17 @@
        (commutative
         (check-equal? (unify-types (Vector-type a1 int) (Vector-type int a2))
                       (Vector-type int int)))
-       (check-exn exn:fail?
-                  (lambda ()
-                    (unify-types (Vector-type a1 int)
-                                 (Vector-type int bool))))
+       (check-false (unify-types (Vector-type a1 int)
+                                 (Vector-type int bool)))
 
        (commutative
         (check-equal? (unify-types
                        (Procedure-type (list (Vector-type a1 a2) a1) a2)
                        (Procedure-type (list (Vector-type int a1) a3) int))
                       (Procedure-type (list (Vector-type int int) int) int)))
-       (check-exn exn:fail?
-                  (lambda ()
-                    (unify-types
+       (check-false (unify-types
                      (Procedure-type (list (Vector-type a1 a2) a1) a2)
-                     (Procedure-type (list (Vector-type int a1) a3) bool)))))
+                     (Procedure-type (list (Vector-type int a1) a3) bool))))
 
      (test-case "union-types"
        (for ([t all])

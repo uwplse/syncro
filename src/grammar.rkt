@@ -86,23 +86,6 @@
         vector-ref^ equal?^ =^ <^ +^ -^ *^
         (special-form 'if if^) (special-form 'set! set!^)))
 
-(define (can-have-output-type? operator type)
-  (cond [(not (special-form? operator))
-         (let ([range-type (Procedure-range-type (variable-type operator))])
-           (or (Type-var? range-type)
-               (is-supertype? type range-type)))]
-        [(equal? (special-form-name operator) 'if)
-         #t]
-        [(equal? (special-form-name operator) 'set!)
-         (is-supertype? type (Void-type))]
-        [else
-         (error (format "Unknown special form: ~a" operator))]))
-
-(define (get-operators-with-output-type type)
-  (filter (lambda (op) (can-have-output-type? op type))
-          operator-info))
-
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Grammar construction ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -139,60 +122,68 @@
                          #:num-temps [num-temps 0]
                          #:guard-depth [guard-depth #f])
 
+  ;; We only want if to be used for statements, not expressions
   (define if-type
-    (let ([if-alpha (Type-var)])
-      (Procedure-type (list (Boolean-type) if-alpha if-alpha)
-                      if-alpha)))
+    (Procedure-type (list (Boolean-type) (Void-type) (Void-type))
+                    (Void-type)))
   
   (define (make-subexp-if type->subexp desired-type depth)
-    (apply if^ (make-subexp-helper if-type type->subexp desired-type depth)))
+    (let ([result (make-subexp-helper if-type type->subexp
+                                      desired-type depth)])
+      (and result (apply if^ result))))
   
   (define (make-subexp-set! type->subexp desired-type depth)
-    ;; We only need to get one item out of type->subexp, so no need to
-    ;; make a copy which we then mutate.
-    (let* ([variable
-            (apply my-choose*
-                   (send terminal-info get-terminals #:mutable? #t))]
-           [type (infer-type variable)])
-      (if (alist-has-key? type->subexp type)
-          (set!^ variable (alist-get type->subexp type))
-          (let ([subexp (general-grammar type depth)])
-            (alist-insert! type->subexp type subexp)
-            (set!^ variable subexp)))))
+    (and (is-supertype? desired-type (Void-type))
+         ;; We only need to get one item out of type->subexp, so no need to
+         ;; make a copy which we then mutate.
+         (let ([variable
+                (apply my-choose*
+                       (send terminal-info get-terminals #:mutable? #t))])
+           (and (not (lifted-error? variable))
+                (let* ([type (infer-type variable)])
+                  (if (alist-has-key? type->subexp type)
+                      (set!^ variable (alist-get type->subexp type))
+                      (let ([subexp (general-grammar type depth)])
+                        (and subexp
+                             (begin (alist-insert! type->subexp type subexp)
+                                    (set!^ variable subexp))))))))))
 
   (define (make-subexp-proc proc type->subexp desired-type depth)
-    (apply proc (make-subexp-helper (variable-type proc) type->subexp
-                                    desired-type depth)))
+    (define result
+      (make-subexp-helper (variable-type proc) type->subexp
+                          desired-type depth))
+    (and result (apply proc result)))
   
   (define (make-subexp-helper operator-type type->subexp desired-type depth)
     (let ([domain (get-domain-given-range operator-type desired-type)]
           [type->subexp-copy (alist-copy type->subexp)]
-          [mapping (make-type-map)]
-          [error-flag #f])
+          [mapping (make-type-map)])
       
       (define (get-or-make-subexp type)
-        (if error-flag
-            (lifted-error)
-            (let ([concrete-type
-                   (replace-type-vars type mapping #t)])
-              (define subexp
-                (if (alist-has-key? type->subexp-copy concrete-type)
-                    (alist-get-and-remove! type->subexp-copy concrete-type)
-                    (let ([res (general-grammar concrete-type (- depth 1))])
-                      (alist-insert! type->subexp concrete-type res)
-                      res)))
+        (let ([concrete-type (replace-type-vars type mapping #t)])
+          (define subexp
+            (if (alist-has-key? type->subexp-copy concrete-type)
+                (alist-get-and-remove! type->subexp-copy concrete-type)
+                (let ([res (general-grammar concrete-type (- depth 1))])
+                  (when res
+                    (alist-insert! type->subexp concrete-type res))
+                  res)))
+          
+          ;; The value of this unify can be seen in equal?^, where if
+          ;; the first expression chosen is of type Int, this will
+          ;; force the second expression to also have type Int
+          (when (and subexp (not (lifted-error? subexp)))
+            (unify type (infer-type subexp) mapping))
+          subexp))
 
-              (when (lifted-error? subexp)
-                (set! error-flag #t))
-              
-              ;; The value of this unify can be seen in if^, where if the
-              ;; first expression chosen is of type Int, this will force the
-              ;; second expression to also have type Int
-              (unless (lifted-error? subexp)
-                (unify type (infer-type subexp) mapping))
-              subexp)))
+      (define (special-andmap fn lst)
+        (if (null? lst)
+            lst
+            (let* ([first (fn (car lst))]
+                   [rest (and first (special-andmap fn (cdr lst)))])
+              (and rest (cons first rest)))))
       
-      (map get-or-make-subexp domain)))
+      (and domain (special-andmap get-or-make-subexp domain))))
   
   (define (make-subexp operator type->subexp desired-type depth)
     (cond [(not (special-form? operator))
@@ -210,26 +201,33 @@
   ;; symbolic and so we have too much sharing.
   ;; TODO: Handle mutability correctly
   (define (general-grammar desired-type depth #:mutable? [mutable? #t])
-    (define operators (get-operators-with-output-type desired-type))
-
     (define type->subexp (make-alist))
+
+    ;; Base case: Terminals
+    (define terminals
+      (send terminal-info get-terminals #:type desired-type
+            #:mutable? mutable?))
+
+    ;; Special case: Integer hole
+    (define integer-hole
+      (if (is-supertype? desired-type (Integer-type))
+          (list (let () (define-symbolic* hole integer?) hole))
+          '()))
+
+    ;; Recursive case
+    (define recurse
+      (if (= depth 0)
+          '()
+          (filter identity
+                  (map (lambda (op)
+                         (make-subexp op type->subexp desired-type depth))
+                       operator-info))))
+    
     ;; Here we are relying on map to process elements sequentially. I
     ;; think this is guaranteed by map, but am not sure.
     ;; It would also be okay for map to process things in an arbitrary
     ;; order, but still sequentially. Parallelism would be bad though.
-    (apply my-choose*
-           (append
-            ;; Base case: Terminals
-            (send terminal-info get-terminals #:type desired-type
-                  #:mutable? mutable?)
-            (if (is-supertype? desired-type (Integer-type))
-                (list (let () (define-symbolic* hole integer?) hole))
-                '())
-            (if (= depth 0)
-                '()
-                (map (lambda (op)
-                       (make-subexp op type->subexp desired-type depth))
-                     operators)))))
+    (apply my-choose* (append terminals integer-hole recurse)))
 
   (build-grammar terminal-info num-stmts depth num-temps guard-depth
                  general-grammar
