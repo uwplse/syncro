@@ -9,6 +9,7 @@
          get-parent is-supertype? repr has-setters? symbolic-code
          generate-update-arg-names update-code old-values-code symbolic-update-code
          Type-var unify-types apply-type get-domain-given-range union-types
+         get-domain-given-range-with-mutability is-application-mutable?
          type? Any-type? Bottom-type? Boolean-type? Index-type? Integer-type? Enum-type?
          Vector-type? Procedure-type? Error-type? Void-type?
          make-type-map unify replace-type-vars
@@ -678,8 +679,32 @@
                            (gen-union-types self-range other-range)))
          (default-union-types self other-type)))])
 
-(define (Procedure-type domain-types range-type)
-  (Procedure-Type domain-types range-type))
+;; A read procedure is one that can be applied to a data structure.
+;; If it is applied to a mutable data structure, then it will produce
+;; a value that is allowed to be mutated.
+;; (Note that it might not make sense to mutate it -- if you use
+;; vector-ref on a vector of ints, you get an int, which you wouldn't
+;; want to mutate.)
+;; read-index is the index into the domain that identifies which
+;; argument to the procedure would contain the data structure.
+(struct Read-Procedure-Type Procedure-Type (read-index) #:transparent)
+
+;; A write procedure is one that mutates exactly one of its arguments.
+;; write-index is the index into the domain that identifies which
+;; argument to the procedure contains the data structure to mutate.
+(struct Write-Procedure-Type Procedure-Type (write-index) #:transparent)
+
+(define (Procedure-type domain-types range-type
+                        #:read-index [ridx #f]
+                        #:write-index [widx #f])
+  (cond [(and ridx widx)
+         (error "A procedure cannot both read and write")]
+        [ridx
+         (Read-Procedure-Type domain-types range-type ridx)]
+        [widx
+         (Write-Procedure-Type domain-types range-type widx)]
+        [else
+         (Procedure-Type domain-types range-type)]))
 
 ;; TODO: Is it possible that type variables collide (that is, they are
 ;; forced to bind to the same type even though they could be allowed
@@ -798,3 +823,54 @@
         (unify value (hash-ref mapping type-var) mapping)
         value))
   (and new-value (hash-set! mapping type-var new-value)))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Mutability analysis ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; The result of a procedure application can only be mutable if it
+;; reads from a mutable data structure.
+(define (is-application-mutable? proc-type args-mutable?)
+  (and (Read-Procedure-Type? proc-type)
+       (list-ref args-mutable? (Read-Procedure-Type-read-index proc-type))))
+
+;; Like get-domain-given-range, but includes constraints on
+;; mutability.
+;; range-pair is a pair of the range type and range mutability.
+(define (get-domain-given-range-with-mutability proc-type range-type range-mutable? [default #f])
+  (let ([domain-types
+         (get-domain-given-range proc-type range-type default)])
+    ;; Get domain types as before
+    (and domain-types
+         ;; By default, none of the arguments need to be mutable
+         ;; handle-read-write will fix the result to account for Read
+         ;; and Write procedures
+         (handle-read-write
+          proc-type range-mutable?
+          (map (lambda (x) (cons x #f)) domain-types)))))
+
+;; Fixes results to account for Read and Write procedures.
+(define (handle-read-write proc-type range-mutable? domain-pairs)
+  (cond [(Write-Procedure-Type? proc-type)
+         ;; A Write procedure forces one of its arguments to be
+         ;; mutable.
+         (and (not range-mutable?)
+              (make-mutable
+               domain-pairs
+               (Write-Procedure-Type-write-index proc-type)))]
+        ;; A Read procedure forces one of its arguments to be mutable
+        ;; if it needs to produce a mutable result.
+        [(and (Read-Procedure-Type? proc-type) range-mutable?)
+         (make-mutable domain-pairs
+                       (Read-Procedure-Type-read-index proc-type))]
+        [else domain-pairs]))
+
+;; Replaces the pair at the specified index with a new pair containing
+;; the same type and the mutability flag set (i.e. #t)
+(define (make-mutable type-mutable-pairs index)
+  (if (= index 0)
+      (cons (cons (caar type-mutable-pairs) #t)
+            (cdr type-mutable-pairs))
+      (cons (car type-mutable-pairs)
+            (make-mutable (cdr type-mutable-pairs) (- index 1)))))

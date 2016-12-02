@@ -47,6 +47,7 @@
 ;; Lifting operators ;;
 ;;;;;;;;;;;;;;;;;;;;;;;
 
+;; TODO: Put all of this into its own file (can be used by rosette-util-test)
 (match-define (list alpha-v1 alpha-v2 alpha-v3 alpha-v4)
   (build-list 4 (lambda (i) (Type-var (Index-type)))))
 (match-define (list beta-v3 beta-v4 alpha-v5)
@@ -59,23 +60,22 @@
 
 (define-lifted
   [void void^ (Procedure-type '() (Void-type))]
-  [vector-increment! vector-increment!^
-                     (Procedure-type (list (Vector-type alpha-v1 (Integer-type))
-                                           alpha-v1)
-                                     (Void-type))]
-  [vector-decrement! vector-decrement!^
-                     (Procedure-type (list (Vector-type alpha-v2 (Integer-type))
-                                           alpha-v2)
-                                     (Void-type))]
-  [vector-set! vector-set!^
-               (Procedure-type (list (Vector-type alpha-v3 beta-v3)
-                                     alpha-v3
-                                     beta-v3)
-                               (Void-type))]
-  [vector-ref vector-ref^
-              (Procedure-type (list (Vector-type alpha-v4 beta-v4)
-                                    alpha-v4)
-                              beta-v4)]
+  [vector-increment!
+   vector-increment!^
+   (Procedure-type (list (Vector-type alpha-v1 (Integer-type)) alpha-v1)
+                   (Void-type) #:write-index 0)]
+  [vector-decrement!
+   vector-decrement!^
+   (Procedure-type (list (Vector-type alpha-v2 (Integer-type)) alpha-v2)
+                   (Void-type) #:write-index 0)]
+  [vector-set!
+   vector-set!^
+   (Procedure-type (list (Vector-type alpha-v3 beta-v3) alpha-v3 beta-v3)
+                   (Void-type) #:write-index 0)]
+  [vector-ref
+   vector-ref^
+   (Procedure-type (list (Vector-type alpha-v4 beta-v4) alpha-v4)
+                   beta-v4 #:read-index 0)]
   [equal? equal?^ (Procedure-type (list alpha-v5 alpha-v5) (Boolean-type))]
   [= =^ cmp-type] [< <^ cmp-type]
   [+ +^ arith-type] [- -^ arith-type] [* *^ arith-type] #;[/ /^ arith-type])
@@ -101,13 +101,15 @@
 ;; multiple statements inside it, it counts as only one statement.)
 (define (grammar terminal-info num-stmts depth
                  #:num-temps [num-temps 0]
-                 #:guard-depth [guard-depth #f])
+                 #:guard-depth [guard-depth #f]
+                 #:version [version 'basic])
 
   (num-vars-without-filtering 0)
   (num-boolean-vars 0)
   (num-vars-if-optimized 0)
   
-  (define proc #;grammar-sharing grammar-basic)
+  (define proc
+    (if (equal? version 'basic) grammar-basic grammar-sharing))
   (define result
     (proc terminal-info num-stmts depth #:num-temps num-temps
           #:guard-depth guard-depth))
@@ -127,46 +129,53 @@
     (Procedure-type (list (Boolean-type) (Void-type) (Void-type))
                     (Void-type)))
   
-  (define (make-subexp-if type->subexp desired-type depth)
-    (let ([result (make-subexp-helper if-type type->subexp
-                                      desired-type depth)])
-      (and result (apply if^ result))))
+  (define (make-subexp-if type->subexp desired-type mutable? depth)
+    (and (not mutable?)
+         (let ([result (make-subexp-helper if-type type->subexp
+                                           desired-type mutable? depth)])
+           (and result (apply if^ result)))))
   
-  (define (make-subexp-set! type->subexp desired-type depth)
+  (define (make-subexp-set! type->subexp desired-type mutable? depth)
     (and (is-supertype? desired-type (Void-type))
+         (not mutable?)
          ;; We only need to get one item out of type->subexp, so no need to
          ;; make a copy which we then mutate.
          (let ([variable
                 (apply my-choose*
                        (send terminal-info get-terminals #:mutable? #t))])
            (and (not (lifted-error? variable))
-                (let* ([type (infer-type variable)])
-                  (if (alist-has-key? type->subexp type)
-                      (set!^ variable (alist-get type->subexp type))
-                      (let ([subexp (general-grammar type depth)])
+                (let* ([type (infer-type variable)]
+                       [key (cons type #f)])
+                  (if (alist-has-key? type->subexp key)
+                      (set!^ variable (alist-get type->subexp key))
+                      (let ([subexp (general-grammar type #:mutable? #f depth)])
                         (and subexp
-                             (begin (alist-insert! type->subexp type subexp)
+                             (begin (alist-insert! type->subexp key subexp)
                                     (set!^ variable subexp))))))))))
 
-  (define (make-subexp-proc proc type->subexp desired-type depth)
+  (define (make-subexp-proc proc type->subexp desired-type mutable? depth)
     (define result
       (make-subexp-helper (variable-type proc) type->subexp
-                          desired-type depth))
+                          desired-type mutable? depth))
     (and result (apply proc result)))
   
-  (define (make-subexp-helper operator-type type->subexp desired-type depth)
-    (let ([domain (get-domain-given-range operator-type desired-type)]
+  (define (make-subexp-helper operator-type type->subexp desired-type mutable? depth)
+    (let ([domain-pairs (get-domain-given-range-with-mutability
+                         operator-type desired-type mutable?)]
           [type->subexp-copy (alist-copy type->subexp)]
           [mapping (make-type-map)])
       
-      (define (get-or-make-subexp type)
-        (let ([concrete-type (replace-type-vars type mapping #t)])
+      (define (get-or-make-subexp type-pair)
+        (let* ([concrete-type (replace-type-vars (car type-pair) mapping #t)]
+               [mutable? (cdr type-pair)]
+               [key (cons concrete-type mutable?)])
           (define subexp
-            (if (alist-has-key? type->subexp-copy concrete-type)
-                (alist-get-and-remove! type->subexp-copy concrete-type)
-                (let ([res (general-grammar concrete-type (- depth 1))])
+            (if (alist-has-key? type->subexp-copy key)
+                (alist-get-and-remove! type->subexp-copy key)
+                (let ([res (general-grammar concrete-type #:mutable? mutable?
+                                            (- depth 1))])
                   (when res
-                    (alist-insert! type->subexp concrete-type res))
+                    (alist-insert! type->subexp key res))
                   res)))
           
           ;; The value of this unify can be seen in equal?^, where if
@@ -174,7 +183,7 @@
           ;; force the second expression to also have type Int
           (and subexp
                (not (lifted-error? subexp))
-               (begin (unify type (infer-type subexp) mapping)
+               (begin (unify (car type-pair) (infer-type subexp) mapping)
                       subexp))))
 
       (define (special-andmap fn lst)
@@ -184,15 +193,15 @@
                    [rest (and first (special-andmap fn (cdr lst)))])
               (and rest (cons first rest)))))
       
-      (and domain (special-andmap get-or-make-subexp domain))))
+      (and domain-pairs (special-andmap get-or-make-subexp domain-pairs))))
   
-  (define (make-subexp operator type->subexp desired-type depth)
+  (define (make-subexp operator type->subexp desired-type mutable? depth)
     (cond [(not (special-form? operator))
-           (make-subexp-proc operator type->subexp desired-type depth)]
+           (make-subexp-proc operator type->subexp desired-type mutable? depth)]
           [(equal? (special-form-name operator) 'if)
-           (make-subexp-if type->subexp desired-type depth)]
+           (make-subexp-if type->subexp desired-type mutable? depth)]
           [(equal? (special-form-name operator) 'set!)
-           (make-subexp-set! type->subexp desired-type depth)]
+           (make-subexp-set! type->subexp desired-type mutable? depth)]
           [else
            (error (format "Unknown special form: ~a" operator))]))
 
@@ -223,10 +232,11 @@
     (define recurse
       (if (= depth 0)
           '()
-          (filter identity
-                  (map (lambda (op)
-                         (make-subexp op type->subexp desired-type depth))
-                       operator-info))))
+          (filter
+           identity
+           (map (lambda (op)
+                  (make-subexp op type->subexp desired-type mutable? depth))
+                operator-info))))
     
     (define all-args (append terminals integer-hole recurse))
     (and (not (null? all-args))

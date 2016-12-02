@@ -28,6 +28,7 @@
   ;; Type inference
   (infer-type inferable)
   ;; Mutability inference
+  ;; TODO: Is this even necessary? I don't think it's dead code right now
   (mutable? inferable)
   #:defaults
   ([integer?
@@ -116,13 +117,15 @@
 
   #:methods gen:inferable
   [(define/generic gen-infer-type infer-type)
+   (define/generic gen-mutable? mutable?)
 
    (define (infer-type self)
      (apply-type (gen-infer-type (lifted-apply-proc self))
                  (map gen-infer-type (lifted-apply-args self))))
 
    (define (mutable? self)
-     0 #;TODO)])
+     (is-application-mutable? (infer-type (lifted-apply-proc self))
+                              (map gen-mutable? (lifted-apply-args self))))])
 
 
 (struct lifted-begin lifted-writer (args) #:transparent
