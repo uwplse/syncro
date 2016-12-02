@@ -201,7 +201,7 @@
   ;; generate but don't, specifically when the desired-type is
   ;; symbolic and so we have too much sharing.
   ;; TODO: Handle mutability correctly
-  (define (general-grammar desired-type depth #:mutable? [mutable? #t])
+  (define (general-grammar desired-type depth #:mutable? [mutable? #f])
     (define type->subexp (make-alist))
 
     ;; Base case: Terminals
@@ -216,6 +216,10 @@
           '()))
 
     ;; Recursive case
+    ;; Here we are relying on map to process elements sequentially. I
+    ;; think this is guaranteed by map, but am not sure.
+    ;; It would also be okay for map to process things in an arbitrary
+    ;; order, but still sequentially. Parallelism would be bad though.
     (define recurse
       (if (= depth 0)
           '()
@@ -224,11 +228,9 @@
                          (make-subexp op type->subexp desired-type depth))
                        operator-info))))
     
-    ;; Here we are relying on map to process elements sequentially. I
-    ;; think this is guaranteed by map, but am not sure.
-    ;; It would also be okay for map to process things in an arbitrary
-    ;; order, but still sequentially. Parallelism would be bad though.
-    (apply my-choose* (append terminals integer-hole recurse)))
+    (define all-args (append terminals integer-hole recurse))
+    (and (not (null? all-args))
+         (apply my-choose* all-args)))
 
   (build-grammar terminal-info num-stmts depth num-temps guard-depth
                  general-grammar

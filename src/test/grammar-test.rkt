@@ -33,10 +33,10 @@
        (send info add-terminal z)
        
        (check-equal? (send info get-terminal-by-id 'z) z)
-       (check-equal? (get #:type int) (set 'x 'y 'z))
-       (check-equal? (get #:type int #:mutable? #t) (set 'x))
+       (check-equal? (get #:type int) (set 'v 'w 'x 'y 'z))
+       (check-equal? (get #:type int #:mutable? #t) (set 'v 'x))
        (check-equal? (get #:type idx #:mutable? #t) (set 'v 'x))
-       (check-equal? (get #:type bool) (set))
+       (check-equal? (get #:type bool) (set 'w))
        (check-equal? (get #:type any) (set 'v 'w 'x 'y 'z))))
 
    (test-case "Grammar construction"
