@@ -1,7 +1,7 @@
 #lang racket
 
 (require rackunit rackunit/text-ui)
-(require "../rosette-util.rkt" "../types.rkt")
+(require "../lifted-operators.rkt" "../rosette-util.rkt" "../types.rkt")
 
 (provide run-rosette-util-tests)
 
@@ -12,30 +12,6 @@
   (test-suite
    "Tests for rosette-util.rkt"
    (let ()
-
-     (match-define (list alpha-v1 alpha-v2)
-       (build-list 2 (lambda (i) (Type-var (Index-type)))))
-     (match-define (list beta-v1 beta-v2)
-       (build-list 2 (lambda (i) (Type-var))))
-     
-     (define cmp-type
-       (Procedure-type (list (Integer-type) (Integer-type)) (Boolean-type)))
-     (define arith-type
-       (Procedure-type (list (Integer-type) (Integer-type)) (Integer-type)))
-
-     (define-lifted
-       [void void^ (Procedure-type '() (Void-type))]
-       [vector-set! vector-set!^
-                    (Procedure-type (list (Vector-type alpha-v1 beta-v1)
-                                          alpha-v1
-                                          beta-v1)
-                                    (Void-type))]
-       [vector-ref vector-ref^
-                   (Procedure-type (list (Vector-type alpha-v2 beta-v2)
-                                         alpha-v2)
-                                   beta-v2)]
-       [= =^ cmp-type] [< <^ cmp-type]
-       [+ +^ arith-type] [- -^ arith-type] [* *^ arith-type])
 
      (test-case "eval-lifted and lifted-code invariant"
        (define lifted-objects

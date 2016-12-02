@@ -131,7 +131,7 @@
 
      (test-case "Sharing grammar"
        (define simple-prog (grammar info 2 2 #:version 'sharing))
-       (define medium-prog (grammar info 3 3 #:version 'sharing))
+       ;(define medium-prog (grammar info 3 3 #:version 'sharing))
 
        (check-in-grammar
         simple-prog
