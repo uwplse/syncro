@@ -28,6 +28,7 @@
           [int (Integer-type)]
           [enum (Enum-type 'Word 12)]
           [vec (Vector-type 10 (Boolean-type))]
+          [sett (Set-type enum)]
           [proc (Procedure-type (list int int) (Integer-type))]
           [err (Error-type)]
           [void (Void-type)]
@@ -44,6 +45,8 @@
        (check-not-equal? enum (Enum-type 'Word 12))
        (check-equal? enum enum)
        (check-equal? vec (Vector-type 10 bool))
+       (check-equal? sett (Set-type enum))
+       (check-not-equal? sett (Set-type (Enum-type 'Word 12)))
        (check-equal? proc (Procedure-type (list (Integer-type) int) (Integer-type)))
        (check-equal? err (Error-type))
        (check-equal? void (Void-type))
@@ -60,6 +63,7 @@
        (check-equal? (get-parent int) idx)
        (check-equal? (get-parent enum) idx)
        (check-equal? (get-parent vec) any)
+       (check-equal? (get-parent sett) any)
        (check-equal? (get-parent proc) any)
        (check-equal? (get-parent err) any)
        (check-equal? (get-parent void) any))
@@ -70,7 +74,8 @@
        (for ([t all])
          (check-true (type? t))
          (check-true (Any-type? t))
-         (check-true (is-supertype? any t)))
+         (check-true (is-supertype? any t))
+         (check-true (is-supertype? t bot)))
 
        (define predicate->type
          (hash Bottom-type? bot
@@ -79,6 +84,7 @@
                Integer-type? int
                Enum-type? enum
                Vector-type? vec
+               Set-type? sett
                Procedure-type? proc
                Error-type? err
                Void-type? void))
@@ -90,6 +96,7 @@
                Integer-type? (set bot int)
                Enum-type? (set bot enum)
                Vector-type? (set bot vec)
+               Set-type? (set bot sett)
                Procedure-type? (set bot proc)
                Error-type? (set bot err)
                Void-type? (set bot void)))
@@ -119,6 +126,9 @@
                                    (Vector-type idx bool)))
        (check-false (is-supertype? (Vector-type idx bot)
                                    (Vector-type int bool)))
+
+       (check-true (is-supertype? sett (Set-type enum)))
+       (check-false (is-supertype? sett (Set-type (Enum-type 'Word 12))))
        
        (check-false (is-supertype? (Procedure-type (list int) int)
                                    (Procedure-type (list int int) int)))
@@ -153,8 +163,8 @@
      (test-case "Repr method"
        (for ([t all])
          ;; Special rules for Enums that are not tested here, see types.rkt
-         ;; vec contains an enum, so it will also not work
-         (unless (member t (list enum vec))
+         ;; vec and set contain an enum, so they will also not work
+         (unless (member t (list enum vec sett))
            (check-equal? t (eval (repr t) ns)))))
 
      (test-case "Unification without type variables"
@@ -184,6 +194,9 @@
        (commutative
         (check-equal? (unify-types (Vector-type a1 int) (Vector-type int a2))
                       (Vector-type int int)))
+       (commutative
+        (check-equal? (unify-types sett (Set-type a1)) sett))
+
        (check-false (unify-types (Vector-type a1 int)
                                  (Vector-type int bool)))
 

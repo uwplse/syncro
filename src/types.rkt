@@ -631,7 +631,8 @@
          (default-unify self other-type mapping)
          (let ([new-content
                 (gen-unify (Set-Type-content-type self)
-                           (Set-Type-content-type other-type))])
+                           (Set-Type-content-type other-type)
+                           mapping)])
            (and new-content (Set-Type new-content)))))
 
    (define (replace-type-vars self mapping [default #f])
