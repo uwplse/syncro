@@ -2,7 +2,7 @@
 #lang s-exp rosette
 
 (require rosette/lib/synthax)
-(require "operators.rkt" "types.rkt" "grammar.rkt")
+(require "enum-set.rkt" "grammar.rkt" "operators.rkt" "types.rkt")
 
 (provide my-for/sum my-for/or run-in-rosette)
 

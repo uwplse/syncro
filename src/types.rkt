@@ -1,7 +1,7 @@
 #lang rosette
 
 (provide Any-type Bottom-type Index-type Boolean-type Integer-type Enum-type
-         Vector-type Procedure-type Error-type Void-type Type? symbolic?
+         Vector-type Set-type Procedure-type Error-type Void-type Type? symbolic?
          (rename-out [Vector-Type-index-type Vector-index-type]
                      [Vector-Type-output-type Vector-output-type]
                      [Procedure-Type-domain-types Procedure-domain-types]
@@ -11,7 +11,7 @@
          Type-var unify-types apply-type get-domain-given-range union-types
          get-domain-given-range-with-mutability is-application-mutable?
          type? Any-type? Bottom-type? Boolean-type? Index-type? Integer-type? Enum-type?
-         Vector-type? Procedure-type? Error-type? Void-type?
+         Vector-type? Set-type? Procedure-type? Error-type? Void-type?
          make-type-map unify replace-type-vars
          (rename-out [Type-Var? Type-var?]))
 
@@ -28,7 +28,8 @@
  [Type? type?] [Any-Type? Any-type?] [Bottom-Type? Bottom-type?]
  [Boolean-Type? Boolean-type?] [Index-Type? Index-type?]
  [Integer-Type? Integer-type?] [Enum-Type? Enum-type?]
- [Vector-Type? Vector-type?] [Procedure-Type? Procedure-type?]
+ [Vector-Type? Vector-type?] [Set-Type? Set-type?]
+ [Procedure-Type? Procedure-type?]
  [Error-Type? Error-type?] [Void-Type? Void-type?] )
 
 (define (set-add-code set-name val)
@@ -88,11 +89,7 @@
 ;; Unifies types that don't have parameters. Types with parameters
 ;; (eg. Vectors) will have to do something extra.
 (define (default-union-types self other-type)
-  (cond [(Bottom-type? self)
-         other-type]
-        [(Bottom-type? other-type)
-         self]
-        [(is-supertype? self other-type)
+  (cond [(is-supertype? self other-type)
          self]
         [(is-supertype? other-type self)
          other-type]
@@ -568,7 +565,6 @@
 
            [(equal? update-type 'assign)
             (match-define (list tmp-index tmp-val) update-args)
-            (define old-val-tmp (gensym 'old-value))
             (list
              ;; Create the symbolic index into the vector
              #`(begin (define-symbolic* #,tmp-index integer?)
@@ -608,6 +604,113 @@
         length-or-input
         (Integer-type)))
   (Vector-Type length input output))
+
+;; content-type must be an Enum type
+(struct Set-Type Any-Type (content-type) #:transparent
+  #:methods gen:Type
+  [(define/generic gen-is-supertype? is-supertype?)
+   (define/generic gen-repr repr)
+   (define/generic gen-unify unify)
+   (define/generic gen-replace-type-vars replace-type-vars)
+   (define/generic gen-union-types union-types)
+   
+   (define (get-parent self)
+     (struct-copy Any-Type self))
+
+   (define (is-supertype? self other-type)
+     (or (Bottom-Type? other-type)
+         (and (Set-Type? other-type)
+              (gen-is-supertype? (Set-Type-content-type self)
+                                 (Set-Type-content-type other-type)))))
+
+   (define (repr self)
+     `(Set-type ,(gen-repr (Set-Type-content-type self))))
+
+   (define (unify self other-type mapping)
+     (if (not (Set-Type? other-type))
+         (default-unify self other-type mapping)
+         (let ([new-content
+                (gen-unify (Set-Type-content-type self)
+                           (Set-Type-content-type other-type))])
+           (and new-content (Set-Type new-content)))))
+
+   (define (replace-type-vars self mapping [default #f])
+     (Set-Type (gen-replace-type-vars (Set-Type-content-type self)
+                                      mapping default)))
+
+   (define (union-types self other-type)
+     (if (Set-Type? other-type)
+         (Set-Type (gen-union-types (Set-Type-content-type self)
+                                    (Set-Type-content-type other-type)))
+         (default-union-types self other-type)))]
+  
+  #:methods gen:symbolic
+  [(define/generic gen-has-setters? has-setters?)
+   (define/generic gen-symbolic-code symbolic-code)
+   (define/generic gen-generate-update-arg-names generate-update-arg-names)
+   (define/generic gen-update-code update-code)
+   (define/generic gen-old-values-code old-values-code)
+   (define/generic gen-symbolic-update-code symbolic-update-code)
+   
+   (define (has-setters? self) #t)
+   
+   (define (symbolic-code self var [varset-name #f])
+     (define len (Enum-Type-num-items (Set-Type-content-type self)))
+     #`(define #,var
+         #,(if varset-name
+               #`(make-symbolic-enum-set-with-tracking #,len #,varset-name)
+               #`(make-symbolic-enum-set #,len))))
+
+   (define (generate-update-arg-names self update-type)
+     (cond [(member update-type '(add remove))
+            (list (gensym (Enum-Type-name (Set-Type-content-type self))))]
+
+           [else
+            (error (format "Unknown Set update type: ~a~%" update-type))]))
+
+   (define (update-code self update-type)
+     (cond [(member update-type '(add remove))
+            (define update-name
+              (if (equal? update-type 'add)
+                  #'enum-set-add!
+                  #'enum-set-remove!))
+            (lambda (set value)
+              #`(#,update-name #,set #,value))]
+
+           [else
+            (error (format "Unknown Set update type: ~a~%" update-type))]))
+
+   (define (old-values-code self update-type var . update-args)
+     (cond [(member update-type '(add remove))
+            (let ([old-val-tmp (gensym 'was-in-set?)])
+              (list #`(define #,old-val-tmp
+                        (enum-set-contains? #,var #,(car update-args)))
+                    (list old-val-tmp)
+                    (list (Boolean-type))))]
+           
+           [else
+            (error (format "Unknown Set update type: ~a~%" update-type))]))
+
+   (define (symbolic-update-code self update-type var update-args)
+     (cond [(member update-type '(add remove))
+            (let ([tmp-val (car update-args)]
+                  [update-name (if (equal? update-type 'add)
+                                   #'enum-set-add!
+                                   #'enum-set-remove!)]
+                  [content-type (Set-Type-content-type self)])
+              (list (gen-symbolic-code content-type tmp-val #f)
+                    ;; Perform the update
+                    #`(#,update-name #,var #,tmp-val)
+                    (list content-type)))]
+
+           [else
+            (error (format "Unknown Set update type: ~a~%" update-type))]))])
+
+(define (Set-type content-type)
+  (unless (or (Enum-type? content-type)
+              (Type-Var? content-type))
+    (error (format "Cannot make a Set-type containing ~a~%" content-type)))
+  (Set-Type content-type))
 
 ;; domain-types: List of types of arguments consumed.
 ;; range-type:   Type of value produced.

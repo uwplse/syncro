@@ -1,6 +1,6 @@
 #lang racket
 
-(require "types.rkt")
+(require "enum-set.rkt" "types.rkt")
 
 (require (for-syntax "dependency-graph.rkt" "grammar.rkt" "rosette-namespace.rkt"
                      "synthesis.rkt" "types.rkt" "variable.rkt"
@@ -8,6 +8,7 @@
                      (only-in racket pretty-print send send/apply new)))
 
 (provide (except-out (all-from-out "types.rkt") Enum-type)
+         (all-from-out "enum-set.rkt")
          define-enum-type
          define-constant define-incremental finalize
          my-for/sum my-for/or)
