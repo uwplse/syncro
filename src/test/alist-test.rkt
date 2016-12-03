@@ -18,7 +18,9 @@
            (check-equal? (alist-get sym->num key) value)))
 
      (define (check-get-and-remove! key value)
-       (check-true (alist-has-key? sym->num key))
+       (check-true (alist-has-key? sym->num key)
+                   (format "Key ~a should have value ~a but was not present"
+                           key value))
        (define res (alist-get-and-remove! sym->num key))
        (if (list? value)
            (check-not-false (member res value))

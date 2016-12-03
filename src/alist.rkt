@@ -8,7 +8,6 @@
 
 (struct no-value ())
 
-;; TODO: Put this in a mutable box to make code nicer
 (define (make-alist)
   (box '()))
 
@@ -37,20 +36,12 @@
   (loop (unbox alist)))
 
 (define (alist-get-and-remove! alist key)
-  ;; Returns a list of two values -- the result of (alist-get alist
-  ;; key), and the new alist after removing that entry.
   (define (loop lst)
-    (cond [(null? lst)
-           (error (format "Get-and-remove: No such key ~a" key))]
-          [(equal? key (caar lst))
-           (list (cdar lst)
-                 (cons (cons (no-value) (no-value))
-                       (cdr lst)))]
+    (cond [(equal? key (caar lst))
+           (cdr lst)]
           [else
-           (let ([result-pair (loop (cdr lst))])
-             (list (first result-pair)
-                   (cons (car lst) (second result-pair))))]))
+           (cons (car lst) (loop (cdr lst)))]))
 
-  (let ([result-pair (loop (unbox alist))])
-    (set-box! alist (second result-pair))
-    (first result-pair)))
+  (define result (alist-get alist key))
+  (set-box! alist (loop (unbox alist)))
+  result)
