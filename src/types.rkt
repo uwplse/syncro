@@ -4,6 +4,7 @@
          Vector-type Set-type Procedure-type Error-type Void-type Type? symbolic?
          (rename-out [Vector-Type-index-type Vector-index-type]
                      [Vector-Type-output-type Vector-output-type]
+                     [Set-Type-content-type Set-content-type]
                      [Procedure-Type-domain-types Procedure-domain-types]
                      [Procedure-Type-range-type Procedure-range-type])
          get-parent is-supertype? repr has-setters? symbolic-code
@@ -407,6 +408,7 @@
    (define (get-parent self)
      (struct-copy Any-Type self))
 
+   ;; TODO: The output type has to be both co- and contra-variant
    (define (is-supertype? self other-type)
      (or (Bottom-Type? other-type)
          (and (Vector-Type? other-type)
@@ -605,7 +607,7 @@
         (Integer-type)))
   (Vector-Type length input output))
 
-;; content-type must be an Enum type
+;; content-type must be an Enum type, Any-type, or a type variable
 (struct Set-Type Any-Type (content-type) #:transparent
   #:methods gen:Type
   [(define/generic gen-is-supertype? is-supertype?)
@@ -617,6 +619,7 @@
    (define (get-parent self)
      (struct-copy Any-Type self))
 
+   ;; TODO: The content type has to be both co- and contra-variant
    (define (is-supertype? self other-type)
      (or (Bottom-Type? other-type)
          (and (Set-Type? other-type)
@@ -659,8 +662,8 @@
      (define len (Enum-Type-num-items (Set-Type-content-type self)))
      #`(define #,var
          #,(if varset-name
-               #`(make-symbolic-enum-set-with-tracking #,len #,varset-name)
-               #`(make-symbolic-enum-set #,len))))
+               #`(enum-make-symbolic-set-with-tracking #,len #,varset-name)
+               #`(enum-make-symbolic-set #,len))))
 
    (define (generate-update-arg-names self update-type)
      (cond [(member update-type '(add remove))
@@ -708,7 +711,8 @@
             (error (format "Unknown Set update type: ~a~%" update-type))]))])
 
 (define (Set-type content-type)
-  (unless (or (Enum-type? content-type)
+  (unless (or (Any-Type? content-type)
+              (Enum-Type? content-type)
               (Type-Var? content-type))
     (error (format "Cannot make a Set-type containing ~a~%" content-type)))
   (Set-Type content-type))

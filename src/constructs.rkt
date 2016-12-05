@@ -8,6 +8,7 @@
                      (only-in racket pretty-print send send/apply new)))
 
 (provide (except-out (all-from-out "types.rkt") Enum-type)
+         ;; TODO: Remove the "enum-" prefix
          (all-from-out "enum-set.rkt")
          define-enum-type
          define-constant define-incremental finalize

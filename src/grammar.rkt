@@ -49,8 +49,9 @@
 
 (struct special-form (name constructor) #:transparent)
 (define operator-info
-  (list void^ vector-increment!^ vector-decrement!^ vector-set!^
-        vector-ref^ equal?^ =^ <^ +^ -^ *^
+  (list void^ vector-increment!^ vector-decrement!^ vector-set!^ vector-ref^
+        enum-set-add!^ enum-set-remove!^ enum-set-contains?^
+        equal?^ =^ <^ +^ -^ *^
         (special-form 'if if^) (special-form 'set! set!^)))
 
 ;; terminal-info: A Terminal-Info object
@@ -155,8 +156,16 @@
             (let* ([first (fn (car lst))]
                    [rest (and first (special-andmap fn (cdr lst)))])
               (and rest (cons first rest)))))
-      
+
       (and domain-pairs (special-andmap get-or-make-subexp domain-pairs))))
+
+  ;; special-andmap above creates weird symbolic terms because of
+  ;; the complicated recursion. An alternative below.
+  ;; However, this loses the short-circuiting behavior of andmap, and
+  ;; so there will be more calls to get-or-make-subexp.
+  ;; (define result
+  ;;   (and domain-pairs (map get-or-make-subexp domain-pairs)))
+  ;; (and result (not (member #f result)) result)))
   
   (define (make-subexp operator type->subexp desired-type mutable? depth)
     (cond [(not (special-form? operator))
@@ -172,7 +181,7 @@
   ;; TODO: Is this sound? There may be some programs that we should
   ;; generate but don't, specifically when the desired-type is
   ;; symbolic and so we have too much sharing.
-  ;; TODO: Handle mutability correctly
+  ;; TODO: Use for/all to guarantee that desired-type will be concrete.
   (define (general-grammar desired-type depth #:mutable? [mutable? #f])
     (define type->subexp (make-alist))
 
@@ -222,13 +231,15 @@
                     (begin^ (base-stmt-grammar num-stmts depth)
                             (stmt-grammar (- num-stmts 1) depth)))))
 
-  ;; Vector statements, set!, and if
+  ;; Vector statements, set statements, set!, and if
   (define (base-stmt-grammar num-stmts depth)
     ;; TODO: boolean-expr-grammar should have some other depth
     (if (<= num-stmts 2)
         (my-choose* (vector-stmt-grammar depth)
+                    (set-stmt-grammar depth)
                     (set!-stmt-grammar depth))
         (my-choose* (vector-stmt-grammar depth)
+                    (set-stmt-grammar depth)
                     (set!-stmt-grammar depth)
                     (if^ (expr-grammar (Boolean-type) depth)
                          (stmt-grammar 1 depth)
@@ -246,6 +257,17 @@
             (my-choose* ((my-choose* vector-increment!^ vector-decrement!^) vec index)
                         (vector-set!^ vec index value))))))
 
+  ;; enum-set-add!, enum-set-remove!
+  (define (set-stmt-grammar depth)
+    (let* ([sett (expr-grammar (Set-type (Any-type)) (- depth 1) #:mutable? #t)]
+           [sett-type (infer-type sett)])
+      (if (Error-type? sett-type)
+          (lifted-error)
+          (let* ([elem (expr-grammar (Set-content-type sett-type) (- depth 1))])
+            (if (lifted-error? elem)
+                (lifted-error)
+                ((my-choose* enum-set-add!^ enum-set-remove!^) sett elem))))))
+
   (define (set!-stmt-grammar depth)
     (let* ([variable
             (apply my-choose*
@@ -259,15 +281,19 @@
                        (send terminal-info get-terminals
                              #:type desired-type
                              #:mutable? mutable?))])
-      (if (= depth 0)
-          base
-          (my-choose* base
-                      (base-expr-grammar desired-type depth)
-                      (vector-ref-expr desired-type depth #:mutable? mutable?)))))
+      (cond [(= depth 0)
+             base]
+            [mutable?
+             (my-choose* base
+                         (vector-ref-expr desired-type depth #:mutable? mutable?))]
+            [else
+             (my-choose* base
+                         (base-expr-grammar desired-type depth)
+                         (vector-ref-expr desired-type depth #:mutable? mutable?)
+                         (enum-set-contains-expr desired-type depth))])))
 
   ;; vector-ref
   (define (vector-ref-expr desired-type depth #:mutable? [mutable? #f])
-    ;; TODO: Force the output type to be the desired-type
     (let* ([vec (expr-grammar (Vector-type (Index-type) desired-type)
                               (- depth 1) #:mutable? mutable?)]
            [vec-type (infer-type vec)])
@@ -276,6 +302,19 @@
           (vector-ref^ vec
                        (expr-grammar (Vector-index-type vec-type)
                                      (- depth 1))))))
+  
+  ;; enum-set-contains?
+  (define (enum-set-contains-expr desired-type depth)
+    (if (not (is-supertype? desired-type (Boolean-type)))
+        (lifted-error)
+        (let* ([sett (expr-grammar (Set-type (Any-type)) (- depth 1))]
+               [sett-type (infer-type sett)])
+          (if (Error-type? sett-type)
+              (lifted-error)
+              (let* ([elem (expr-grammar (Set-content-type sett-type) (- depth 1))])
+                (if (lifted-error? elem)
+                    (lifted-error)
+                    (enum-set-contains?^ sett elem)))))))
 
   ;; Comparisons, arithmetic, integer holes
   (define (base-expr-grammar desired-type depth)

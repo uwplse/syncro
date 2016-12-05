@@ -4,7 +4,7 @@
 (require rosette/lib/synthax)
 (require "enum-set.rkt" "grammar.rkt" "operators.rkt" "types.rkt")
 
-(provide my-for/sum my-for/or run-in-rosette)
+(provide my-for/sum my-for/or run-in-rosette coerce-evaluate)
 
 (current-bitwidth 10)
 
