@@ -2,7 +2,23 @@
 
 (require (only-in rosette/lib/angelic [choose* rosette-choose*]))
 
-(provide make-chooser)
+(provide make-chooser choose* choose*-fn)
+
+(define-syntax (choose* stx)
+  (syntax-case stx ()
+    [(_ chooser default arg ...)
+     (syntax/loc stx
+       (begin
+         (send chooser start-options)
+         (let ([args '()])
+           (begin (begin (send chooser begin-next-option)
+                         (set! args (cons arg args)))
+                  ...)
+           (send chooser end-options)
+           (apply choose*-fn chooser default (reverse args)))))]))
+
+(define (choose*-fn chooser default . args)
+  (send chooser choose* args default))
 
 (define (make-chooser version)
   (cond [(equal? version 'basic)

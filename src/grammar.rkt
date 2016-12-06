@@ -174,14 +174,16 @@
     ;; think this is guaranteed by map, but am not sure.
     ;; It would also be okay for map to process things in an arbitrary
     ;; order, but still sequentially. Parallelism would be bad though.
+    (send chooser start-options)
     (define recurse
       (if (= depth 0)
           '()
           (filter
            identity
-           (map (lambda (op)
-                  (make-subexp op cache desired-type mutable? depth))
-                operator-info))))
+           (for/list ([op operator-info])
+             (send chooser begin-next-option)
+             (make-subexp op cache desired-type mutable? depth)))))
+    (send chooser end-options)
     
     (define all-args (append terminals integer-hole recurse))
     (and (not (null? all-args))
@@ -197,21 +199,11 @@
 (define (grammar-basic terminal-info num-stmts depth chooser
                        #:num-temps [num-temps 0]
                        #:guard-depth [guard-depth #f])
-  (define-syntax (my-choose* stx)
-    (syntax-case stx ()
-      [(_ arg ...)
-       (syntax/loc stx
-         (begin
-           (send chooser start-options)
-           (let ([args '()])
-             (begin (begin (send chooser begin-next-option)
-                           (set! args (cons arg args)))
-                    ...)
-             (send chooser end-options)
-             (apply my-choose*-fn (reverse args)))))]))
-  
+
+  (define-syntax-rule (my-choose* arg ...)
+    (choose* chooser (lifted-error) arg ...))
   (define (my-choose*-fn . args)
-    (send chooser choose* args (lifted-error)))
+    (apply choose*-fn chooser (lifted-error) args))
   
   (define (stmt-grammar num-stmts depth)
     (if (= num-stmts 0)
