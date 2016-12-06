@@ -153,8 +153,9 @@
            ,@add-terminals
            (printf "Creating symbolic program~%")
            (define program
-             (time (grammar terminal-info 2 2 #:num-temps 0 #:guard-depth 1
-                            #:version 'general)))
+             (time (grammar terminal-info 3 3 #:num-temps 0 #:guard-depth 1
+                            #:version 'basic
+                            #:choice-version 'sharing)))
 
            (define synth
              (time

@@ -1,51 +1,12 @@
 #lang rosette
 
-(require racket/syntax rosette/lib/angelic)
+(require racket/syntax)
 
-(require "alist.rkt" "lifted-operators.rkt" "rosette-util.rkt" "types.rkt" "variable.rkt")
+(require "alist.rkt" "choice.rkt" "lifted-operators.rkt" "rosette-util.rkt"
+         "types.rkt" "variable.rkt")
 
 (provide grammar Terminal-Info% eval-lifted lifted-code)
 
-;; Counts the number of symbolic booleans created during a run of the grammar.
-(define num-vars-without-filtering (make-parameter 0))
-(define num-boolean-vars (make-parameter 0))
-(define num-vars-if-optimized (make-parameter 0))
-
-(define (fold-expr f expr default)
-  (if (and (not (term? expr)) (integer? expr))
-      expr
-      (match expr
-        [(expression op child ...)
-         (apply f (map (lambda (e) (fold-expr f e default))
-                       child))]
-        [(term content type)
-         default])))
-
-(define (get-max-from-expr expr [default 0])
-  (fold-expr max expr default))
-
-(define (get-sum-from-expr expr)
-  (fold-expr + expr 0))
-
-;; Takes a list of lifted programs and produces a value representing a
-;; choice of exactly one of them.
-(define (my-choose* . args)
-  ;; TODO: Following line sometimes speeds it up, sometimes slows it down.
-  (define valid-args (filter (compose not lifted-error?) args))
-  (if (null? valid-args)
-      (lifted-error)
-      (let* ([symbolic-num-new (length valid-args)])
-        (num-vars-without-filtering (+ (length args) -1
-                                       (num-vars-without-filtering)))
-        (num-boolean-vars (+ (get-sum-from-expr symbolic-num-new) -1
-                             (num-boolean-vars)))
-        (num-vars-if-optimized (+ (get-max-from-expr symbolic-num-new) -1
-                                  (num-vars-if-optimized)))
-        (apply choose* valid-args))))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Grammar construction ;;
-;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (struct special-form (name constructor) #:transparent)
 (define operator-info
@@ -53,6 +14,10 @@
         enum-set-add!^ enum-set-remove!^ enum-set-contains?^
         equal?^ =^ <^ +^ -^ *^
         (special-form 'if if^) (special-form 'set! set!^)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Grammar construction ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; terminal-info: A Terminal-Info object
 ;; num-stmts:     Number of statements to allow
@@ -66,35 +31,34 @@
 (define (grammar terminal-info num-stmts depth
                  #:num-temps [num-temps 0]
                  #:guard-depth [guard-depth #f]
-                 #:version [version 'basic])
-
-  (num-vars-without-filtering 0)
-  (num-boolean-vars 0)
-  (num-vars-if-optimized 0)
-  
+                 #:version [version 'basic]
+                 #:choice-version [choice-version 'basic])
+  (define chooser (make-chooser choice-version))
   (define result
     (cond [(equal? version 'basic)
-           (grammar-basic terminal-info num-stmts depth #:num-temps num-temps
+           (grammar-basic terminal-info num-stmts depth chooser
+                          #:num-temps num-temps
                           #:guard-depth guard-depth)]
-          [(equal? version 'sharing)
-           (grammar-general terminal-info num-stmts depth #:num-temps num-temps
+          [(equal? version 'caching)
+           (grammar-general terminal-info num-stmts depth chooser
+                            #:num-temps num-temps
                             #:guard-depth guard-depth #:cache? #t)]
           [(equal? version 'general)
-           (grammar-general terminal-info num-stmts depth #:num-temps num-temps
+           (grammar-general terminal-info num-stmts depth chooser
+                            #:num-temps num-temps
                             #:guard-depth guard-depth #:cache? #f)]
           [else
            (error (format "Unknown grammar type: ~a" version))]))
   
-  (printf "Used ~a boolean variables~%Without filtering would be ~a~%If optimized would be ~a~%"
-          (num-boolean-vars)
-          (num-vars-without-filtering)
-          (num-vars-if-optimized))
+  (printf "Used ~a boolean variables~%" (send chooser get-num-vars))
   result)
             
-(define (grammar-general terminal-info num-stmts depth
+(define (grammar-general terminal-info num-stmts depth chooser
                          #:num-temps [num-temps 0]
                          #:guard-depth [guard-depth #f]
                          #:cache? cache?)
+  (define (my-choose* . args)
+    (send chooser choose* args (lifted-error)))
 
   ;; We only want if to be used for statements, not expressions
   (define if-type
@@ -230,9 +194,25 @@
                                (lambda (i)
                                  (general-grammar (Void-type) depth))))))
 
-(define (grammar-basic terminal-info num-stmts depth
+(define (grammar-basic terminal-info num-stmts depth chooser
                        #:num-temps [num-temps 0]
-                       #:guard-depth [guard-depth #f])  
+                       #:guard-depth [guard-depth #f])
+  (define-syntax (my-choose* stx)
+    (syntax-case stx ()
+      [(_ arg ...)
+       (syntax/loc stx
+         (begin
+           (send chooser start-options)
+           (let ([args '()])
+             (begin (begin (send chooser begin-next-option)
+                           (set! args (cons arg args)))
+                    ...)
+             (send chooser end-options)
+             (apply my-choose*-fn (reverse args)))))]))
+  
+  (define (my-choose*-fn . args)
+    (send chooser choose* args (lifted-error)))
+  
   (define (stmt-grammar num-stmts depth)
     (if (= num-stmts 0)
         (void^)
@@ -279,14 +259,14 @@
 
   (define (set!-stmt-grammar depth)
     (let* ([variable
-            (apply my-choose*
+            (apply my-choose*-fn
                    (send terminal-info get-terminals #:mutable? #t))])
       (set!^ variable (expr-grammar (infer-type variable) depth)))) 
 
   ;; If #:mutable is #t, then the return value must be mutable.
   ;; If #:mutable is #f, then the return value may or may not be mutable.
   (define (expr-grammar desired-type depth #:mutable? [mutable? #f])
-    (let ([base (apply my-choose*
+    (let ([base (apply my-choose*-fn
                        (send terminal-info get-terminals
                              #:type desired-type
                              #:mutable? mutable?))])
@@ -353,7 +333,7 @@
                               (+^ i1 i2)
                               (-^ i1 i2)
                               (*^ i1 i2))))))
-      (apply my-choose* options)))
+      (apply my-choose*-fn options)))
 
   (build-grammar terminal-info num-stmts depth num-temps guard-depth
                  expr-grammar stmt-grammar))
