@@ -72,11 +72,18 @@
   (num-boolean-vars 0)
   (num-vars-if-optimized 0)
   
-  (define proc
-    (if (equal? version 'basic) grammar-basic grammar-sharing))
   (define result
-    (proc terminal-info num-stmts depth #:num-temps num-temps
-          #:guard-depth guard-depth))
+    (cond [(equal? version 'basic)
+           (grammar-basic terminal-info num-stmts depth #:num-temps num-temps
+                          #:guard-depth guard-depth)]
+          [(equal? version 'sharing)
+           (grammar-general terminal-info num-stmts depth #:num-temps num-temps
+                            #:guard-depth guard-depth #:cache? #t)]
+          [(equal? version 'general)
+           (grammar-general terminal-info num-stmts depth #:num-temps num-temps
+                            #:guard-depth guard-depth #:cache? #f)]
+          [else
+           (error (format "Unknown grammar type: ~a" version))]))
   
   (printf "Used ~a boolean variables~%Without filtering would be ~a~%If optimized would be ~a~%"
           (num-boolean-vars)
@@ -84,25 +91,26 @@
           (num-vars-if-optimized))
   result)
             
-(define (grammar-sharing terminal-info num-stmts depth
+(define (grammar-general terminal-info num-stmts depth
                          #:num-temps [num-temps 0]
-                         #:guard-depth [guard-depth #f])
+                         #:guard-depth [guard-depth #f]
+                         #:cache? cache?)
 
   ;; We only want if to be used for statements, not expressions
   (define if-type
     (Procedure-type (list (Boolean-type) (Void-type) (Void-type))
                     (Void-type)))
   
-  (define (make-subexp-if type->subexp desired-type mutable? depth)
+  (define (make-subexp-if cache desired-type mutable? depth)
     (and (not mutable?)
-         (let ([result (make-subexp-helper if-type type->subexp
+         (let ([result (make-subexp-helper if-type cache
                                            desired-type mutable? depth)])
            (and result (apply if^ result)))))
   
-  (define (make-subexp-set! type->subexp desired-type mutable? depth)
+  (define (make-subexp-set! cache desired-type mutable? depth)
     (and (is-supertype? desired-type (Void-type))
          (not mutable?)
-         ;; We only need to get one item out of type->subexp, so no need to
+         ;; We only need to get one item out of cache, so no need to
          ;; make a copy which we then mutate.
          (let ([variable
                 (apply my-choose*
@@ -110,23 +118,23 @@
            (and (not (lifted-error? variable))
                 (let* ([type (infer-type variable)]
                        [key (cons type #f)])
-                  (if (alist-has-key? type->subexp key)
-                      (set!^ variable (alist-get type->subexp key))
-                      (let ([subexp (general-grammar type #:mutable? #f depth)])
+                  (if (and cache? (alist-has-key? cache key))
+                      (set!^ variable (alist-get cache key))
+                      (let ([subexp (general-grammar type #:mutable? #f (- depth 1))])
                         (and subexp
-                             (begin (alist-insert! type->subexp key subexp)
+                             (begin (when cache? (alist-insert! cache key subexp))
                                     (set!^ variable subexp))))))))))
 
-  (define (make-subexp-proc proc type->subexp desired-type mutable? depth)
+  (define (make-subexp-proc proc cache desired-type mutable? depth)
     (define result
-      (make-subexp-helper (variable-type proc) type->subexp
+      (make-subexp-helper (variable-type proc) cache
                           desired-type mutable? depth))
     (and result (apply proc result)))
   
-  (define (make-subexp-helper operator-type type->subexp desired-type mutable? depth)
+  (define (make-subexp-helper operator-type cache desired-type mutable? depth)
     (let ([domain-pairs (get-domain-given-range-with-mutability
                          operator-type desired-type mutable?)]
-          [type->subexp-copy (alist-copy type->subexp)]
+          [cache-copy (and cache? (alist-copy cache))]
           [mapping (make-type-map)])
       
       (define (get-or-make-subexp type-pair)
@@ -134,12 +142,12 @@
                [mutable? (cdr type-pair)]
                [key (cons concrete-type mutable?)])
           (define subexp
-            (if (alist-has-key? type->subexp-copy key)
-                (alist-get-and-remove! type->subexp-copy key)
+            (if (and cache? (alist-has-key? cache-copy key))
+                (alist-get-and-remove! cache-copy key)
                 (let ([res (general-grammar concrete-type #:mutable? mutable?
                                             (- depth 1))])
-                  (when res
-                    (alist-insert! type->subexp key res))
+                  (when (and cache? res)
+                    (alist-insert! cache key res))
                   res)))
           
           ;; The value of this unify can be seen in equal?^, where if
@@ -167,13 +175,13 @@
   ;;   (and domain-pairs (map get-or-make-subexp domain-pairs)))
   ;; (and result (not (member #f result)) result)))
   
-  (define (make-subexp operator type->subexp desired-type mutable? depth)
+  (define (make-subexp operator cache desired-type mutable? depth)
     (cond [(not (special-form? operator))
-           (make-subexp-proc operator type->subexp desired-type mutable? depth)]
+           (make-subexp-proc operator cache desired-type mutable? depth)]
           [(equal? (special-form-name operator) 'if)
-           (make-subexp-if type->subexp desired-type mutable? depth)]
+           (make-subexp-if cache desired-type mutable? depth)]
           [(equal? (special-form-name operator) 'set!)
-           (make-subexp-set! type->subexp desired-type mutable? depth)]
+           (make-subexp-set! cache desired-type mutable? depth)]
           [else
            (error (format "Unknown special form: ~a" operator))]))
 
@@ -183,7 +191,7 @@
   ;; symbolic and so we have too much sharing.
   ;; TODO: Use for/all to guarantee that desired-type will be concrete.
   (define (general-grammar desired-type depth #:mutable? [mutable? #f])
-    (define type->subexp (make-alist))
+    (define cache (and cache? (make-alist)))
 
     ;; Base case: Terminals
     (define terminals
@@ -207,7 +215,7 @@
           (filter
            identity
            (map (lambda (op)
-                  (make-subexp op type->subexp desired-type mutable? depth))
+                  (make-subexp op cache desired-type mutable? depth))
                 operator-info))))
     
     (define all-args (append terminals integer-hole recurse))
