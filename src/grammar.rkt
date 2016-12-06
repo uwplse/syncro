@@ -118,12 +118,13 @@
            (and (not (lifted-error? variable))
                 (let* ([type (infer-type variable)]
                        [key (cons type #f)])
-                  (if (and cache? (alist-has-key? cache key))
-                      (set!^ variable (alist-get cache key))
-                      (let ([subexp (general-grammar type #:mutable? #f (- depth 1))])
-                        (and subexp
-                             (begin (when cache? (alist-insert! cache key subexp))
-                                    (set!^ variable subexp))))))))))
+                  (for/all ([type type])
+                    (if (and cache? (alist-has-key? cache key))
+                        (set!^ variable (alist-get cache key))
+                        (let ([subexp (general-grammar type #:mutable? #f (- depth 1))])
+                          (and subexp
+                               (begin (when cache? (alist-insert! cache key subexp))
+                                      (set!^ variable subexp)))))))))))
 
   (define (make-subexp-proc proc cache desired-type mutable? depth)
     (define result
