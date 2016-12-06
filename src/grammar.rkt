@@ -50,10 +50,10 @@
           [else
            (error (format "Unknown grammar type: ~a" version))]))
   
-  (printf "Used ~a boolean variables~%" (send chooser get-num-vars))
+  (send chooser print-num-vars)
   result)
             
-(define (grammar-general terminal-info num-stmts depth chooser
+(define (grammar-general terminal-info num-stmts expr-depth chooser
                          #:num-temps [num-temps 0]
                          #:guard-depth [guard-depth #f]
                          #:cache? cache?)
@@ -67,6 +67,8 @@
   
   (define (make-subexp-if cache desired-type mutable? depth)
     (and (not mutable?)
+         ;; Forces us to only use if at the top level
+         (= depth expr-depth)
          (let ([result (make-subexp-helper if-type cache
                                            desired-type mutable? depth)])
            (and result (apply if^ result)))))
@@ -189,7 +191,7 @@
     (and (not (null? all-args))
          (apply my-choose* all-args)))
 
-  (build-grammar terminal-info num-stmts depth num-temps guard-depth
+  (build-grammar terminal-info num-stmts expr-depth num-temps guard-depth
                  general-grammar
                  (lambda (num-stmts depth)
                    (build-list num-stmts
@@ -214,7 +216,6 @@
 
   ;; Vector statements, set statements, set!, and if
   (define (base-stmt-grammar num-stmts depth)
-    ;; TODO: boolean-expr-grammar should have some other depth
     (if (<= num-stmts 2)
         (my-choose* (vector-stmt-grammar depth)
                     (set-stmt-grammar depth)
@@ -258,17 +259,15 @@
   ;; If #:mutable is #t, then the return value must be mutable.
   ;; If #:mutable is #f, then the return value may or may not be mutable.
   (define (expr-grammar desired-type depth #:mutable? [mutable? #f])
-    (let ([base (apply my-choose*-fn
-                       (send terminal-info get-terminals
-                             #:type desired-type
-                             #:mutable? mutable?))])
+    (let ([base (send terminal-info get-terminals #:type desired-type
+                             #:mutable? mutable?)])
       (cond [(= depth 0)
-             base]
+             (apply my-choose*-fn base)]
             [mutable?
-             (my-choose* base
+             (my-choose* (apply my-choose*-fn base)
                          (vector-ref-expr desired-type depth #:mutable? mutable?))]
             [else
-             (my-choose* base
+             (my-choose* (apply my-choose*-fn base)
                          (base-expr-grammar desired-type depth)
                          (vector-ref-expr desired-type depth #:mutable? mutable?)
                          (enum-set-contains-expr desired-type depth))])))
@@ -299,32 +298,35 @@
 
   ;; Comparisons, arithmetic, integer holes
   (define (base-expr-grammar desired-type depth)
+    (send chooser start-options)
     (let ([options '()])
       (when (is-supertype? desired-type (Boolean-type))
-        (let (#;[b1 (expr-grammar (Boolean-type) (- depth 1))]
-              #;[b2 (expr-grammar (Boolean-type) (- depth 1))]
-              [i1 (expr-grammar (Integer-type) (- depth 1))]
-              [i2 (expr-grammar (Integer-type) (- depth 1))]
-              [e1 (expr-grammar (Any-type) (- depth 1))]
-              [e2 (expr-grammar (Any-type) (- depth 1))])
+        (let* (#;[_ (send chooser begin-next-option)]
+               #;[b1 (expr-grammar (Boolean-type) (- depth 1))]
+               #;[b2 (expr-grammar (Boolean-type) (- depth 1))]
+               [_ (send chooser begin-next-option)]
+               [i1 (expr-grammar (Integer-type) (- depth 1))]
+               [i2 (expr-grammar (Integer-type) (- depth 1))]
+               [_ (send chooser begin-next-option)]
+               [e1 (expr-grammar (Any-type) (- depth 1))]
+               [e2 (expr-grammar (Any-type) (- depth 1))])
           (set! options
                 (append options
-                        (list (=^ i1 i2)
-                              (<^ i1 i2)
+                        (list ((my-choose*-fn =^ <^) i1 i2)
                               (equal?^ e1 e2)
                               #;(and b1 b2)
                               #;(or b1 b2)
                               #;(not b1))))))
       (when (is-supertype? desired-type (Integer-type))
-        (let ([i1 (expr-grammar (Integer-type) (- depth 1))]
+        (let ([_ (send chooser begin-next-option)]
+              [i1 (expr-grammar (Integer-type) (- depth 1))]
               [i2 (expr-grammar (Integer-type) (- depth 1))])
           (define-symbolic* hole integer?)
           (set! options
                 (append options
                         (list hole
-                              (+^ i1 i2)
-                              (-^ i1 i2)
-                              (*^ i1 i2))))))
+                              ((my-choose*-fn +^ -^ *^) i1 i2))))))
+      (send chooser end-options)
       (apply my-choose*-fn options)))
 
   (build-grammar terminal-info num-stmts depth num-temps guard-depth

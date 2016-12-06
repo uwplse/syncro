@@ -10,6 +10,8 @@
 ;; Lifting operators ;;
 ;;;;;;;;;;;;;;;;;;;;;;;
 
+;; TODO: Add and, or, not
+
 (match-define (list alpha-v1 alpha-v2 alpha-v3 alpha-v4)
   (build-list 4 (lambda (i) (Type-var (Index-type)))))
 (match-define (list beta-v3 beta-v4 alpha-v5 alpha-v6 alpha-v7 alpha-v8)

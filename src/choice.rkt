@@ -37,6 +37,8 @@
     (field [num-vars 0])
 
     (define/public (get-num-vars) num-vars)
+    (define/public (print-num-vars)
+      (printf "Used ~a boolean variables~%" num-vars))
 
     (define/public (choose* args default)
       (if (null? args)
@@ -63,12 +65,18 @@
     ;; curr-ptr is either #f or >= (car checkpoints)
     ;; checkpoints is sorted in descending order
     ;; All values v in checkpoints satisfy 0 <= v <= num-vars
-    (field [vars '()] [num-vars 0] [curr-ptr #f]
-           [checkpoints '()] [checkpoint->max-index (make-hash)])
+    (field [vars '()] [naive-num-vars 0] [num-vars 0] [curr-ptr #f]
+           [checkpoints '()] [checkpoint->max-index '()])
 
+    (define/public (get-naive-num-vars) naive-num-vars)
     (define/public (get-num-vars) num-vars)
 
+    (define/public (print-num-vars)
+      (printf "Used ~a boolean variables instead of the naive ~a variables~%"
+              num-vars naive-num-vars))
+    
     (define/public (get-var)
+      (set! naive-num-vars (+ naive-num-vars 1))
       (if curr-ptr
           (begin (define result (list-ref vars curr-ptr))
                  (set! curr-ptr (+ 1 curr-ptr))
@@ -95,12 +103,15 @@
     (define/public (start-options)
       (set! checkpoints
             (cons (if curr-ptr curr-ptr num-vars) checkpoints))
-      (begin-next-option))
+      (set! checkpoint->max-index
+            (cons (if curr-ptr curr-ptr num-vars) checkpoint->max-index)))
 
     (define/public (end-options)
+      ;; Updates the max index if necessary
       (begin-next-option)
-      (let ([new-position (hash-ref checkpoint->max-index (car checkpoints))])
+      (let ([new-position (car checkpoint->max-index)])
         (set! curr-ptr (if (< new-position num-vars) new-position #f))
+        (set! checkpoint->max-index (cdr checkpoint->max-index))
         (set! checkpoints (cdr checkpoints))))
 
     ;; Note: It is important that it does not make a difference if
@@ -109,11 +120,11 @@
     (define/public (begin-next-option)
       (when (and curr-ptr (< curr-ptr (car checkpoints)))
         (error "Internal error: curr-ptr is before the first checkpoint"))
-      (let* ([checkpoint (car checkpoints)]
-             [curr-max (hash-ref checkpoint->max-index checkpoint -1)])
-        (if curr-ptr
-            (hash-set! checkpoint->max-index checkpoint (max curr-ptr curr-max))
-            (hash-set! checkpoint->max-index checkpoint (max num-vars curr-max)))
+      (let ([checkpoint (car checkpoints)]
+            [curr-max (car checkpoint->max-index)])
+        (set! checkpoint->max-index
+              (cons (max (if curr-ptr curr-ptr num-vars) curr-max)
+                    (cdr checkpoint->max-index)))
 
         (if (>= checkpoint num-vars)
             (set! curr-ptr #f)
