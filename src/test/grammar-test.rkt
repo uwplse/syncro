@@ -5,6 +5,16 @@
 
 (provide run-grammar-tests)
 
+(define (substitute lst old new)
+  (cond [(equal? lst old) new]
+        [(not (pair? lst)) lst]
+        [else (cons (substitute (car lst) old new)
+                    (substitute (cdr lst) old new))]))
+
+(struct program (stmts))
+(define (prog-substitute prog old new)
+  (program (substitute (program-stmts prog) old new)))
+
 (define tests
   (test-suite
    "Tests for grammar.rkt"
@@ -38,6 +48,11 @@
        (check-equal? (get #:type idx #:mutable? #t) (set 'v 'x))
        (check-equal? (get #:type bool) (set 'w))
        (check-equal? (get #:type any) (set 'v 'w 'x 'y 'z))))
+   
+
+   ;;;;;;;;;;;;;;;;;;;;;;;;
+   ;; Grammar definition ;;
+   ;;;;;;;;;;;;;;;;;;;;;;;;
    
    (let* ([info (new Terminal-Info%)]
           [int (Integer-type)]
@@ -78,99 +93,133 @@
      (define check-in-grammar (curry check-grammar #t))
      (define check-not-in-grammar (curry check-grammar #f))
 
-     (test-case "Basic grammar"
-       (define simple-prog (grammar info 2 2 #:version 'basic))
-       (define medium-prog (grammar info 3 4 #:version 'basic))
+     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+     ;; Programs in the grammar ;;
+     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-       (check-in-grammar
-        simple-prog
-        '(let () (void)))
+     ;; Represent a program as a list of statements
+     (define simple-prog1
+       (program (list)))
+     
+     (define template2
+       (program (list '(vector-decrement! num1 wild1))))
 
-       (check-in-grammar
-        simple-prog
-        '(let ()
-           (let ()
-             (vector-decrement! num1 (vector-ref word->topic word1))
-             (void))))
+     (define simple-prog2
+       (prog-substitute template2 'wild1 '(vector-ref word->topic word1)))
 
-       ;; Beware, it is VERY EASY to create code that "accidentally"
-       ;; can't be synthesized. Ideally there should be a program that
-       ;; can be synthesized, and you modify it *very* slightly.
-       (check-not-in-grammar
-        simple-prog
-        '(let ()
-           (let ()
-             ;; num1 cannot be indexed by a word
-             (vector-decrement! num1 word1)
-             (void))))
+     ;; num1 cannot be indexed by a word
+     (define impossible-prog3
+       (prog-substitute template2 'wild1 'word1))
 
-       (check-in-grammar
-        simple-prog
-        '(let ()
-           (let ()
-             (vector-set! num1 (vector-ref word->topic word1) 0)
-             (let ()
-               (vector-decrement! num1
-                                  (vector-ref word->topic word2))
-               (void)))))
+     (define simple-prog4
+       (program
+        (list '(vector-set! num1 (vector-ref word->topic word1) 0)
+              '(vector-decrement! num1 (vector-ref word->topic word2)))))
 
-       (define medium-example
-         '(let ()
-            (let ()
-              (vector-set!
-               num1
-               (vector-ref word->topic word1)
-               (* 2 (vector-ref num1 (vector-ref word->topic word1))))
-              (let ()
-                (vector-decrement! num1
-                                   (vector-ref word->topic word2))
-                (void)))))
+     (define medium-prog5
+       (program
+        (list '(vector-set! num1 (vector-ref word->topic word1)
+                            (* 2 (vector-ref num1 (vector-ref word->topic word1))))
+              '(vector-decrement! num1 (vector-ref word->topic word2)))))
+
+     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+     ;; Conform programs to grammar ;;
+     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+     (define (make-basic-sexp prog num-stmts)
+       ;; A program from the basic grammar has the form
+       ;; (let () (let () stmt1 (let () stmt2 (void))))
+       (define (loop stmts)
+         (if (null? stmts)
+             '(void)
+             `(let ()
+                ,(car stmts)
+                ,(loop (cdr stmts)))))
        
-       (check-not-in-grammar simple-prog medium-example)
-       (check-in-grammar medium-prog medium-example))
+       `(let () ,(loop (program-stmts prog))))
 
-     (test-case "Sharing grammar"
-       (define simple-prog (grammar info 2 2 #:version 'sharing))
-       ;(define medium-prog (grammar info 3 3 #:version 'sharing))
+     (define (make-general-sexp prog num-stmts)
+       ;; A program from the general grammar has the form
+       ;; (let () stmt1 stmt2 ... stmtN)
+       (define voids (build-list num-stmts (lambda (i) '(void))))
+       (define stmts (take (append (program-stmts prog) voids) num-stmts))
+       `(let () ,@stmts))
 
-       (check-in-grammar
-        simple-prog
-        '(let () (void) (void)))
+     ;;;;;;;;;;;;;;;;;;;;
+     ;; Configurations ;;
+     ;;;;;;;;;;;;;;;;;;;;
+     
+     (define configs
+       (list '(basic basic #t) '(basic sharing #t)
+             '(general basic #t) '(general sharing #t) '(caching basic #f)))
 
-       (check-in-grammar
-        simple-prog
-        '(let ()
-           (vector-decrement! num1 (vector-ref word->topic word1))
-           (void)))
+     ;;;;;;;;;;;;;;;;;;;
+     ;; Running tests ;;
+     ;;;;;;;;;;;;;;;;;;;
+     
+     (test-case "Grammars"
+       (for ([config configs])
+         (match-define (list grammar-version choice-version test-medium?) config)
+         (printf "Testing the ~a grammar with choice version ~a~%"
+                 grammar-version choice-version)
+         (define simple-grmr (grammar info 2 2
+                                      #:version grammar-version
+                                      #:choice-version choice-version))
 
-       ;; Beware, it is VERY EASY to create code that "accidentally"
-       ;; can't be synthesized. Ideally there should be a program that
-       ;; can be synthesized, and you modify it *very* slightly.
-       (check-not-in-grammar
-        simple-prog
-        '(let ()
-           ;; num1 cannot be indexed by a word
-           (vector-decrement! num1 word1)
-           (void)))
+         (define (prog->sexp prog num-stmts)
+           (if (equal? grammar-version 'basic)
+               (make-basic-sexp prog num-stmts)
+               (make-general-sexp prog num-stmts)))
 
-       (check-in-grammar
-        simple-prog
-        '(let ()
-           (vector-set! num1 (vector-ref word->topic word1) 0)
-           (vector-decrement! num1
-                              (vector-ref word->topic word2))))
+         (check-in-grammar simple-grmr (prog->sexp simple-prog1 2))
+         (check-in-grammar simple-grmr (prog->sexp simple-prog2 2))
+         (check-not-in-grammar simple-grmr (prog->sexp impossible-prog3 2))
+         (check-in-grammar simple-grmr (prog->sexp simple-prog4 2))
+         (check-not-in-grammar simple-grmr (prog->sexp medium-prog5 2))
 
-       (define medium-example
-         '(let ()
-            (vector-set!
-               num1
-               (vector-ref word->topic word1)
-               (* 2 (vector-ref num1 (vector-ref word->topic word1))))
-            (vector-decrement! num1
-                               (vector-ref word->topic word2))))
+         (when test-medium?
+           (define medium-grmr (grammar info 3 4
+                                        #:version grammar-version
+                                        #:choice-version choice-version))
+           (check-in-grammar medium-grmr (prog->sexp medium-prog5 3)))))
 
-       (check-not-in-grammar simple-prog medium-example)
-       #;(check-in-grammar medium-prog (append medium-example '((void) (void)))))
+     ;; (test-case "Sharing grammar"
+     ;;   (define configs '((basic basic) (basic sharing)))
+     ;;   (for ([config configs])
+     ;;   (define simple-prog (grammar info 2 2 #:version 'sharing))
+     ;;   ;(define medium-prog (grammar info 3 3 #:version 'sharing))
+
+     ;;   (check-in-grammar
+     ;;    simple-prog
+     ;;    '(let () (void) (void)))
+
+     ;;   (check-in-grammar
+     ;;    simple-prog
+     ;;    '(let ()
+     ;;       (vector-decrement! num1 (vector-ref word->topic word1))
+     ;;       (void)))
+
+     ;;   ;; Beware, it is VERY EASY to create code that "accidentally"
+     ;;   ;; can't be synthesized. Ideally there should be a program that
+     ;;   ;; can be synthesized, and you modify it *very* slightly.
+     ;;   (check-not-in-grammar
+     ;;    simple-prog
+     ;;    '(let ()
+     ;;       ;; num1 cannot be indexed by a word
+     ;;       (vector-decrement! num1 word1)
+     ;;       (void)))
+
+     ;;   (check-in-grammar
+     ;;    simple-prog
+     ;;    '(let ()
+     ;;       (vector-set! num1 (vector-ref word->topic word1) 0)
+     ;;       (vector-decrement! num1
+     ;;                          (vector-ref word->topic word2))))
+
+     ;;   (define medium-example)
+
+     ;;   (check-not-in-grammar simple-prog medium-example)
+     ;; (check-in-grammar medium-prog (append medium-example '((void) (void)))))
    )))
 
 (define (run-grammar-tests)
