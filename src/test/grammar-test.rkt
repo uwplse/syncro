@@ -182,44 +182,6 @@
                                         #:version grammar-version
                                         #:choice-version choice-version))
            (check-in-grammar medium-grmr (prog->sexp medium-prog5 3)))))
-
-     ;; (test-case "Sharing grammar"
-     ;;   (define configs '((basic basic) (basic sharing)))
-     ;;   (for ([config configs])
-     ;;   (define simple-prog (grammar info 2 2 #:version 'sharing))
-     ;;   ;(define medium-prog (grammar info 3 3 #:version 'sharing))
-
-     ;;   (check-in-grammar
-     ;;    simple-prog
-     ;;    '(let () (void) (void)))
-
-     ;;   (check-in-grammar
-     ;;    simple-prog
-     ;;    '(let ()
-     ;;       (vector-decrement! num1 (vector-ref word->topic word1))
-     ;;       (void)))
-
-     ;;   ;; Beware, it is VERY EASY to create code that "accidentally"
-     ;;   ;; can't be synthesized. Ideally there should be a program that
-     ;;   ;; can be synthesized, and you modify it *very* slightly.
-     ;;   (check-not-in-grammar
-     ;;    simple-prog
-     ;;    '(let ()
-     ;;       ;; num1 cannot be indexed by a word
-     ;;       (vector-decrement! num1 word1)
-     ;;       (void)))
-
-     ;;   (check-in-grammar
-     ;;    simple-prog
-     ;;    '(let ()
-     ;;       (vector-set! num1 (vector-ref word->topic word1) 0)
-     ;;       (vector-decrement! num1
-     ;;                          (vector-ref word->topic word2))))
-
-     ;;   (define medium-example)
-
-     ;;   (check-not-in-grammar simple-prog medium-example)
-     ;; (check-in-grammar medium-prog (append medium-example '((void) (void)))))
    )))
 
 (define (run-grammar-tests)
