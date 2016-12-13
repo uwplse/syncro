@@ -1,15 +1,13 @@
 #lang racket
 
-(require "alist-test.rkt"
-         "operators-test.rkt"
+(require "operators-test.rkt"
          "variable-test.rkt"
          "types-test.rkt"
          "rosette-util-test.rkt"
          "grammar-test.rkt")
 
 (define num-errors
-  (+ (run-alist-tests)
-     (run-operators-tests)
+  (+ (run-operators-tests)
      (run-variable-tests)
      (run-types-tests)
      (run-rosette-util-tests)

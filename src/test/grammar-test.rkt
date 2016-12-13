@@ -150,8 +150,11 @@
      ;;;;;;;;;;;;;;;;;;;;
      
      (define configs
-       (list '(basic basic #t) '(basic sharing #t)
-             '(general basic #t) '(general sharing #t) '(caching basic #t)))
+       (list '(basic basic #t)
+             '(basic sharing #t)
+             '(general basic #t)
+             '(general sharing #t)
+             '(caching basic #t)))
 
      ;;;;;;;;;;;;;;;;;;;
      ;; Running tests ;;
