@@ -2,7 +2,7 @@
 
 (require racket/syntax)
 
-(require "alist.rkt" "choice.rkt" "lifted-operators.rkt" "rosette-util.rkt"
+(require "choice.rkt" "lifted-operators.rkt" "rosette-util.rkt"
          "types.rkt" "variable.rkt")
 
 (provide grammar Terminal-Info% eval-lifted lifted-code)
@@ -57,8 +57,42 @@
                          #:num-temps [num-temps 0]
                          #:guard-depth [guard-depth #f]
                          #:cache? cache?)
+  
   (define (my-choose* . args)
-    (send chooser choose* args (lifted-error)))
+    (send chooser choose* args #f))
+
+  ;; We use different caches for lookup and insertion. This is because
+  ;; for every new choice, we create a copy of the cache so far, used
+  ;; for lookup. However, when we generate new programs, we want them
+  ;; to be used in future lookups, so we insert them into the original
+  ;; cache.
+  (define (cached-grammar desired-type #:mutable? mutable? depth
+                          lookup-cache insert-cache remove?)
+    (apply-concrete
+     (lambda (concrete-type)
+       (let* ([key (cons concrete-type mutable?)]
+              [cache-val-list (if cache? (hash-ref lookup-cache key '()) '())])
+         (if (null? cache-val-list)
+             ;; Cache miss (or not caching). Generate a new program:
+             (let ([result (general-grammar concrete-type #:mutable? mutable? depth)])
+               ;; Insert into the cache if we're caching. Insert at
+               ;; the end so that the cache is ordered by ascending
+               ;; creation times (that is, the first item is the one
+               ;; that was created first).
+               (when cache?
+                 (hash-set! insert-cache key
+                            (append (hash-ref insert-cache key '())
+                                    (list result))))
+               result)
+             ;; Cache hit. Remove the value so it isn't used again if
+             ;; the remove? flag is set.
+             ;; Exception: If the value is #f, then leave it, since we
+             ;; don't need to worry about reusing #f values.
+             (let ([result (car cache-val-list)])
+               (when (and remove? result)
+                 (hash-set! lookup-cache key (cdr cache-val-list)))
+               result))))
+     desired-type))
 
   ;; We only want if to be used for statements, not expressions
   (define if-type
@@ -81,16 +115,11 @@
          (let ([variable
                 (apply my-choose*
                        (send terminal-info get-terminals #:mutable? #t))])
-           (and (not (lifted-error? variable))
+           (and variable
                 (let* ([type (infer-type variable)]
-                       [key (cons type #f)])
-                  (for/all ([type type])
-                    (if (and cache? (alist-has-key? cache key))
-                        (set!^ variable (alist-get cache key))
-                        (let ([subexp (general-grammar type #:mutable? #f (- depth 1))])
-                          (and subexp
-                               (begin (when cache? (alist-insert! cache key subexp))
-                                      (set!^ variable subexp)))))))))))
+                       [subexp (cached-grammar type #:mutable? #f (- depth 1)
+                                               cache cache #f)])
+                  (and subexp (set!^ variable subexp)))))))
 
   (define (make-subexp-proc proc cache desired-type mutable? depth)
     (define result
@@ -101,29 +130,21 @@
   (define (make-subexp-helper operator-type cache desired-type mutable? depth)
     (let ([domain-pairs (get-domain-given-range-with-mutability
                          operator-type desired-type mutable?)]
-          [cache-copy (and cache? (alist-copy cache))]
+          [cache-copy (and cache? (hash-copy cache))]
           [mapping (make-type-map)])
       
       (define (get-or-make-subexp type-pair)
-        (let* ([concrete-type (replace-type-vars (car type-pair) mapping #t)]
+        (let* ([simple-type (replace-type-vars (car type-pair) mapping #t)]
                [mutable? (cdr type-pair)]
-               [key (cons concrete-type mutable?)])
-          (define subexp
-            (if (and cache? (alist-has-key? cache-copy key))
-                (alist-get-and-remove! cache-copy key)
-                (let ([res (general-grammar concrete-type #:mutable? mutable?
-                                            (- depth 1))])
-                  (when (and cache? res)
-                    (alist-insert! cache key res))
-                  res)))
+               [subexp (cached-grammar simple-type #:mutable? mutable? (- depth 1)
+                                       cache-copy cache #t)])
           
           ;; The value of this unify can be seen in equal?^, where if
           ;; the first expression chosen is of type Int, this will
           ;; force the second expression to also have type Int
-          (and subexp
-               (not (lifted-error? subexp))
-               (begin (unify (car type-pair) (infer-type subexp) mapping)
-                      subexp))))
+          (when subexp
+            (unify (car type-pair) (infer-type subexp) mapping))
+          subexp))
 
       (define (special-andmap fn lst)
         (if (null? lst)
@@ -158,7 +179,7 @@
   ;; symbolic and so we have too much sharing.
   ;; TODO: Use for/all to guarantee that desired-type will be concrete.
   (define (general-grammar desired-type depth #:mutable? [mutable? #f])
-    (define cache (and cache? (make-alist)))
+    (define cache (and cache? (make-hash)))
 
     ;; Base case: Terminals
     (define terminals
@@ -188,8 +209,7 @@
     (send chooser end-options)
     
     (define all-args (append terminals integer-hole recurse))
-    (and (not (null? all-args))
-         (apply my-choose* all-args)))
+    (apply my-choose* all-args))
 
   (build-grammar terminal-info num-stmts expr-depth num-temps guard-depth
                  general-grammar

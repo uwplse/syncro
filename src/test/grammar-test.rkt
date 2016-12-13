@@ -151,7 +151,7 @@
      
      (define configs
        (list '(basic basic #t) '(basic sharing #t)
-             '(general basic #t) '(general sharing #t) '(caching basic #f)))
+             '(general basic #t) '(general sharing #t) '(caching basic #t)))
 
      ;;;;;;;;;;;;;;;;;;;
      ;; Running tests ;;
@@ -159,29 +159,30 @@
      
      (test-case "Grammars"
        (for ([config configs])
-         (match-define (list grammar-version choice-version test-medium?) config)
-         (printf "Testing the ~a grammar with choice version ~a~%"
-                 grammar-version choice-version)
-         (define simple-grmr (grammar info 2 2
-                                      #:version grammar-version
-                                      #:choice-version choice-version))
+         (time
+          (match-define (list grammar-version choice-version test-medium?) config)
+          (printf "Testing the ~a grammar with choice version ~a~%"
+                  grammar-version choice-version)
+          (define simple-grmr (grammar info 2 2
+                                       #:version grammar-version
+                                       #:choice-version choice-version))
 
-         (define (prog->sexp prog num-stmts)
-           (if (equal? grammar-version 'basic)
-               (make-basic-sexp prog num-stmts)
-               (make-general-sexp prog num-stmts)))
+          (define (prog->sexp prog num-stmts)
+            (if (equal? grammar-version 'basic)
+                (make-basic-sexp prog num-stmts)
+                (make-general-sexp prog num-stmts)))
+          
+          (check-in-grammar simple-grmr (prog->sexp simple-prog1 2))
+          (check-in-grammar simple-grmr (prog->sexp simple-prog2 2))
+          (check-not-in-grammar simple-grmr (prog->sexp impossible-prog3 2))
+          (check-in-grammar simple-grmr (prog->sexp simple-prog4 2))
+          (check-not-in-grammar simple-grmr (prog->sexp medium-prog5 2))
 
-         (check-in-grammar simple-grmr (prog->sexp simple-prog1 2))
-         (check-in-grammar simple-grmr (prog->sexp simple-prog2 2))
-         (check-not-in-grammar simple-grmr (prog->sexp impossible-prog3 2))
-         (check-in-grammar simple-grmr (prog->sexp simple-prog4 2))
-         (check-not-in-grammar simple-grmr (prog->sexp medium-prog5 2))
-
-         (when test-medium?
-           (define medium-grmr (grammar info 3 4
-                                        #:version grammar-version
-                                        #:choice-version choice-version))
-           (check-in-grammar medium-grmr (prog->sexp medium-prog5 3)))))
+          (when test-medium?
+            (define medium-grmr (grammar info 3 4
+                                         #:version grammar-version
+                                         #:choice-version choice-version))
+            (check-in-grammar medium-grmr (prog->sexp medium-prog5 3))))))
    )))
 
 (define (run-grammar-tests)

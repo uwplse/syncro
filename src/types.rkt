@@ -7,7 +7,7 @@
                      [Set-Type-content-type Set-content-type]
                      [Procedure-Type-domain-types Procedure-domain-types]
                      [Procedure-Type-range-type Procedure-range-type])
-         get-parent is-supertype? repr has-setters? symbolic-code
+         get-parent is-supertype? repr apply-concrete has-setters? symbolic-code
          generate-update-arg-names update-code old-values-code symbolic-update-code
          Type-var unify-types apply-type get-domain-given-range union-types
          get-domain-given-range-with-mutability is-application-mutable?
@@ -47,6 +47,13 @@
   ;; Returns an S-expression that could be used to create a new
   ;; instance of the type.
   (repr Type)
+  ;; The input must be a type that is not a symbolic union (although
+  ;; it may contain symbolic unions.
+  ;; For example, (Vector-type Int {Int | Bool}) is a valid input
+  ;; Concretizes any types inside the type and applies fn to each such
+  ;; concrete type, and then merges these to return a symbolic value.
+  ;; (This is done by using for/all.)
+  (apply-concrete-helper fn Type)
   ;; Unifies two types for type inference.
   ;; mapping is a type map that stores the unification bindings so far
   ;; (see bottom of this file).
@@ -60,7 +67,11 @@
   (union-types Type other-type)
 
   #:fallbacks
-  [(define (unify self other-type mapping)
+  [(define (apply-concrete-helper fn self)
+     ;; Works for any type that doesn't contain other types within it.
+     (fn self))
+   
+   (define (unify self other-type mapping)
      (default-unify self other-type mapping))
 
    ;; Most types can never have type variables inside themselves
@@ -69,6 +80,12 @@
 
    (define (union-types self other-type)
      (default-union-types self other-type))])
+
+;; Like apply-concrete-helper, but can take symbolic unions as inputs
+;; as well.
+(define (apply-concrete fn type)
+  (for/all ([type type])
+    (apply-concrete-helper fn type)))
 
 (define (unify-types t1 t2)
   (let ([mapping (make-type-map)])
@@ -401,6 +418,7 @@
   #:methods gen:Type
   [(define/generic gen-is-supertype? is-supertype?)
    (define/generic gen-repr repr)
+   (define/generic gen-apply-concrete-helper apply-concrete-helper)
    (define/generic gen-unify unify)
    (define/generic gen-replace-type-vars replace-type-vars)
    (define/generic gen-union-types union-types)
@@ -425,6 +443,18 @@
          `(Vector-type ,(Vector-Type-len self)
                        ,(gen-repr (Vector-Type-output-type self)))))
 
+   (define (apply-concrete-helper fn self)
+     (for/all ([len (Vector-Type-len self)])
+       (for/all ([index-type (Vector-Type-index-type self)])
+          (for/all ([output-type (Vector-Type-output-type self)])
+            (gen-apply-concrete-helper
+             (lambda (concrete-index-type)
+               (gen-apply-concrete-helper
+                (lambda (concrete-output-type)
+                  (fn (Vector-Type len concrete-index-type concrete-output-type)))
+                output-type))
+             index-type)))))
+   
    (define (unify self other-type mapping)
      (if (not (Vector-Type? other-type))
          (default-unify self other-type mapping)
@@ -612,6 +642,7 @@
   #:methods gen:Type
   [(define/generic gen-is-supertype? is-supertype?)
    (define/generic gen-repr repr)
+   (define/generic gen-apply-concrete-helper apply-concrete-helper)
    (define/generic gen-unify unify)
    (define/generic gen-replace-type-vars replace-type-vars)
    (define/generic gen-union-types union-types)
@@ -628,6 +659,13 @@
 
    (define (repr self)
      `(Set-type ,(gen-repr (Set-Type-content-type self))))
+
+   (define (apply-concrete-helper fn self)
+     (for/all ([content-type (Set-Type-content-type self)])
+       (gen-apply-concrete-helper
+        (lambda (concrete-content-type)
+          (fn (Set-Type concrete-content-type)))
+        content-type)))
 
    (define (unify self other-type mapping)
      (if (not (Set-Type? other-type))
@@ -723,6 +761,7 @@
   #:methods gen:Type
   [(define/generic gen-is-supertype? is-supertype?)
    (define/generic gen-repr repr)
+   (define/generic gen-apply-concrete-helper apply-concrete-helper)
    (define/generic gen-unify unify)
    (define/generic gen-replace-type-vars replace-type-vars)
    (define/generic gen-union-types union-types)
@@ -748,6 +787,17 @@
            [range-type (Procedure-Type-range-type self)])
        `(Procedure-type (list ,@(map gen-repr domain-types))
                         ,(gen-repr range-type))))
+
+   (define (apply-concrete-helper fn self)
+     (for/all ([domain-types (Procedure-Type-domain-types self)])
+       (for/all ([range-type (Procedure-Type-range-type self)])
+         (gen-apply-concrete-helper
+          (lambda (concrete-domain-types)
+            (gen-apply-concrete-helper
+             (lambda (concrete-range-type)
+               (fn (Procedure-Type domain-types range-type)))
+             range-type))
+          domain-types))))
 
    (define (unify self other-type mapping)
      (if (not (Procedure-Type? other-type))
