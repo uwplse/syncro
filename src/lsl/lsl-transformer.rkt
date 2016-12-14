@@ -1,6 +1,6 @@
 #lang racket
 
-(require (only-in "../../fast_inference/lsl.rkt"
+(require (only-in "../../../fast_inference/lsl.rkt"
                   [+ +^] [- -^] [* *^] [/ /^]
                   [lift lift^] [def def^]
                   pe))

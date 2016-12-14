@@ -1,8 +1,8 @@
 ;; Provides a way to run dynamically generated Racket code.
-#lang s-exp rosette
+#lang rosette
 
 (require rosette/lib/synthax)
-(require "enum-set.rkt" "grammar.rkt" "operators.rkt" "types.rkt")
+(require "enum-set.rkt" "grammar/grammar.rkt" "operators.rkt" "types.rkt")
 
 (provide my-for/sum my-for/or run-in-rosette coerce-evaluate)
 

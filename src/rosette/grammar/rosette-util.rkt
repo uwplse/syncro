@@ -2,7 +2,7 @@
 ;; once synthesis is complete.
 #lang rosette
 
-(require "variable.rkt" "types.rkt" "util.rkt")
+(require "../types.rkt" "../util.rkt" "../variable.rkt" )
 
 (provide define-lifted lifted? if^ begin^ define-expr^ set!^
          eval-lifted lifted-code infer-type mutable? lifted-writer

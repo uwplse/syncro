@@ -1,4 +1,4 @@
-#lang s-exp "../../fast_inference/lsl.rkt"
+#lang s-exp "../../../fast_inference/lsl.rkt"
 
 (provide lsl-ns)
 

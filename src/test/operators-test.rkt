@@ -1,7 +1,7 @@
 #lang rosette
 
 (require rackunit rackunit/text-ui)
-(require "../operators.rkt")
+(require "../rosette/operators.rkt")
 
 (provide run-operators-tests)
 

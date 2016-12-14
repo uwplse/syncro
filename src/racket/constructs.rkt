@@ -1,15 +1,19 @@
 #lang racket
 
-(require "enum-set.rkt" "types.rkt")
+(require "../rosette/enum-set.rkt" "../rosette/types.rkt")
 
-(require (for-syntax "dependency-graph.rkt" "grammar.rkt" "rosette-namespace.rkt"
-                     "synthesis.rkt" "types.rkt" "variable.rkt"
+(require (for-syntax "dependency-graph.rkt"
+                     "synthesis.rkt"
+                     "../rosette/grammar/grammar.rkt"
+                     "../rosette/rosette-namespace.rkt"
+                     "../rosette/types.rkt"
+                     "../rosette/variable.rkt"
                      racket/match
-                     (only-in racket pretty-print send send/apply new)))
+                     (only-in racket new)))
 
-(provide (except-out (all-from-out "types.rkt") Enum-type)
+(provide (except-out (all-from-out "../rosette/types.rkt") Enum-type)
          ;; TODO: Remove the "enum-" prefix
-         (all-from-out "enum-set.rkt")
+         (all-from-out "../rosette/enum-set.rkt")
          define-enum-type
          define-constant define-incremental finalize
          my-for/sum my-for/or)

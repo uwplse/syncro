@@ -1,7 +1,9 @@
 #lang rosette
 
 (require rackunit rackunit/text-ui)
-(require "../grammar.rkt" "../rosette-util.rkt" "../types.rkt" "../variable.rkt")
+(require "../rosette/grammar/grammar.rkt"
+         "../rosette/grammar/rosette-util.rkt"
+         "../rosette/types.rkt" "../rosette/variable.rkt")
 
 (provide run-grammar-tests)
 

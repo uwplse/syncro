@@ -1,4 +1,4 @@
-#lang s-exp rosette
+#lang rosette
 
 (provide enum-make-set enum-make-symbolic-set
          enum-make-symbolic-set-with-tracking

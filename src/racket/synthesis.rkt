@@ -1,7 +1,9 @@
 #lang racket
 
-(require "dependency-graph.rkt" "rosette-namespace.rkt"
-         "types.rkt" "variable.rkt")
+(require "dependency-graph.rkt"
+         "../rosette/rosette-namespace.rkt"
+         "../rosette/types.rkt"
+         "../rosette/variable.rkt")
 
 (provide perform-synthesis)
 

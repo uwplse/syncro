@@ -1,7 +1,7 @@
 #lang racket
 
 (require rackunit rackunit/text-ui)
-(require "../types.rkt")
+(require "../rosette/types.rkt")
 
 (provide run-types-tests)
 

@@ -1,7 +1,9 @@
 #lang racket
 
 (require rackunit rackunit/text-ui)
-(require "../lifted-operators.rkt" "../rosette-util.rkt" "../types.rkt")
+(require "../rosette/grammar/lifted-operators.rkt"
+         "../rosette/grammar/rosette-util.rkt"
+         "../rosette/types.rkt")
 
 (provide run-rosette-util-tests)
 

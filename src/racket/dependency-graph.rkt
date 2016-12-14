@@ -2,7 +2,7 @@
 
 (require graph)
 
-(require "types.rkt")
+(require "../rosette/types.rkt")
 
 (provide make-dependency-graph node%
          add-node! add-dependency!

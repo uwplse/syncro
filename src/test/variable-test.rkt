@@ -1,7 +1,7 @@
 #lang racket
 
 (require rackunit rackunit/text-ui)
-(require "../variable.rkt" "../types.rkt")
+(require "../rosette/variable.rkt" "../rosette/types.rkt")
 
 (provide run-variable-tests)
 

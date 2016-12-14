@@ -3,7 +3,7 @@
 (require racket/syntax)
 
 (require "choice.rkt" "lifted-operators.rkt" "rosette-util.rkt"
-         "types.rkt" "variable.rkt")
+         "../types.rkt" "../variable.rkt")
 
 (provide grammar Terminal-Info% eval-lifted lifted-code)
 
