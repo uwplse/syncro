@@ -2,7 +2,7 @@
 
 ;; An implementation of LDA, following https://people.cs.umass.edu/~wallach/courses/s11/cmpsci791ss/readings/griffiths02gibbs.pdf
 
-(require "../src/constructs.rkt" "../src/grammar.rkt")
+(require "../src/racket/constructs.rkt")
 
 ;;;;;;;;;;;;;;;
 ;; Constants ;;

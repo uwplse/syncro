@@ -4,7 +4,7 @@
 ;; Markov blankets of affected variables when the graph structure
 ;; changes.
 
-(require "../src/constructs.rkt" "../src/grammar.rkt")
+(require "../src/racket/constructs.rkt")
 
 ;;;;;;;;;;;;;;;
 ;; Constants ;;

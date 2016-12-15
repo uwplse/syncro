@@ -1,6 +1,6 @@
 #lang racket
 
-(require "../src/constructs.rkt" "../src/grammar.rkt")
+(require "../src/racket/constructs.rkt")
 
 (define-incremental mystery? (Vector-type 5 (Boolean-type)) () (assign)
   (vector #t #f #f #t #f))

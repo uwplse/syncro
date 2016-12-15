@@ -6,7 +6,7 @@
 ;; Unlike swift.rkt, here we assume that we do not have access to a
 ;; Graph type, and so we have to model it ourselves.
 
-(require "../src/constructs.rkt" "../src/grammar.rkt")
+(require "../src/racket/constructs.rkt")
 
 ;;;;;;;;;;;;;;;
 ;; Constants ;;

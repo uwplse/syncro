@@ -1,6 +1,6 @@
 #lang racket
 
-(require "../../src/constructs.rkt" "../../src/grammar.rkt")
+(require "../src/racket/constructs.rkt")
 
 (define-enum-type Student 3)
 

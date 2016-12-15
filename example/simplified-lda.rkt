@@ -1,6 +1,6 @@
 #lang racket
 
-(require "../src/constructs.rkt" "../src/grammar.rkt")
+(require "../src/racket/constructs.rkt")
 
 ;; define-constant behaves just like define, but the system needs to
 ;; know types during grammar construction.

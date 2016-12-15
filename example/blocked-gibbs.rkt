@@ -4,7 +4,7 @@
 ;; sampling factors that would be generated to sample from each
 ;; possible block.
 
-(require "../src/constructs.rkt" "../src/grammar.rkt")
+(require "../src/racket/constructs.rkt")
 
 ;;;;;;;;;;;;;;;
 ;; Constants ;;
