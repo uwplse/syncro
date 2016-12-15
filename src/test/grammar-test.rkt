@@ -156,7 +156,8 @@
              '(basic sharing #t)
              '(general basic #t)
              '(general sharing #t)
-             '(caching basic #t)))
+             '(caching basic #t)
+             #;'(synthax-deep basic #f)))
 
      ;;;;;;;;;;;;;;;;;;;
      ;; Running tests ;;
@@ -173,7 +174,7 @@
                                        #:choice-version choice-version))
 
           (define (prog->sexp prog num-stmts)
-            (if (equal? grammar-version 'basic)
+            (if (member grammar-version '(basic synthax-deep))
                 (make-basic-sexp prog num-stmts)
                 (make-general-sexp prog num-stmts)))
           

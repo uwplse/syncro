@@ -2,7 +2,8 @@
 
 (require racket/syntax)
 
-(require "choice.rkt" "lifted-operators.rkt" "rosette-util.rkt"
+(require "choice.rkt" "grammar-synthax-deep.rkt"
+         "lifted-operators.rkt" "rosette-util.rkt"
          "../types.rkt" "../variable.rkt")
 
 (provide grammar Terminal-Info% eval-lifted lifted-code)
@@ -35,22 +36,32 @@
                  #:choice-version [choice-version 'basic])
   (define chooser (make-chooser choice-version))
   (define result
-    (cond [(equal? version 'basic)
-           (grammar-basic terminal-info num-stmts depth chooser
-                          #:num-temps num-temps
-                          #:guard-depth guard-depth)]
-          [(equal? version 'caching)
-           (grammar-general terminal-info num-stmts depth chooser
-                            #:num-temps num-temps
-                            #:guard-depth guard-depth #:cache? #t)]
-          [(equal? version 'general)
-           (grammar-general terminal-info num-stmts depth chooser
-                            #:num-temps num-temps
-                            #:guard-depth guard-depth #:cache? #f)]
-          [else
-           (error (format "Unknown grammar type: ~a" version))]))
+    (match version
+      ['basic
+       (grammar-basic terminal-info num-stmts depth chooser
+                      #:num-temps num-temps
+                      #:guard-depth guard-depth)]
+      ['caching
+       (grammar-general terminal-info num-stmts depth chooser
+                        #:num-temps num-temps
+                        #:guard-depth guard-depth #:cache? #t)]
+      ['general
+       (grammar-general terminal-info num-stmts depth chooser
+                        #:num-temps num-temps
+                        #:guard-depth guard-depth #:cache? #f)]
+      ['synthax-deep
+       (match (list num-stmts depth)
+         ['(2 2) (grammar-synthax-deep22 terminal-info)]
+         ['(3 3) (grammar-synthax-deep33 terminal-info)]
+         ['(3 4) (grammar-synthax-deep34 terminal-info)]
+         [_ (error
+             (format "No synthax grammar for ~a statements and ~a expression depth"
+                     num-stmts depth))])]
+      [_
+       (error (format "Unknown grammar type: ~a" version))]))
   
-  (send chooser print-num-vars)
+  (unless (member version '(synthax-deep))
+    (send chooser print-num-vars))
   result)
             
 (define (grammar-general terminal-info num-stmts expr-depth chooser
@@ -117,6 +128,14 @@
                        (send terminal-info get-terminals #:mutable? #t))])
            (and variable
                 (let* ([type (infer-type variable)]
+                       ;; TODO: This may be wrong. Consider, if num1
+                       ;; is mutable and num2 is not:
+                       ;; (set! num1 num2)
+                       ;; (vector-set! num1 0 0)
+                       ;; Need to formalize what the mutability
+                       ;; analysis must guarantee. Should things
+                       ;; marked not mutable always be equal? What if
+                       ;; num1 and num2 were aliased to begin with?
                        [subexp (cached-grammar type #:mutable? #f (- depth 1)
                                                cache cache #f)])
                   (and subexp (set!^ variable subexp)))))))
@@ -274,6 +293,7 @@
     (let* ([variable
             (apply my-choose*-fn
                    (send terminal-info get-terminals #:mutable? #t))])
+      ;; TODO: Incorrect use of mutability, see earlier comment
       (set!^ variable (expr-grammar (infer-type variable) depth)))) 
 
   ;; If #:mutable is #t, then the return value must be mutable.
