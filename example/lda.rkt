@@ -8,7 +8,7 @@
 ;; Constants ;;
 ;;;;;;;;;;;;;;;
 
-(define-constant NUM_WORDS (Integer-type) 12)
+(define-constant NUM_WORD_INSTANCES (Integer-type) 12)
 (define-constant NUM_TOPICS (Integer-type) 3)
 (define-constant NUM_DOCUMENTS (Integer-type) 2)
 (define-constant VOCABULARY_SIZE (Integer-type) 10)
@@ -23,12 +23,12 @@
 ;; Vector mapping each word instance to the document it is in.
 ;; TODO: Can we make this symbolic but still constant?
 (define-constant word->document (Vector-type WordInstance Document)
-  (build-vector NUM_WORDS (lambda (w) (if (< w 5) 0 1))))
+  (build-vector NUM_WORD_INSTANCES (lambda (w) (if (< w 5) 0 1))))
 
 ;; Vector mapping each word instance to its identity.
 ;; TODO: Can we make this symbolic but still constant?
-(define-constant word->text (Vector-Type WordInstance WordText)
-  (build-vector NUM_WORDS (lambda (w) (remainder w VOCABULARY_SIZE))))
+(define-constant word->text (Vector-type WordInstance WordText)
+  (build-vector NUM_WORD_INSTANCES (lambda (w) (remainder w VOCABULARY_SIZE))))
 
 ;; TODO: What happens if we write this as an incremental structure?
 ;; If we have the free variable analysis, it should automatically
@@ -36,7 +36,7 @@
 ;; TODO: We actually always need values that are one smaller than the
 ;; values stored here. Writing that here would make the program less
 ;; clear. What performance benefit would it give?
-(define-constant num-for-document (Vector-type Document Integer)
+(define-constant num-for-document (Vector-type Document (Integer-type))
   (let ([result (make-vector NUM_DOCUMENTS 0)])
     (for ([w NUM_WORD_INSTANCES])
       (vector-increment! result (vector-ref word->document w)))
@@ -48,8 +48,8 @@
 
 ;; Vector mapping each word to the topic it is currently assigned.
 ;; Every iteration one of the words has its topic changed.
-(define-incremental word->topic (Vector-type Word Topic) () (assign)
-  (build-vector NUM_WORDS (lambda (w) (random NUM_TOPICS))))
+(define-incremental word->topic (Vector-type WordInstance Topic) () (assign)
+  (build-vector NUM_WORD_INSTANCES (lambda (w) (random NUM_TOPICS))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -72,7 +72,7 @@
   ;;    (build-vector
   ;;     VOCABULARY_SIZE
   ;;     (lambda (text)
-  ;;       (my-for/sum ([w NUM_WORDS])
+  ;;       (my-for/sum ([w NUM_WORD_INSTANCES])
   ;;         (if (and (equal? (vector-ref word->topic w) topic)
   ;;                  (equal? (vector-ref word->text w) text))
   ;;             1
@@ -134,6 +134,8 @@
              #:break (>= sum rand))
     (set! sum (+ sum (vector-ref distribution x)))
     x))
+
+(finalize)
 
 (define (main)
   (for ([iter (in-range 1000)])

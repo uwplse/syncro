@@ -2,6 +2,7 @@
 
 (require "../rosette/enum-set.rkt"
          "../rosette/grammar/grammar.rkt"
+         "../rosette/operators.rkt"
          "../rosette/types.rkt")
 
 (require (for-syntax "dependency-graph.rkt"
@@ -17,6 +18,7 @@
          ;; TODO: Remove the "enum-" prefix
          (all-from-out "../rosette/enum-set.rkt")
          (all-from-out "../rosette/grammar/grammar.rkt")
+         (all-from-out "../rosette/operators.rkt")
          define-enum-type
          define-constant define-incremental finalize
          my-for/sum my-for/or)
