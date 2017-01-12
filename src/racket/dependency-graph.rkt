@@ -117,11 +117,11 @@
 
     ;; Wrappers around various functions on types
     
-    (define/public (get-symbolic-code [varset-name #f])
+    (define/public (get-symbolic-code varset-name)
       (symbolic-code type (get-id) varset-name))
     
-    (define/public (get-symbolic-update-code update-type update-args)
-      (symbolic-update-code type update-type (get-id) update-args))
+    (define/public (get-symbolic-update-code update-type update-args varset-name)
+      (symbolic-update-code type update-type (get-id) update-args varset-name))
     
     (define/public (get-old-values-code update-type . update-args)
       (apply old-values-code type update-type (get-id) update-args))

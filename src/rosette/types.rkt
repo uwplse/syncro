@@ -1,5 +1,7 @@
 #lang rosette
 
+(require "util.rkt")
+
 (provide Any-type Bottom-type Index-type Boolean-type Integer-type Enum-type
          Vector-type Set-type Procedure-type Error-type Void-type Type? symbolic?
          (rename-out [Vector-Type-index-type Vector-index-type]
@@ -37,6 +39,15 @@
   (if set-name
       #`(set-add! #,set-name #,val)
       #'(void)))
+
+(define (add-var-code var rosette-type set-name [assertions #'(list)])
+  #`(begin (define-symbolic* #,var #,rosette-type)
+           #,(set-add-code set-name #`(make-input #,var #,assertions))))
+
+(define (add-bounded-var-code var low high set-name)
+  (add-var-code var integer? set-name
+           #`(list (>= #,var #,low)
+                   (< #,var #,high))))
 
 
 (define-generics Type
@@ -125,7 +136,7 @@
   ;; symbolic variables to varset-name, which is a symbol that at
   ;; runtime will have a set as a value. If varset-name is #f, that
   ;; code is not generated.
-  (symbolic-code symbolic var [varset-name])
+  (symbolic-code symbolic var varset-name)
   ;; For a given kind of update to this type (eg. assignment),
   ;; generates argument names that would be used in the update
   ;; function.
@@ -148,7 +159,7 @@
   ;; Like update code, but does things symbolically. Interface is also
   ;; different.
   ;; TODO: Document better
-  (symbolic-update-code symbolic update-type var update-args))
+  (symbolic-update-code symbolic update-type var update-args varset-name))
 
 (struct Any-Type () #:transparent
   #:methods gen:Type
@@ -196,9 +207,8 @@
   #:methods gen:symbolic
   [(define (has-setters? self) #f)
 
-   (define (symbolic-code self var [varset-name #f])
-     #`(begin (define-symbolic* #,var boolean?)
-              #,(set-add-code varset-name var)))
+   (define (symbolic-code self var varset-name)
+     (add-var-code var #'boolean? varset-name))
 
    (define (generate-update-arg-names self update-type)
      (cond [(equal? update-type 'assign)
@@ -228,12 +238,12 @@
             (error (format "Unknown Boolean update type: ~a~%"
                            update-type))]))
 
-   (define (symbolic-update-code self update-type var update-args)
+   (define (symbolic-update-code self update-type var update-args varset-name)
      (cond [(equal? update-type 'assign)
             (match-define (list val-tmp) update-args)
-            (list #`(define-symbolic* #,val-tmp boolean?)
-                    #`(set! #,var #,val-tmp)
-                    (list self))]
+            (list (add-var-code val-tmp #'boolean? varset-name)
+                  #`(set! #,var #,val-tmp)
+                  (list self))]
 
            [else
             (error (format "Unknown Boolean update type: ~a~%"
@@ -270,9 +280,8 @@
   #:methods gen:symbolic
   [(define (has-setters? self) #f)
 
-   (define (symbolic-code self var [varset-name #f])
-     #`(begin (define-symbolic* #,var integer?)
-              #,(set-add-code varset-name var)))
+   (define (symbolic-code self var varset-name)
+     (add-var-code var #'integer? varset-name))
 
    (define (generate-update-arg-names self update-type)
      (cond [(equal? update-type 'assign)
@@ -313,12 +322,12 @@
             (error (format "Unknown Integer update type: ~a~%"
                            update-type))]))
 
-   (define (symbolic-update-code self update-type var update-args)
+   (define (symbolic-update-code self update-type var update-args varset-name)
      (cond [(equal? update-type 'assign)
             (match-define (list val-tmp) update-args)
-            (list #`(define-symbolic* #,val-tmp integer?)
-                    #`(set! #,var #,val-tmp)
-                    (list self))]
+            (list (add-var-code val-tmp #'integer? varset-name)
+                  #`(set! #,var #,val-tmp)
+                  (list self))]
 
            [(equal? update-type 'increment)
             (assert (null? update-args))
@@ -359,11 +368,9 @@
   #:methods gen:symbolic
   [(define (has-setters? self) #f)
 
-   (define (symbolic-code self var [varset-name #f])
-     #`(begin (define-symbolic* #,var integer?)
-              #,(set-add-code varset-name var)
-              (assert (>= #,var 0))
-              (assert (< #,var #,(Enum-Type-num-items self)))))
+   (define (symbolic-code self var varset-name)
+     (define num-items (Enum-Type-num-items self))
+     (add-bounded-var-code var 0 num-items varset-name))
 
    (define (generate-update-arg-names self update-type)
      (cond [(equal? update-type 'assign)
@@ -393,14 +400,13 @@
             (error (format "Unknown Enum update type: ~a~%"
                            update-type))]))
 
-   (define (symbolic-update-code self update-type var update-args)
+   (define (symbolic-update-code self update-type var update-args varset-name)
      (cond [(equal? update-type 'assign)
             (match-define (list val-tmp) update-args)
-            (list #`(begin (define-symbolic* #,val-tmp integer?)
-                             (assert (>= #,val-tmp 0))
-                             (assert (< #,val-tmp #,(Enum-Type-num-items self))))
-                    #`(set! #,var #,val-tmp)
-                    (list self))]
+            (define num-items (Enum-Type-num-items self))
+            (list (add-bounded-var-code val-tmp 0 num-items varset-name)
+                  #`(set! #,var #,val-tmp)
+                  (list self))]
 
            [else
             (error (format "Unknown Enum update type: ~a~%"
@@ -510,7 +516,7 @@
    
    (define (has-setters? self) #t)
    
-   (define (symbolic-code self var [varset-name #f])
+   (define (symbolic-code self var varset-name)
      (unless (integer? (Vector-Type-len self))
        (error "Need integer length for vector -- symbolic-code"))
      
@@ -571,8 +577,9 @@
             (error (format "Unknown Vector update type: ~a~%"
                            update-type))]))
 
-   (define (symbolic-update-code self update-type var update-args)
-     (unless (integer? (Vector-Type-len self))
+   (define (symbolic-update-code self update-type var update-args varset-name)
+     (define len (Vector-Type-len self))
+     (unless (integer? len)
        (error "Need integer length for vector -- symbolic-update-code"))
      
      (define output-type (Vector-Type-output-type self))
@@ -584,12 +591,11 @@
                            output-type
                            update-type
                            #`(vector-ref #,var #,tmp-index)
-                           (cdr update-args))])
+                           (cdr update-args)
+                           varset-name)])
               (list
                ;; Create the symbolic index into the vector
-               #`(begin (define-symbolic* #,tmp-index integer?)
-                        (assert (>= #,tmp-index 0))
-                        (assert (< #,tmp-index #,(Vector-Type-len self)))
+               #`(begin #,(add-bounded-var-code tmp-index 0 len varset-name)
                         #,output-defns)
                ;; Update the mutable structure at the specified symbolic index
                output-update
@@ -599,12 +605,9 @@
             (match-define (list tmp-index tmp-val) update-args)
             (list
              ;; Create the symbolic index into the vector
-             #`(begin (define-symbolic* #,tmp-index integer?)
-                      (assert (>= #,tmp-index 0))
-                      (assert (< #,tmp-index #,(Vector-Type-len self)))
+             #`(begin #,(add-bounded-var-code tmp-index 0 len varset-name)
                       ;; Create the symbolic value
-                      ;; TODO: This isn't an issue now, since output-type cannot be a mutable structure, but what if symbolic-code creates other symbolic variables besides tmp-val?
-                      #,(gen-symbolic-code output-type tmp-val #f))
+                      #,(gen-symbolic-code output-type tmp-val varset-name))
              ;; Perform the update
              #`(vector-set! #,var #,tmp-index #,tmp-val)
              (list (Vector-Type-index-type self) output-type))]
@@ -696,7 +699,7 @@
    
    (define (has-setters? self) #t)
    
-   (define (symbolic-code self var [varset-name #f])
+   (define (symbolic-code self var varset-name)
      (define len (Enum-Type-num-items (Set-Type-content-type self)))
      #`(define #,var
          #,(if varset-name
@@ -733,14 +736,14 @@
            [else
             (error (format "Unknown Set update type: ~a~%" update-type))]))
 
-   (define (symbolic-update-code self update-type var update-args)
+   (define (symbolic-update-code self update-type var update-args varset-name)
      (cond [(member update-type '(add remove))
             (let ([tmp-val (car update-args)]
                   [update-name (if (equal? update-type 'add)
                                    #'enum-set-add!
                                    #'enum-set-remove!)]
                   [content-type (Set-Type-content-type self)])
-              (list (gen-symbolic-code content-type tmp-val #f)
+              (list (gen-symbolic-code content-type tmp-val varset-name)
                     ;; Perform the update
                     #`(#,update-name #,var #,tmp-val)
                     (list content-type)))]

@@ -21,12 +21,11 @@
     (list node id (send node get-type) expr
           `(define ,id ,expr))))
 
-(define (get-symbolic-info node update-type #:varset-id [set-id #f])
-  (let* ([update-args (send node get-update-arg-names update-type)]
-         [symbolic-update (send node get-symbolic-update-code update-type update-args)])
+(define (get-symbolic-info node update-type set-id)
+  (let ([update-args (send node get-update-arg-names update-type)])
     (append (list (send node get-symbolic-code set-id))
             (list update-args)
-            symbolic-update
+            (send node get-symbolic-update-code update-type update-args set-id)
             (send/apply node get-old-values-code update-type update-args))))
 
 ;; Transposes a list of lists.
@@ -72,8 +71,7 @@
     ;; type so that the variables have consistent names.
     (match-define (list define-input update-args update-defns-code update-code update-arg-types define-overwritten-vals overwritten-vals overwritten-vals-types)
       (datumify
-       (get-symbolic-info input-relation update-type
-                          #:varset-id 'symbolic-vars)))
+       (get-symbolic-info input-relation update-type 'inputs-set)))
     
     (define intermediate-ids '())
     (for ([output-id (cdr (get-ids graph))])
@@ -110,7 +108,7 @@
            ;; Example: (define NUM_WORDS 12)
            ,@define-constants
            
-           (define symbolic-vars (mutable-set))
+           (define inputs-set (mutable-set))
 
            ;; Example: (define word->topic (build-vector 12 ...))
            ;; The resulting data structure contains symbolic variables.
@@ -155,23 +153,29 @@
            ,@add-terminals
            (printf "Creating symbolic program~%")
            (define program
-             (time (grammar terminal-info 3 3 #:num-temps 0 #:guard-depth 1
-                            #:version 'basic
-                            #:choice-version 'sharing)))
+             (time (grammar terminal-info 2 3 #:num-temps 0 #:guard-depth 1
+                            #:version 'caching
+                            #:choice-version 'basic)))
 
+           ;; Symbolically run the sampled program
+           (displayln "Running the generated program")
+           (time (eval-lifted program))
+
+           ;; Assert all preconditions
+           (define (assert-pre input)
+             (map (lambda (x) (assert x)) (input-preconditions input)))
+           (define inputs-list (set->list inputs-set))
+           (for-each assert-pre inputs-list)
+           
            (define synth
              (time
               (synthesize
                ;; For every possible input relation (captured in
                ;; symbolic vars) and every possible update to that
                ;; relation
-               #:forall (append (list ,@update-args)
-                                (set->list symbolic-vars))
+               #:forall (map input-val inputs-list)
                #:guarantee
                (begin
-                 ;; Symbolically run the sampled program
-                 (displayln "Running the generated program")
-                 (time (eval-lifted program))
                  ;; Example: (assert (equal? num2 (build-vector ...)))
                  (assert (equal? (eval-lifted (send terminal-info get-terminal-by-id ',output-id))
                                  ,output-expr))
