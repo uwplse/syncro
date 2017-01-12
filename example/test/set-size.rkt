@@ -1,6 +1,6 @@
 #lang racket
 
-(require "../src/racket/constructs.rkt")
+(require "../../src/racket/constructs.rkt")
 
 (define-enum-type Mystery 5)
 
