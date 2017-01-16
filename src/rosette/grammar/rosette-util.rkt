@@ -5,7 +5,7 @@
 (require "../types.rkt" "../util.rkt" "../variable.rkt" )
 
 (provide define-lifted lifted? if^ begin^ define-expr^ set!^
-         eval-lifted lifted-code infer-type mutable? lifted-writer
+         eval-lifted lifted-code fold-lifted infer-type mutable? lifted-writer
          gen:lifted gen:inferable
          lifted-error lifted-error?
          make-lifted-variable)
@@ -18,11 +18,14 @@
   (eval-lifted lifted)
   ;; Produces Racket code that represents the lifted expression.
   (lifted-code lifted)
+  ;; Fold
+  (fold-lifted mapper reducer lifted)
 
   #:defaults
   ([number?
     (define (eval-lifted x) x)
-    (define (lifted-code x) x)]))
+    (define (lifted-code x) x)
+    (define (fold-lifted mapper reducer x) (mapper x))]))
 
 (define-generics inferable
   ;; Type inference
@@ -80,7 +83,10 @@
                         (variable-symbol self)))))
 
    (define (lifted-code self)
-     (variable-symbol self))]
+     (variable-symbol self))
+
+   (define (fold-lifted mapper reducer self)
+     (mapper (variable-symbol self)))]
 
   #:methods gen:inferable
   [(define (infer-type self)
@@ -106,6 +112,7 @@
   #:methods gen:lifted
   [(define/generic gen-eval-lifted eval-lifted)
    (define/generic gen-lifted-code lifted-code)
+   (define/generic gen-fold-lifted fold-lifted)
    
    (define (eval-lifted self)
      (apply (gen-eval-lifted (lifted-apply-proc self))
@@ -113,7 +120,12 @@
 
    (define (lifted-code self)
      (cons (gen-lifted-code (lifted-apply-proc self))
-           (map gen-lifted-code (lifted-apply-args self))))]
+           (map gen-lifted-code (lifted-apply-args self))))
+
+   (define (fold-lifted mapper reducer self)
+     (apply reducer (mapper 'apply)
+            (gen-fold-lifted mapper reducer (lifted-apply-proc self))
+            (map (curry gen-fold-lifted mapper reducer) (lifted-apply-args self))))]
 
   #:methods gen:inferable
   [(define/generic gen-infer-type infer-type)
@@ -132,13 +144,18 @@
   #:methods gen:lifted
   [(define/generic gen-eval-lifted eval-lifted)
    (define/generic gen-lifted-code lifted-code)
+   (define/generic gen-fold-lifted fold-lifted)
    
    (define (eval-lifted self)
      (for/last ([arg (lifted-begin-args self)])
        (gen-eval-lifted arg)))
 
    (define (lifted-code self)
-     (cons 'let (cons '() (map gen-lifted-code (lifted-begin-args self)))))]
+     (cons 'let (cons '() (map gen-lifted-code (lifted-begin-args self)))))
+   
+   (define (fold-lifted mapper reducer self)
+     (apply reducer (mapper 'begin)
+            (map (curry gen-fold-lifted mapper reducer) (lifted-begin-args self))))]
 
   #:methods gen:inferable
   [(define/generic gen-infer-type infer-type)
@@ -163,6 +180,7 @@
   #:methods gen:lifted
   [(define/generic gen-eval-lifted eval-lifted)
    (define/generic gen-lifted-code lifted-code)
+   (define/generic gen-fold-lifted fold-lifted)
 
    (define (eval-lifted self)
      (if (gen-eval-lifted (lifted-if-condition self))
@@ -173,7 +191,13 @@
      (list 'if
            (gen-lifted-code (lifted-if-condition self))
            (gen-lifted-code (lifted-if-then-branch self))
-           (gen-lifted-code (lifted-if-else-branch self))))]
+           (gen-lifted-code (lifted-if-else-branch self))))
+   
+   (define (fold-lifted mapper reducer self)
+     (reducer (mapper 'if)
+              (gen-fold-lifted mapper reducer (lifted-if-condition self))
+              (gen-fold-lifted mapper reducer (lifted-if-then-branch self))
+              (gen-fold-lifted mapper reducer (lifted-if-else-branch self))))]
 
   #:methods gen:inferable
   [(define/generic gen-infer-type infer-type)
@@ -203,6 +227,7 @@
   #:methods gen:lifted
   [(define/generic gen-eval-lifted eval-lifted)
    (define/generic gen-lifted-code lifted-code)
+   (define/generic gen-fold-lifted fold-lifted)
 
    (define (eval-lifted self)
      (set-variable-value! (lifted-define-var self)
@@ -211,7 +236,11 @@
    (define (lifted-code self)
      (list 'define
            (variable-symbol (lifted-define-var self))
-           (gen-lifted-code (lifted-define-val self))))]
+           (gen-lifted-code (lifted-define-val self))))
+
+   (define (fold-lifted mapper reducer self)
+     (reducer (mapper 'define)
+              (gen-fold-lifted mapper reducer (lifted-define-val self))))]
 
   #:methods gen:inferable
   [(define (infer-type self)
@@ -256,6 +285,7 @@
   #:methods gen:lifted
   [(define/generic gen-eval-lifted eval-lifted)
    (define/generic gen-lifted-code lifted-code)
+   (define/generic gen-fold-lifted fold-lifted)
    (define (eval-lifted self)
      (set-variable-value! (lifted-set!-var self)
                           (gen-eval-lifted (lifted-set!-val self)))
@@ -264,7 +294,11 @@
    (define (lifted-code self)
      (list 'set!
            (gen-lifted-code (lifted-set!-var self))
-           (gen-lifted-code (lifted-set!-val self))))]
+           (gen-lifted-code (lifted-set!-val self))))
+
+   (define (fold-lifted mapper reducer self)
+     (reducer (mapper 'set!)
+              (gen-fold-lifted mapper reducer (lifted-set!-val self))))]
 
   #:methods gen:inferable
   [(define (infer-type self)
@@ -284,7 +318,10 @@
      (error "Default error -- LIFTED-ERROR"))
 
    (define (lifted-code self)
-     '(error "Default error -- LIFTED-ERROR"))]
+     '(error "Default error -- LIFTED-ERROR"))
+
+   (define (fold-lifted mapper reducer self)
+     (mapper 'error))]
 
   #:methods gen:inferable
   [(define (infer-type self)

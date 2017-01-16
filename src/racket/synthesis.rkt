@@ -138,7 +138,7 @@
            ;; Example: (vector-set! word->topic index9079 val9080)
            ,update-code
 
-           ;; Example: (define num2helper (build-vector ...))
+           ;; Example: (set! num2helper (build-vector ...))
            ;; Taken straight from the user program, but operates on
            ;; symbolic variables.
            ;; Note that this must come after the update.
@@ -147,42 +147,29 @@
            ;; them. So here, we should use a set!
            ,@(map (lambda (code) `(set! ,@(cdr code))) define-intermediates)
 
+           (define init-state (list ,input-id ,output-id ,@intermediate-ids))
+           (define (reset-state!)
+             (define clone-state (clone init-state))
+             ,@(for/list ([id (cons input-id (cons output-id intermediate-ids))]
+                          [index (in-naturals 0)])
+                 `(set! ,id (list-ref clone-state ,index))))
+
            ;; Create the grammar and sample a program
            (define terminal-info (new Terminal-Info%))
            ,(add-terminal-code output-id output-type #:mutable? #t)
            ,@add-terminals
-           (printf "Creating symbolic program~%")
-           (define program
-             (time (grammar terminal-info 2 3 #:num-temps 0 #:guard-depth 1
-                            #:version 'caching
-                            #:choice-version 'basic)))
 
-           ;; Symbolically run the sampled program
-           (displayln "Running the generated program")
-           (time (eval-lifted program))
+           (define (postcondition)
+             ;; Note: It is not (equal? ,output-id ,output-expr)
+             ;; because when we run the lifted program, it modifies
+             ;; the value *stored in the lifted program*, which is not
+             ;; necessarily the same as the value in ,output-id.
+             (equal? (eval-lifted (send terminal-info get-terminal-by-id ',output-id))
+                     ,output-expr))
 
-           ;; Assert all preconditions
-           (define (assert-pre input)
-             (map (lambda (x) (assert x)) (input-preconditions input)))
-           (define inputs-list (set->list inputs-set))
-           (for-each assert-pre inputs-list)
-           
-           (define synth
-             (time
-              (synthesize
-               ;; For every possible input relation (captured in
-               ;; symbolic vars) and every possible update to that
-               ;; relation
-               #:forall (map input-val inputs-list)
-               #:guarantee
-               (begin
-                 ;; Example: (assert (equal? num2 (build-vector ...)))
-                 (assert (equal? (eval-lifted (send terminal-info get-terminal-by-id ',output-id))
-                                 ,output-expr))
-                 (display "Completed symbolic generation!\n")))))
-
-           (and (sat? synth)
-                (lifted-code (coerce-evaluate program synth)))))
+           ,(synthesis-code 'terminal-info 'inputs-set 'postcondition 'reset-state!)
+           ;,(metasketch-code 'terminal-info 'inputs-set 'postcondition 'reset-state!)
+           ))
 
       ;(pretty-print rosette-code)
       (define result (run-in-rosette rosette-code))
@@ -203,3 +190,53 @@
          ,define-overwritten-vals
          ,update-code
          ,synthesized-code)))))
+
+(define (synthesis-code terminal-info-var inputs-set-var
+                        postcondition-fn-var reset-fn-var)
+  `(begin
+     (printf "Creating symbolic program~%")
+     (define program
+       (time (grammar ,terminal-info-var 2 3 #:num-temps 0 #:guard-depth 1
+                      #:version 'caching
+                      #:choice-version 'basic)))
+
+     ;; Symbolically run the sampled program
+     (displayln "Running the generated program")
+     (time (eval-lifted program))
+
+     ;; Assert all preconditions
+     (define (assert-pre input)
+       (map (lambda (x) (assert x)) (input-preconditions input)))
+     (define inputs-list (set->list ,inputs-set-var))
+     (for-each assert-pre inputs-list)
+     
+     (define synth
+       (time
+        (synthesize
+         ;; For every possible input relation (captured in
+         ;; symbolic vars) and every possible update to that
+         ;; relation
+         #:forall (map input-val inputs-list)
+         #:guarantee
+         (begin
+           ;; Example: (assert (equal? num2 (build-vector ...)))
+           (assert (,postcondition-fn-var))
+           (display "Completed symbolic generation!\n")))))
+
+     (and (sat? synth)
+          (lifted-code (coerce-evaluate program synth)))))
+
+(define (metasketch-code terminal-info-var inputs-set-var
+                         postcondition-fn-var reset-fn-var)
+  `(begin
+     (define synth
+       (search #:metasketch (grammar-metasketch ,terminal-info-var
+                                                (set->list ,inputs-set-var)
+                                                ,postcondition-fn-var
+                                                ,reset-fn-var)
+               #:threads 1
+               #:timeout 60
+               #:bitwidth (current-bitwidth)
+               #:verbose #t))
+     (and (sat? synth)
+          (lifted-code (coerce-evaluate program synth)))))
