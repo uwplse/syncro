@@ -1,6 +1,6 @@
 #lang rosette
 
-(require "../enum-set.rkt" "../operators.rkt" "rosette-util.rkt" "../types.rkt")
+(require "../enum-set.rkt" "../operators.rkt" "language.rkt" "../types.rkt")
 
 (provide void^ vector-increment!^ vector-decrement!^ vector-set!^ vector-ref^
          enum-set-add!^ enum-set-remove!^ enum-set-contains?^

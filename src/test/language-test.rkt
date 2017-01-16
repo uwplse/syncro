@@ -2,17 +2,17 @@
 
 (require rackunit rackunit/text-ui)
 (require "../rosette/grammar/lifted-operators.rkt"
-         "../rosette/grammar/rosette-util.rkt"
+         "../rosette/grammar/language.rkt"
          "../rosette/types.rkt")
 
-(provide run-rosette-util-tests)
+(provide run-language-tests)
 
 (define-namespace-anchor anchor)
 (define ns (namespace-anchor->namespace anchor))
 
 (define tests
   (test-suite
-   "Tests for rosette-util.rkt"
+   "Tests for language.rkt"
    (let ()
 
      (test-case "eval-lifted and lifted-code invariant"
@@ -27,6 +27,6 @@
                        (eval (lifted-code obj) ns))))
      )))
 
-(define (run-rosette-util-tests)
-  (displayln "Running tests for rosette-util.rkt")
+(define (run-language-tests)
+  (displayln "Running tests for language.rkt")
   (run-tests tests))

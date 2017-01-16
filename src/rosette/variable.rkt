@@ -18,7 +18,7 @@
 
 (struct unknown-value () #:transparent)
 
-;; This is copied in rosette-util.rkt for lifted variables.
+;; This is copied in language.rkt for lifted variables.
 (define (make-variable symbol
                        #:type [type #f]
                        #:value [value (unknown-value)]

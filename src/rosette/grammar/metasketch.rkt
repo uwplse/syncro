@@ -1,6 +1,6 @@
 #lang rosette
 
-(require "grammar.rkt" "rosette-util.rkt" "../util.rkt"
+(require "grammar.rkt" "language.rkt" "../util.rkt"
          "../../../../synapse/opsyn/engine/search.rkt"
          "../../../../synapse/opsyn/engine/metasketch.rkt")
 

@@ -1,6 +1,6 @@
 #lang rosette
 
-(require "lifted-operators.rkt" "rosette-util.rkt" "../types.rkt" "../variable.rkt")
+(require "lifted-operators.rkt" "language.rkt" "../types.rkt" "../variable.rkt")
 
 (require rosette/lib/angelic rosette/lib/synthax)
 

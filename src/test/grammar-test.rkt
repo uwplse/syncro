@@ -2,7 +2,7 @@
 
 (require rackunit rackunit/text-ui)
 (require "../rosette/grammar/grammar.rkt"
-         "../rosette/grammar/rosette-util.rkt"
+         "../rosette/grammar/language.rkt"
          "../rosette/types.rkt" "../rosette/variable.rkt")
 
 (provide run-grammar-tests)
