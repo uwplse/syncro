@@ -6,17 +6,18 @@
 
 (provide search (rename-out [make-grammar-ms grammar-metasketch]))
 
-(define (make-grammar-ms info inputs postcondition-fn reset-fn)
+(define (make-grammar-ms info inputs postconditions-fn reset-fn options)
   (grammar-ms info (map input-val inputs)
                       (foldl append '()
                              (map input-preconditions inputs))
-                      postcondition-fn
-                      reset-fn))
+                      postconditions-fn
+                      reset-fn
+                      options))
 
-(struct grammar-ms (terminal-info inputs preconditions postcondition-fn reset-fn)
+(struct grammar-ms (terminal-info inputs preconditions postconditions-fn reset-fn options)
   #:methods gen:metasketch
   [(define (inputs self)
-     (map input-val (grammar-ms-inputs self)))
+     (grammar-ms-inputs self))
    
    (define (structure self sketch)
      ;; TODO: Add structure constraints to sketches
@@ -28,12 +29,16 @@
    
    (define (cost self program)
      ;; Computes the number of nodes in the program
-     (fold-lifted (const 1) + program))
+     (fold-lifted program (const 1) +))
    
    (define (sketches self [c +inf.0])
-     (list->set
+     (set (make-sketch self '(2 3 1)))
+     #;(list->set
       (for*/list ([i 4] [j 4])
-        (make-sketch self (list i j 1)))))])
+        (make-sketch self (list (+ i 1) (+ j 1) 1)))))
+
+   (define (get-sketch self idx)
+     (make-sketch self idx))])
 
 (define (make-sketch ms index)
   (grammar-sketch ms index #f #f))
@@ -42,6 +47,9 @@
   #:methods gen:sketch
   [(define (metasketch self)
      (grammar-sketch-meta self))
+
+   (define (index self)
+     (grammar-sketch-index self))
    
    (define (programs self [sol (sat)])
       (if (zero? (dict-count (model sol)))
@@ -68,17 +76,21 @@
 
 (define (get-program sketch)
   (when (false? (grammar-sketch-program sketch))
-    (match-define (list num-stmts expr-depth guard-depth)
-      (grammar-sketch-index sketch))
-    (define terminal-info
-      (grammar-ms-terminal-info (grammar-sketch-meta sketch)))
-    (printf "EXPENSIVE: Calling (grammar ~a ~a ~a)~%" num-stmts
-            expr-depth guard-depth)
-    (set-grammar-sketch-program!
-     sketch
-     (grammar terminal-info num-stmts expr-depth
-              #:num-temps 0 #:guard-depth guard-depth
-              #:version 'caching #:choice-version 'basic)))
+    (define ms (grammar-sketch-meta sketch))
+    (match* [(grammar-sketch-meta sketch) (grammar-sketch-index sketch)]
+      [((grammar-ms terminal-info _ _ _ _ options)
+        `(,num-stmts ,expr-depth ,guard-depth))
+
+       (when (hash-ref options 'verbose?)
+         (printf "Creating symbolic program: (grammar ~a ~a ~a)~%"
+                 num-stmts expr-depth guard-depth))
+       
+       (set-grammar-sketch-program!
+        sketch
+        (grammar terminal-info num-stmts expr-depth
+                 #:num-temps 0 #:guard-depth guard-depth
+                 #:version (hash-ref options 'grammar-version)
+                 #:choice-version (hash-ref options 'grammar-choice)))]))
   
   (grammar-sketch-program sketch))
 
@@ -91,7 +103,7 @@
     (eval-lifted (get-program sketch))
     (set-grammar-sketch-postconditions!
      sketch
-     (list ((grammar-ms-postcondition-fn (grammar-sketch-meta sketch))))))
+     ((grammar-ms-postconditions-fn (grammar-sketch-meta sketch)))))
 
   (grammar-sketch-postconditions sketch))
 

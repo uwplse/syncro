@@ -1,14 +1,10 @@
-#lang racket
-
-(require "../src/racket/constructs.rkt")
-
 ;; define-constant behaves just like define, but the system needs to
 ;; know types during grammar construction.
-(define-constant NUM_WORDS (Integer-type) 12)
-(define-constant NUM_TOPICS (Integer-type) 3)
-(define-constant NUM_DOCUMENTS (Integer-type) 2)
-(define-constant VOCABULARY_SIZE (Integer-type) 10)
-(define-constant BETA (Integer-type) 1)
+(define NUM_WORDS (Integer-type) 12)
+(define NUM_TOPICS (Integer-type) 3)
+(define NUM_DOCUMENTS (Integer-type) 2)
+(define VOCABULARY_SIZE (Integer-type) 10)
+(define BETA (Integer-type) 1)
 
 ;; Enum types can be used as indices into vectors.
 ;; We assume that the words have already been interned.
@@ -17,7 +13,7 @@
 (define-enum-type Document NUM_DOCUMENTS)
 
 ;; Vector mapping each word to the document it is in.
-(define-constant word->document (Vector-type Word Document)
+(define word->document (Vector-type Word Document)
   (build-vector NUM_WORDS (lambda (w) (if (< w 5) 0 1))))
 
 ;; Vector mapping each word to the topic it is currently assigned.
@@ -72,8 +68,6 @@
 ;; TODO: Annoying bitwidth stuff makes this tricky (see tmp3.rkt)
 (define-incremental num2sum (Integer-type) (num2) ()
   (my-for/sum ([x num2]) x))
-
-(finalize)
 
 (define (value)
   (/ (* BETA num1sum) (+ (* BETA VOCABULARY_SIZE) num2sum)))

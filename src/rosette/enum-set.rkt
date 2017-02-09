@@ -18,6 +18,7 @@
                   (set-add! varset choice)
                   choice)))
 
+;; TODO: Rename to enum-set-member?
 (define (enum-set-contains? set elem)
   (vector-ref set elem))
 

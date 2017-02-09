@@ -1,6 +1,8 @@
 #lang racket
 
 (require "dependency-graph.rkt"
+         "namespace.rkt"
+         "read-file.rkt"
          "../rosette/rosette-namespace.rkt"
          "../rosette/types.rkt"
          "../rosette/variable.rkt")
@@ -11,8 +13,7 @@
 
 (define (get-constant-info vars)
   (let ([typed-vars (filter variable-has-type? vars)])
-    (list (map variable-definition vars)
-          (map variable-symbol typed-vars)
+    (list (map variable-symbol typed-vars)
           (map variable-type typed-vars))))
 
 (define (get-node-info node)
@@ -50,15 +51,16 @@
 
 ;; Creates the necessary Rosette code for synthesis, runs it, and
 ;; creates the relevant update functions.
-;; constants: List of constant variables (both typed and untyped)
-;; graph:     Dependency graph
-(define (perform-synthesis constants graph)
-  (define (get-id-info id)
-    (get-node-info (get-node graph id)))
+;; prog: A program struct (see read-file.rkt)
+(define (perform-synthesis prog options)
+  (define graph (program-dependency-graph prog))
   
   ;; Relevant information about constants
-  (match-define (list define-constants constant-terminal-ids constant-terminal-types)
-    (get-constant-info constants))
+  (match-define (list constant-terminal-ids constant-terminal-types)
+    (get-constant-info (program-constants prog)))
+  
+  (define (get-id-info id)
+    (get-node-info (get-node graph id)))
   
   ;; Relevant information about the input relation
   (match-define (list input-relation input-id input-type _ _)
@@ -102,83 +104,177 @@
              (append (list input-type) intermediate-types
                      overwritten-vals-types update-arg-types
                      constant-terminal-types)))
-      
-      (define rosette-code
-        `(let ()
-           ;; Example: (define NUM_WORDS 12)
-           ,@define-constants
-           
-           (define inputs-set (mutable-set))
 
-           ;; Example: (define word->topic (build-vector 12 ...))
-           ;; The resulting data structure contains symbolic variables.
-           ,define-input
+      (define initialization-stmts
+        `(;; Example: (define NUM_WORDS 12)
+          ,@(program-initialization prog)
+          (define inputs-set (mutable-set))
+          ;; Example: (define word->topic (build-vector 12 ...))
+          ;; The resulting data structure contains symbolic variables.
+          ,define-input
+          ;; Example: (define num2helper (build-vector ...))
+          ;; Taken straight from the user program, but operates on
+          ;; symbolic variables.
+          ;; This needs to be done here in case the output depends on
+          ;; intermediate relations.
+          ,@define-intermediates
+          ;; Example: (define num2 (build-vector ...))
+          ;; Basically the same as for intermediates.
+          ,define-output))
 
-           ;; This needs to be done here in case the output depends on
-           ;; intermediate relations.
-           ,@define-intermediates
+      ;; update-stmts assumes that the output relation has been defined.
+      ;; It also assumes that inputs-set has been defined.
+      (define update-stmts
+        `(;; Example:
+          ;; (define-symbolic* index9079 integer?)
+          ;; (assert (>= index9079 0))
+          ;; (assert (< index9079 12))
+          ;; (set-add! inputs-set index9079)
+          ;; (define-symbolic* val9080 integer?)
+          ;; (assert (>= val9080 0))
+          ;; (assert (< val9080 3))
+          ;; (set-add! inputs-set val9080)
+          ,update-defns-code
+          ;; Example:
+          ;; (define old-value9082 (vector-ref word->topic index9079))
+          ,define-overwritten-vals
+          ;; Example: (vector-set! word->topic index9079 val9080)
+          ,update-code))
 
-           ;; Example: (define num2 (build-vector ...))
-           ;; Basically the same as for intermediates.
-           ,define-output
+      ;; Example: (set! num2helper (build-vector ...))
+      ;; Taken straight from the user program, but operates on
+      ;; symbolic variables.
+      ;; Note that this must come after the update.
+      ;; TODO: For now, we have to define intermediates before
+      ;; the update in case the output relation depends on
+      ;; them. So here, we should use a set!
+      (define update-intermediate-stmts
+        (map (lambda (code) `(set! ,@(cdr code))) define-intermediates))
 
-           ;; Example:
-           ;; (define-symbolic* index9079 integer?)
-           ;; (assert (>= index9079 0))
-           ;; (assert (< index9079 12))
-           ;; (define-symbolic* val9080 integer?)
-           ;; (assert (>= val9080 0))
-           ;; (assert (< val9080 3))
-           ,update-defns-code
+      ;; Defines a reset function that when called will reset all data
+      ;; structures to their state at the point where the function was defined.
+      (define (add-reset-fn name)
+        `((define init-state (list ,input-id ,output-id ,@intermediate-ids))
+          (define (,name)
+            (define clone-state (clone init-state))
+            ,@(for/list ([id (cons input-id (cons output-id intermediate-ids))]
+                         [index (in-naturals 0)])
+                `(set! ,id (list-ref clone-state ,index))))))
 
-           ;; Example:
-           ;; (define old-value9082 (vector-ref word->topic index9079))
-           ,define-overwritten-vals
+      (define terminal-info-stmts
+        ;; Create the grammar and sample a program
+        `((define terminal-info (new Terminal-Info%))
+          ,(add-terminal-code output-id output-type #:mutable? #t)
+          ,@add-terminals))
 
-           ;; Example: (vector-set! word->topic index9079 val9080)
-           ,update-code
+      ;; Note: It is not (equal? ,output-id ,output-expr)
+      ;; because when we run the lifted program, it modifies
+      ;; the value *stored in the lifted program*, which is not
+      ;; necessarily the same as the value in ,output-id.
+      ;; Example: (assert (equal? num2 (build-vector ...)))
+      (define postcondition-expr
+        `(equal? (eval-lifted (send terminal-info get-terminal-by-id ',output-id))
+                 ,output-expr))
 
-           ;; Example: (set! num2helper (build-vector ...))
-           ;; Taken straight from the user program, but operates on
-           ;; symbolic variables.
-           ;; Note that this must come after the update.
-           ;; TODO: For now, we have to define intermediates before
-           ;; the update in case the output relation depends on
-           ;; them. So here, we should use a set!
-           ,@(map (lambda (code) `(set! ,@(cdr code))) define-intermediates)
+      (define grammar-expr
+        `(grammar terminal-info 2 3 #:num-temps 0 #:guard-depth 1
+                  #:version ',(hash-ref options 'grammar-version)
+                  #:choice-version ',(hash-ref options 'grammar-choice)))
 
-           (define init-state (list ,input-id ,output-id ,@intermediate-ids))
-           (define (reset-state!)
-             (define clone-state (clone init-state))
-             ,@(for/list ([id (cons input-id (cons output-id intermediate-ids))]
-                          [index (in-naturals 0)])
-                 `(set! ,id (list-ref clone-state ,index))))
+      (define (debug-code code)
+        (if (hash-ref options 'verbose?)
+            (list code)
+            '()))
 
-           ;; Create the grammar and sample a program
-           (define terminal-info (new Terminal-Info%))
-           ,(add-terminal-code output-id output-type #:mutable? #t)
-           ,@add-terminals
+      (define (run-synthesis)
+        (define rosette-code
+          `(let ()
+             ,@initialization-stmts
+             ,@update-stmts
+             ,@update-intermediate-stmts
+             ,@terminal-info-stmts
 
-           (define (postcondition)
-             ;; Note: It is not (equal? ,output-id ,output-expr)
-             ;; because when we run the lifted program, it modifies
-             ;; the value *stored in the lifted program*, which is not
-             ;; necessarily the same as the value in ,output-id.
-             (equal? (eval-lifted (send terminal-info get-terminal-by-id ',output-id))
-                     ,output-expr))
+             ,@(debug-code '(printf "Creating symbolic program~%"))
+             (define program (time ,grammar-expr))
+             ;; Symbolically run the sampled program
+             ,@(debug-code '(displayln "Running the generated program"))
+             (time (eval-lifted program))
 
-           ,(synthesis-code 'terminal-info 'inputs-set 'postcondition 'reset-state!)
-           ;,(metasketch-code 'terminal-info 'inputs-set 'postcondition 'reset-state!)
-           ))
+             ;; Assert all preconditions
+             (define (assert-pre input)
+               (map (lambda (x) (assert x)) (input-preconditions input)))
+             (define inputs-list (set->list inputs-set))
+             (for-each assert-pre inputs-list)
+             
+             (define synth
+               (time
+                (synthesize #:forall (map input-val inputs-list)
+                            #:guarantee
+                            (begin (assert ,postcondition-expr)
+                                   ,@(debug-code `(displayln "Completed symbolic generation!"))))))
+             (and (sat? synth)
+                  (lifted-code (coerce-evaluate program synth)))))
 
-      ;(pretty-print rosette-code)
-      (define result (run-in-rosette rosette-code))
+        (when (hash-ref options 'debug?) (pretty-print rosette-code))
+        (run-in-rosette rosette-code))
+
+      (define (run-metasketch)
+        (define module-code
+          `(
+            ;; TODO: Currently this depends on you running code from
+            ;; the right place. Fix.
+            (require "rosette/namespace-requires.rkt")
+            (provide metasketch)
+            ,@initialization-stmts
+            ,@update-stmts
+            ,@update-intermediate-stmts
+            ,@(add-reset-fn 'reset-state!)
+            ,@terminal-info-stmts
+            (define metasketch
+              (grammar-metasketch terminal-info
+                                  (set->list inputs-set)
+                                  (thunk (list ,postcondition-expr))
+                                  reset-state!
+                                  ,options))))
+
+        (when (hash-ref options 'debug?) (pretty-print module-code))
+        (define module-file (hash-ref options 'module-file))
+        (when (file-exists? module-file) (delete-file module-file))
+        (with-output-to-file module-file
+          (thunk
+           (displayln "#lang rosette")
+           (for-each writeln module-code)))
+
+        (define synth-code
+          `(let ()
+             (define synth
+               (search #:metasketch ,module-file
+                       #:threads 1
+                       #:timeout 60
+                       #:bitwidth 10 ;(current-bitwidth)
+                       #:verbose #t))
+             synth
+             #;(and (sat? synth)
+                  (lifted-code (coerce-evaluate program synth)))))
+
+        (when (hash-ref options 'debug?) (pretty-print synth-code))
+        (when (hash-ref options 'verbose?)
+          (displayln "Starting the metasketch search"))
+        (run-in-racket synth-code))
+
+      (define result
+        (if (hash-ref options 'metasketch?)
+            (run-metasketch)
+            (run-synthesis)))
       (if result
           (begin
-            (pretty-print result)
+            (when (hash-ref options 'verbose?) (displayln "Solution found!"))
+            (when (hash-ref options 'debug?) (pretty-print result))
             (send input-relation add-update-code update-type result))
           (begin
-            (display "No program found\n")
+            (displayln
+             (format "No program found to update ~a upon change ~a to ~a"
+                     output-id update-type input-id))
             (send input-relation add-update-code update-type
                   `(set! ,output-id ,(send output-relation get-fn-code)))))
 
@@ -186,57 +282,7 @@
 
     (let ([update-id (make-id "~a-~a!" update-type input-id)]
           [synthesized-code (send input-relation get-update-code update-type)])
-      (pretty-print `(define (,update-id ,@update-args)
+      `(define (,update-id ,@update-args)
          ,define-overwritten-vals
          ,update-code
-         ,synthesized-code)))))
-
-(define (synthesis-code terminal-info-var inputs-set-var
-                        postcondition-fn-var reset-fn-var)
-  `(begin
-     (printf "Creating symbolic program~%")
-     (define program
-       (time (grammar ,terminal-info-var 2 3 #:num-temps 0 #:guard-depth 1
-                      #:version 'caching
-                      #:choice-version 'basic)))
-
-     ;; Symbolically run the sampled program
-     (displayln "Running the generated program")
-     (time (eval-lifted program))
-
-     ;; Assert all preconditions
-     (define (assert-pre input)
-       (map (lambda (x) (assert x)) (input-preconditions input)))
-     (define inputs-list (set->list ,inputs-set-var))
-     (for-each assert-pre inputs-list)
-     
-     (define synth
-       (time
-        (synthesize
-         ;; For every possible input relation (captured in
-         ;; symbolic vars) and every possible update to that
-         ;; relation
-         #:forall (map input-val inputs-list)
-         #:guarantee
-         (begin
-           ;; Example: (assert (equal? num2 (build-vector ...)))
-           (assert (,postcondition-fn-var))
-           (display "Completed symbolic generation!\n")))))
-
-     (and (sat? synth)
-          (lifted-code (coerce-evaluate program synth)))))
-
-(define (metasketch-code terminal-info-var inputs-set-var
-                         postcondition-fn-var reset-fn-var)
-  `(begin
-     (define synth
-       (search #:metasketch (grammar-metasketch ,terminal-info-var
-                                                (set->list ,inputs-set-var)
-                                                ,postcondition-fn-var
-                                                ,reset-fn-var)
-               #:threads 1
-               #:timeout 60
-               #:bitwidth (current-bitwidth)
-               #:verbose #t))
-     (and (sat? synth)
-          (lifted-code (coerce-evaluate program synth)))))
+         ,synthesized-code))))

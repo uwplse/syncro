@@ -118,7 +118,7 @@
            (void) #;(begin define-update-fn ...))))]))
 
 ;; NOTE: The reimplementations of for can also be found in
-;; rosette-namespace.rkt
+;; src/rosette/util.rkt
 (define-syntax (my-for/sum stx)
   (syntax-case stx ()
     [(_ ([i itr] ...) expr ...)
@@ -128,7 +128,7 @@
            (set! sum (+ sum (begin expr ...))))
          sum))]))
 
-;; NOTE: See caveat in rosette-namespace.rkt
+;; NOTE: See caveat in src/rosette/util.rkt
 (define-syntax (my-for/or stx)
   (syntax-case stx ()
     [(_ ([i itr] ...) expr ...)

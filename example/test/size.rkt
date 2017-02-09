@@ -1,7 +1,3 @@
-#lang racket
-
-(require "../../src/racket/constructs.rkt")
-
 (define-incremental mystery? (Vector-type 5 (Boolean-type)) () (assign)
   (vector #t #f #f #t #f))
 
@@ -31,8 +27,6 @@
 ;;     (if val17042
 ;;         (set! num-mysteries (+ num-mysteries 1))
 ;;         (set! num-mysteries (- num-mysteries 1))))
-
-(finalize)
 
 (displayln num-mysteries) ;; expect 2
 (assign-mystery?! 0 #t)
