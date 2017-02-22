@@ -9,13 +9,6 @@
 (provide grammar Terminal-Info% eval-lifted lifted-code)
 
 
-(struct special-form (name constructor) #:transparent)
-(define operator-info
-  (list void^ vector-increment!^ vector-decrement!^ vector-set!^ vector-ref^
-        enum-set-add!^ enum-set-remove!^ enum-set-contains?^
-        equal?^ =^ <^ +^ -^ *^
-        (special-form 'if if^) (special-form 'set! set!^)))
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Grammar construction ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -29,44 +22,53 @@
 ;; Note that the num-stmts and depth do not have exact meanings, they
 ;; are simply used as costs. (For example, despite an if having
 ;; multiple statements inside it, it counts as only one statement.)
-(define (grammar terminal-info num-stmts depth
+(define (grammar terminal-info operators num-stmts depth
                  #:num-temps [num-temps 0]
-                 #:guard-depth [guard-depth #f]
+                 #:guard-depth [guard-depth 0]
+                 #:type [type (Void-type)]
                  #:version [version 'basic]
                  #:choice-version [choice-version 'basic])
   (define chooser (make-chooser choice-version))
   (define result
-    (match version
-      ['basic
-       (grammar-basic terminal-info num-stmts depth chooser
-                      #:num-temps num-temps
-                      #:guard-depth guard-depth)]
-      ['caching
-       (grammar-general terminal-info num-stmts depth chooser
-                        #:num-temps num-temps
-                        #:guard-depth guard-depth #:cache? #t)]
-      ['general
-       (grammar-general terminal-info num-stmts depth chooser
-                        #:num-temps num-temps
-                        #:guard-depth guard-depth #:cache? #f)]
-      ['synthax-deep
-       (match (list num-stmts depth)
-         ['(2 2) (grammar-synthax-deep22 terminal-info)]
-         ['(3 3) (grammar-synthax-deep33 terminal-info)]
-         ['(3 4) (grammar-synthax-deep34 terminal-info)]
-         [_ (error
-             (format "No synthax grammar for ~a statements and ~a expression depth"
-                     num-stmts depth))])]
-      [_
-       (error (format "Unknown grammar type: ~a" version))]))
+    (if (or (= num-stmts 0) (= depth 0))
+        (void^)
+        (match version
+          ['basic
+           (grammar-basic terminal-info operators num-stmts depth chooser
+                          #:num-temps num-temps
+                          #:guard-depth guard-depth
+                          #:type type)]
+          ['caching
+           (grammar-general terminal-info operators num-stmts depth chooser
+                            #:num-temps num-temps
+                            #:guard-depth guard-depth
+                            #:type type
+                            #:cache? #t)]
+          ['general
+           (grammar-general terminal-info operators num-stmts depth chooser
+                            #:num-temps num-temps
+                            #:guard-depth guard-depth
+                            #:type type
+                            #:cache? #f)]
+          ['synthax-deep
+           (match (list num-stmts depth)
+             ['(2 2) (grammar-synthax-deep22 terminal-info)]
+             ['(3 3) (grammar-synthax-deep33 terminal-info)]
+             ['(3 4) (grammar-synthax-deep34 terminal-info)]
+             [_ (error
+                 (format "No synthax grammar for ~a statements and ~a expression depth"
+                         num-stmts depth))])]
+          [_
+           (error (format "Unknown grammar type: ~a" version))])))
   
   (unless (member version '(synthax-deep))
     (send chooser print-num-vars))
   result)
             
-(define (grammar-general terminal-info num-stmts expr-depth chooser
+(define (grammar-general terminal-info operators num-stmts expr-depth chooser
                          #:num-temps [num-temps 0]
-                         #:guard-depth [guard-depth #f]
+                         #:guard-depth [guard-depth 0]
+                         #:type [start-type (Void-type)]
                          #:cache? cache?)
   
   (define (my-choose* . args)
@@ -79,7 +81,7 @@
   ;; cache.
   (define (cached-grammar desired-type #:mutable? mutable? depth
                           lookup-cache insert-cache remove?)
-    (apply-concrete
+    (apply-on-symbolic-type
      (lambda (concrete-type)
        (let* ([key (cons concrete-type mutable?)]
               [cache-val-list (if cache? (hash-ref lookup-cache key '()) '())])
@@ -212,17 +214,13 @@
           '()))
 
     ;; Recursive case
-    ;; Here we are relying on map to process elements sequentially. I
-    ;; think this is guaranteed by map, but am not sure.
-    ;; It would also be okay for map to process things in an arbitrary
-    ;; order, but still sequentially. Parallelism would be bad though.
     (send chooser start-options)
     (define recurse
       (if (= depth 0)
           '()
           (filter
            identity
-           (for/list ([op operator-info])
+           (for/list ([op operators])
              (send chooser begin-next-option)
              (make-subexp op cache desired-type mutable? depth)))))
     (send chooser end-options)
@@ -230,16 +228,21 @@
     (define all-args (append terminals integer-hole recurse))
     (apply my-choose* all-args))
 
-  (build-grammar terminal-info num-stmts expr-depth num-temps guard-depth
-                 general-grammar
-                 (lambda (num-stmts depth)
-                   (build-list num-stmts
-                               (lambda (i)
-                                 (general-grammar (Void-type) depth))))))
+  (if (equal? start-type (Void-type))
+      (build-grammar terminal-info num-stmts expr-depth num-temps guard-depth
+                     general-grammar
+                     (lambda (num-stmts depth)
+                       (build-list num-stmts
+                                   (lambda (i)
+                                     (general-grammar (Void-type) depth)))))
+      (general-grammar start-type expr-depth)))
 
-(define (grammar-basic terminal-info num-stmts depth chooser
+(define (grammar-basic terminal-info operators num-stmts depth chooser
                        #:num-temps [num-temps 0]
-                       #:guard-depth [guard-depth #f])
+                       #:guard-depth [guard-depth 0]
+                       #:type [type (Void-type)])
+  (unless (equal? type (Void-type))
+    (error (format "Basic grammar does not handle type ~a" type)))
 
   (define-syntax-rule (my-choose* arg ...)
     (choose* chooser (lifted-error) arg ...))
@@ -376,7 +379,7 @@
                        expr-grammar stmt-grammar)
   ;; Choose guard
   (define guard-expr
-    (and guard-depth (expr-grammar (Boolean-type) guard-depth)))
+    (and (> guard-depth 0) (expr-grammar (Boolean-type) guard-depth)))
   
   ;; Add temporary variables for common subexpression reuse.
   ;; Generate temporary variable names
@@ -401,7 +404,7 @@
                      (if (list? stmts) stmts (list stmts))))))
 
   ;; Add guards if required
-  (when guard-depth
+  (when (> guard-depth 0)
     (set! result
           (if^ guard-expr (void^) result)))
   result)
@@ -429,6 +432,9 @@
       (when (hash-has-key? symbol->terminal symbol)
         (error (format "Terminal ~a is already present!~%" symbol)))
       (hash-set! symbol->terminal symbol terminal))
+
+    (define/public (has-terminal? id)
+      (hash-has-key? symbol->terminal id))
 
     (define/public (get-terminal-by-id id)
       (hash-ref symbol->terminal id))

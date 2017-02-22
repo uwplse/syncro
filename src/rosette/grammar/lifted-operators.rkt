@@ -2,7 +2,8 @@
 
 (require "../enum-set.rkt" "../operators.rkt" "language.rkt" "../types.rkt")
 
-(provide void^ vector-increment!^ vector-decrement!^ vector-set!^ vector-ref^
+(provide operator-info (struct-out special-form)
+         void^ vector-increment!^ vector-decrement!^ vector-set!^ vector-ref^
          enum-set-add!^ enum-set-remove!^ enum-set-contains?^
          equal?^ =^ <^ +^ -^ *^ #;/^)
 
@@ -54,3 +55,11 @@
   [equal? equal?^ (Procedure-type (list alpha-v8 alpha-v8) (Boolean-type))]
   [= =^ cmp-type] [< <^ cmp-type]
   [+ +^ arith-type] [- -^ arith-type] [* *^ arith-type] #;[/ /^ arith-type])
+
+
+(struct special-form (name constructor) #:transparent)
+(define operator-info
+  (list void^ vector-increment!^ vector-decrement!^ vector-set!^ vector-ref^
+        enum-set-add!^ enum-set-remove!^ enum-set-contains?^
+        equal?^ =^ <^ +^ -^ *^
+        (special-form 'if if^) (special-form 'set! set!^)))

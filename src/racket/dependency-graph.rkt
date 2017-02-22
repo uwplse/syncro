@@ -6,7 +6,7 @@
 
 (provide make-dependency-graph node%
          add-node! add-dependency!
-         get-node get-ids)
+         get-node get-ids get-node-for-update)
 
 ;;;;;;;;;;;;;;;;;;;;;;
 ;; Dependency graph ;;
@@ -16,6 +16,10 @@
 ;; the graph to nodes containing more information, and a list of
 ;; variables in the order they were added to the graph.
 ;; The graph can give us a list of variables but does not guarantee order.
+;; The underlying graph implementation stores vertices by ids.
+;; We add a "node property" called id->node to the graph. This lets us
+;; tell the graph to associate each vertex with a node. Whenever we
+;; make a new node, we must call the generated setter id->node-set!.
 (struct dep-graph (graph id->node id->node-set! [id-list #:mutable]))
 
 ;; Creates a new, empty dep-graph
@@ -55,25 +59,36 @@
 ;; Nodes ;;
 ;;;;;;;;;;;
 
+(define update-name->node (make-hash))
+(define get-node-for-update (curry hash-ref update-name->node))
+
 (define node%
   (class* object% (writable<%>)
     (super-new)
 
-    ;; id:           Name of the variable
-    ;; type:         Type of the variable
-    ;; update-types: The kinds of updates allowed
-    ;; fn-code:      Expression to recompute the value of the node
-    (init-field id type update-types fn-code)
+    ;; id:                Name of the variable
+    ;; type:              Type of the variable
+    ;; update-names:      The names of allowed updates
+    ;; update-name->info: Required information for each update
+    ;; init-code:         Code to initialize the value of the data structure
+    ;; fn-code:           Expression to recompute the value of the node
+    (init-field id type update-names update-name->info init-code fn-code)
 
-    ;; A map that specifies, for each update type, the names of the
-    ;; arguments to the generated mutator for that update-type
-    ;; For example, for update type 'assign to a vector v, we might
-    ;; add the mapping 'assign -> '(index1 val2)
+    (for ([update-name update-names])
+      (when (hash-has-key? update-name->node update-name)
+        (error (format "Duplicate update: ~a" update-name)))
+      (hash-set! update-name->node update-name this))
+
+    ;; A map that specifies, for each update name, the names of the
+    ;; arguments to the generated mutator for that update-name
+    ;; For example, for update 'assign-v to a vector v, we might
+    ;; add the mapping 'assign-v -> '(index1 val2)
     ;; Then the update procedure should look like
     ;; (define (assign-v! index1 val2) ...)
-    (init-field [update-arg-names (make-hash)])
+    (init-field [update-arg-names (make-hash)]
+                [sketches (make-hash)])
 
-    ;; Maps each update type to its incremental update function
+    ;; Maps each update name to its incremental update function
     ;; (represented as an S-expression as a nested list).
     (define update-fns (make-hash))
 
@@ -85,47 +100,68 @@
 
     (define/public (get-id) id)
     (define/public (get-type) type)
-    (define/public (get-update-types) update-types)
+    (define/public (get-update-names) update-names)
     (define/public (get-fn-code) fn-code)
 
-    ;; Gets update arg names (see above). If no arg names exist yet,
-    ;; we generate them by consulting the type.
-    (define/public (get-update-arg-names update-type)
-      (if (hash-has-key? update-arg-names update-type)
-          (hash-ref update-arg-names update-type)
-          (let ([result (generate-update-arg-names type update-type)])
-            (hash-set! update-arg-names update-type result)
+    (define/public (has-sketch? update-name)
+      (hash-has-key? sketches update-name))
+    (define/public (get-sketch update-name)
+      (hash-ref sketches update-name))
+    (define/public (set-sketch! update-name sketch)
+      (hash-set! sketches update-name sketch))
+
+    ;; Gets update arg names (see above).
+    ;; If no arg names exist yet, we generate them by consulting the type.
+    (define/public (get-update-arg-names update-name)
+      (if (hash-has-key? update-arg-names update-name)
+          (hash-ref update-arg-names update-name)
+          (let ([result (generate-update-arg-names
+                         type
+                         (hash-ref update-name->info update-name))])
+            (hash-set! update-arg-names update-name result)
             result)))
+
+    ;; Checks that the given names are consistent with the existing ones.
+    ;; If no names exist, the given names are set as the update arg names.
+    (define/public (assert-update-arg-names! update-name names)
+      (if (hash-has-key? update-arg-names update-name)
+          (let ([old-names (hash-ref update-arg-names update-name)])
+            (unless (equal? old-names names)
+              (error (format "For the ~a update to ~a, there are two different sets of names: ~a and ~a"
+                             update-name id old-names names))))
+          (hash-set! update-arg-names update-name names)))
     
-    (define/public (get-update-code update-type)
-      (if (or (equal? update-type 'recompute)
-              (not (hash-has-key? update-fns update-type)))
-          (begin (when (not (equal? update-type 'recompute))
-                   (printf "Warning: Using recomputation instead of update of type ~a to ~a~%" update-type id))
-                 ;; TODO: Fix this, out of date
-                 (hash-ref update-fns 'recompute))
-          (hash-ref update-fns update-type)))
+    (define/public (get-update-code update-name)
+      (if (or (equal? update-name 'recompute)
+              (not (hash-has-key? update-fns update-name)))
+          (begin (when (not (equal? update-name 'recompute))
+                   (printf "Warning: Using recomputation instead of update ~a to ~a~%" update-name id))
+                 `(set! ,id ,(get-fn-code)))
+          (hash-ref update-fns update-name)))
 
     ;; Appends the given code to the update function for the given
-    ;; update type, or creates the update function if it does not
+    ;; update name, or creates the update function if it does not
     ;; exist yet.
-    (define/public (add-update-code update-type code)
-      (if (hash-has-key? update-fns update-type)
-          (hash-set! update-fns update-type
-                     (append (hash-ref update-fns update-type) (list code)))
-          (hash-set! update-fns update-type (list 'begin code))))
+    (define/public (add-update-code update-name code)
+      (if (hash-has-key? update-fns update-name)
+          (hash-set! update-fns update-name
+                     (append (hash-ref update-fns update-name) (list code)))
+          (hash-set! update-fns update-name (list 'begin code))))
 
     ;; Wrappers around various functions on types
     
     (define/public (get-symbolic-code varset-name)
       (symbolic-code type (get-id) varset-name))
     
-    (define/public (get-symbolic-update-code update-type update-args varset-name)
-      (symbolic-update-code type update-type (get-id) update-args varset-name))
+    (define/public (get-symbolic-update-code update-name update-args varset-name)
+      (symbolic-update-code type (hash-ref update-name->info update-name)
+                            (get-id) update-args varset-name))
     
-    (define/public (get-old-values-code update-type . update-args)
-      (apply old-values-code type update-type (get-id) update-args))
+    (define/public (get-old-values-code update-name . update-args)
+      (apply old-values-code type (hash-ref update-name->info update-name)
+             (get-id) update-args))
     
-    (define/public (get-base-update-code update-type update-args)
+    (define/public (get-base-update-code update-name update-args)
       ;; TODO: Put this in the same format as get-symbolic-update-code
-      (apply (update-code type update-type) update-args))))
+      (apply (update-code type (hash-ref update-name->info update-name))
+             update-args))))

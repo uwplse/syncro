@@ -15,4 +15,4 @@
 
 (if (= num-errors 0)
     (displayln "Success!")
-    (printf "FAILURE: ~a tests did not succeed.~%" num-errors))
+    (printf "FAILURE: ~a tests had problems.~%" num-errors))

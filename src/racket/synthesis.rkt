@@ -2,8 +2,9 @@
 
 (require "dependency-graph.rkt"
          "namespace.rkt"
-         "read-file.rkt"
+         "program.rkt"
          "../rosette/rosette-namespace.rkt"
+         "../rosette/grammar/language.rkt"
          "../rosette/types.rkt"
          "../rosette/variable.rkt")
 
@@ -66,19 +67,19 @@
   (match-define (list input-relation input-id input-type _ _)
     (get-id-info (car (get-ids graph))))
 
-  (for/list ([update-type (send input-relation get-update-types)])
+  (for/list ([update-name (send input-relation get-update-names)])
     
     ;; Relevant information for performing symbolic computation on the input
     ;; Note: It's important to call this only once per update
     ;; type so that the variables have consistent names.
     (match-define (list define-input update-args update-defns-code update-code update-arg-types define-overwritten-vals overwritten-vals overwritten-vals-types)
       (datumify
-       (get-symbolic-info input-relation update-type 'inputs-set)))
+       (get-symbolic-info input-relation update-name 'inputs-set)))
     
     (define intermediate-ids '())
     (for ([output-id (cdr (get-ids graph))])
       (printf "Synthesizing update rule for ~a upon update ~a to ~a~%"
-              output-id update-type input-id)
+              output-id update-name input-id)
       
       ;; Relevant information about intermediate relations
       ;; Does a lot of recomputation, but not a bottleneck
@@ -86,8 +87,9 @@
         (transpose (map get-id-info intermediate-ids) 5))
 
       ;; Relevant information about the output relation
+      (define output-node (get-node graph output-id))
       (match-define (list output-relation _ output-type output-expr define-output)
-        (get-id-info output-id))
+        (get-node-info output-node))
 
       (define (add-terminal-code var type #:mutable? [mutable? #f])
         ;; Note: Here we use (repr type) to get an expression that
@@ -154,7 +156,7 @@
       ;; Defines a reset function that when called will reset all data
       ;; structures to their state at the point where the function was defined.
       (define (add-reset-fn name)
-        `((define init-state (list ,input-id ,output-id ,@intermediate-ids))
+        `((define init-state (clone (list ,input-id ,output-id ,@intermediate-ids)))
           (define (,name)
             (define clone-state (clone init-state))
             ,@(for/list ([id (cons input-id (cons output-id intermediate-ids))]
@@ -171,15 +173,26 @@
       ;; because when we run the lifted program, it modifies
       ;; the value *stored in the lifted program*, which is not
       ;; necessarily the same as the value in ,output-id.
-      ;; Example: (assert (equal? num2 (build-vector ...)))
+      ;; Example: (assert (equal? (... get-by-id 'num2) (build-vector ...)))
       (define postcondition-expr
         `(equal? (eval-lifted (send terminal-info get-terminal-by-id ',output-id))
                  ,output-expr))
 
-      (define grammar-expr
-        `(grammar terminal-info 2 3 #:num-temps 0 #:guard-depth 1
+      (define (make-grammar-expr stmt expr temps guard type)
+        `(grammar terminal-info operator-info ,stmt ,expr
+                  #:num-temps ,temps #:guard-depth ,guard #:type ,type
                   #:version ',(hash-ref options 'grammar-version)
                   #:choice-version ',(hash-ref options 'grammar-choice)))
+
+      (define program-definition
+        (if (send output-node has-sketch? update-name)
+            (let ([sketch (send output-node get-sketch update-name)])
+              `((define program
+                  (make-lifted terminal-info operator-info ',sketch))
+                (force-type program (Void-type)
+                            (lambda (type)
+                              ,(make-grammar-expr 1 2 0 0 'type)))))
+            `((define program ,(make-grammar-expr 2 3 0 1 '(Void-type))))))
 
       (define (debug-code code)
         (if (hash-ref options 'verbose?)
@@ -189,13 +202,14 @@
       (define (run-synthesis)
         (define rosette-code
           `(let ()
+             (current-bitwidth ,(hash-ref options 'bitwidth))
              ,@initialization-stmts
              ,@update-stmts
              ,@update-intermediate-stmts
              ,@terminal-info-stmts
 
-             ,@(debug-code '(printf "Creating symbolic program~%"))
-             (define program (time ,grammar-expr))
+             ,@(debug-code '(displayln "Creating symbolic program"))
+             ,@program-definition
              ;; Symbolically run the sampled program
              ,@(debug-code '(displayln "Running the generated program"))
              (time (eval-lifted program))
@@ -220,11 +234,11 @@
 
       (define (run-metasketch)
         (define module-code
-          `(
-            ;; TODO: Currently this depends on you running code from
+          `(;; TODO: Currently this depends on you running code from
             ;; the right place. Fix.
             (require "rosette/namespace-requires.rkt")
             (provide metasketch)
+            (current-bitwidth ,(hash-ref options 'bitwidth))
             ,@initialization-stmts
             ,@update-stmts
             ,@update-intermediate-stmts
@@ -246,21 +260,17 @@
            (for-each writeln module-code)))
 
         (define synth-code
-          `(let ()
-             (define synth
-               (search #:metasketch ,module-file
-                       #:threads 1
-                       #:timeout 60
-                       #:bitwidth 10 ;(current-bitwidth)
-                       #:verbose #t))
-             synth
-             #;(and (sat? synth)
-                  (lifted-code (coerce-evaluate program synth)))))
+          `(search #:metasketch ,module-file
+                   #:threads 1
+                   #:timeout ,(hash-ref options 'timeout)
+                   #:bitwidth ,(hash-ref options 'bitwidth)
+                   #:verbose #t))
 
         (when (hash-ref options 'debug?) (pretty-print synth-code))
         (when (hash-ref options 'verbose?)
           (displayln "Starting the metasketch search"))
-        (run-in-racket synth-code))
+        (define result (run-in-racket synth-code))
+        (and result (lifted-code (second result))))
 
       (define result
         (if (hash-ref options 'metasketch?)
@@ -270,19 +280,18 @@
           (begin
             (when (hash-ref options 'verbose?) (displayln "Solution found!"))
             (when (hash-ref options 'debug?) (pretty-print result))
-            (send input-relation add-update-code update-type result))
+            (send input-relation add-update-code update-name result))
           (begin
             (displayln
              (format "No program found to update ~a upon change ~a to ~a"
-                     output-id update-type input-id))
-            (send input-relation add-update-code update-type
-                  `(set! ,output-id ,(send output-relation get-fn-code)))))
+                     output-id update-name input-id))
+            (send input-relation add-update-code update-name
+                  (send input-relation get-update-code 'recompute))))
 
       (set! intermediate-ids (append intermediate-ids (list output-id))))
 
-    (let ([update-id (make-id "~a-~a!" update-type input-id)]
-          [synthesized-code (send input-relation get-update-code update-type)])
-      `(define (,update-id ,@update-args)
+    (let ([synthesized-code (send input-relation get-update-code update-name)])
+      `(define (,update-name ,@update-args)
          ,define-overwritten-vals
          ,update-code
          ,synthesized-code))))

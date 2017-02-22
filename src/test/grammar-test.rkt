@@ -3,7 +3,8 @@
 (require rackunit rackunit/text-ui)
 (require "../rosette/grammar/grammar.rkt"
          "../rosette/grammar/language.rkt"
-         "../rosette/types.rkt" "../rosette/variable.rkt")
+         "../rosette/types.rkt" "../rosette/variable.rkt"
+         (only-in "../rosette/grammar/lifted-operators.rkt" operator-info))
 
 (provide run-grammar-tests)
 
@@ -169,7 +170,7 @@
           (match-define (list grammar-version choice-version test-medium?) config)
           (printf "Testing the ~a grammar with choice version ~a~%"
                   grammar-version choice-version)
-          (define simple-grmr (grammar info 2 2
+          (define simple-grmr (grammar info operator-info 2 2
                                        #:version grammar-version
                                        #:choice-version choice-version))
 
@@ -185,7 +186,7 @@
           (check-not-in-grammar simple-grmr (prog->sexp medium-prog5 2))
 
           (when test-medium?
-            (define medium-grmr (grammar info 3 4
+            (define medium-grmr (grammar info operator-info 3 4
                                          #:version grammar-version
                                          #:choice-version choice-version))
             (check-in-grammar medium-grmr (prog->sexp medium-prog5 3))))))

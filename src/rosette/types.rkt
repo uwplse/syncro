@@ -9,13 +9,13 @@
                      [Set-Type-content-type Set-content-type]
                      [Procedure-Type-domain-types Procedure-domain-types]
                      [Procedure-Type-range-type Procedure-range-type])
-         get-parent is-supertype? repr apply-concrete has-setters? symbolic-code
+         get-parent is-supertype? repr apply-on-symbolic-type has-setters? symbolic-code
          generate-update-arg-names update-code old-values-code symbolic-update-code
          Type-var unify-types apply-type get-domain-given-range union-types
          get-domain-given-range-with-mutability is-application-mutable?
          type? Any-type? Bottom-type? Boolean-type? Index-type? Integer-type? Enum-type?
          Vector-type? Set-type? Procedure-type? Error-type? Void-type?
-         make-type-map unify replace-type-vars
+         make-type-map unify make-fresh replace-type-vars
          (rename-out [Type-Var? Type-var?]))
 
 ;; Creates type predicates that properly handle Bottom types.
@@ -54,6 +54,7 @@
   ;; Returns an instance of the parent type with the same fields.
   (get-parent Type)
   ;; Returns #t if type is a supertype of other-type, #f otherwise
+  ;; Can only be called on types that do not contain type variables.
   (is-supertype? Type other-type)
   ;; Returns an S-expression that could be used to create a new
   ;; instance of the type.
@@ -64,21 +65,26 @@
   ;; Concretizes any types inside the type and applies fn to each such
   ;; concrete type, and then merges these to return a symbolic value.
   ;; (This is done by using for/all.)
-  (apply-concrete-helper fn Type)
+  ;; Note: Due to a bug in Rosette, currently the Type argument must
+  ;; come first.
+  (apply-on-symbolic-type-helper Type fn)
   ;; Unifies two types for type inference.
   ;; mapping is a type map that stores the unification bindings so far
   ;; (see bottom of this file).
   ;; Returns the unified type, or #f if unification is impossible.
   (unify Type other-type mapping)
+  ;; Returns a list of the free type variables in the type.
+  (get-free-type-vars Type)
   ;; Replaces type variables in this type with their values as given
   ;; by the type mapping.
   (replace-type-vars Type mapping [default])
   ;; Returns the lowest common supertype, that is, the most specific
   ;; type such that both arguments are subtypes of that type.
+  ;; The types cannot contain type variables.
   (union-types Type other-type)
 
   #:fallbacks
-  [(define (apply-concrete-helper fn self)
+  [(define (apply-on-symbolic-type-helper self fn)
      ;; Works for any type that doesn't contain other types within it.
      (fn self))
    
@@ -86,17 +92,17 @@
      (default-unify self other-type mapping))
 
    ;; Most types can never have type variables inside themselves
-   (define (replace-type-vars self mapping [default #f])
-     self)
+   (define (get-free-type-vars self) '())
+   (define (replace-type-vars self mapping [default #f]) self)
 
    (define (union-types self other-type)
      (default-union-types self other-type))])
 
-;; Like apply-concrete-helper, but can take symbolic unions as inputs
+;; Like apply-on-symbolic-type-helper, but can take symbolic unions as inputs
 ;; as well.
-(define (apply-concrete fn type)
+(define (apply-on-symbolic-type fn type)
   (for/all ([type type])
-    (apply-concrete-helper fn type)))
+    (apply-on-symbolic-type-helper type fn)))
 
 (define (unify-types t1 t2)
   (let ([mapping (make-type-map)])
@@ -424,8 +430,9 @@
   #:methods gen:Type
   [(define/generic gen-is-supertype? is-supertype?)
    (define/generic gen-repr repr)
-   (define/generic gen-apply-concrete-helper apply-concrete-helper)
+   (define/generic gen-apply-on-symbolic-type-helper apply-on-symbolic-type-helper)
    (define/generic gen-unify unify)
+   (define/generic gen-get-free-type-vars get-free-type-vars)
    (define/generic gen-replace-type-vars replace-type-vars)
    (define/generic gen-union-types union-types)
    
@@ -449,17 +456,17 @@
          `(Vector-type ,(Vector-Type-len self)
                        ,(gen-repr (Vector-Type-output-type self)))))
 
-   (define (apply-concrete-helper fn self)
+   (define (apply-on-symbolic-type-helper self fn)
      (for/all ([len (Vector-Type-len self)])
        (for/all ([index-type (Vector-Type-index-type self)])
           (for/all ([output-type (Vector-Type-output-type self)])
-            (gen-apply-concrete-helper
-             (lambda (concrete-index-type)
-               (gen-apply-concrete-helper
-                (lambda (concrete-output-type)
-                  (fn (Vector-Type len concrete-index-type concrete-output-type)))
-                output-type))
-             index-type)))))
+            (gen-apply-on-symbolic-type-helper
+             index-type
+             (lambda (c-index-type)
+               (gen-apply-on-symbolic-type-helper
+                output-type
+                (lambda (c-output-type)
+                  (fn (Vector-Type len c-index-type c-output-type))))))))))
    
    (define (unify self other-type mapping)
      (if (not (Vector-Type? other-type))
@@ -489,6 +496,10 @@
            (and compatible-lengths?
                 new-index new-output
                 (Vector-Type new-len new-index new-output)))))
+
+   (define (get-free-type-vars self)
+     (append (gen-get-free-type-vars (Vector-Type-index-type self))
+             (gen-get-free-type-vars (Vector-Type-output-type self))))
 
    (define (replace-type-vars self mapping [default #f])
      (Vector-Type (Vector-Type-len self)
@@ -645,8 +656,9 @@
   #:methods gen:Type
   [(define/generic gen-is-supertype? is-supertype?)
    (define/generic gen-repr repr)
-   (define/generic gen-apply-concrete-helper apply-concrete-helper)
+   (define/generic gen-apply-on-symbolic-type-helper apply-on-symbolic-type-helper)
    (define/generic gen-unify unify)
+   (define/generic gen-get-free-type-vars get-free-type-vars)
    (define/generic gen-replace-type-vars replace-type-vars)
    (define/generic gen-union-types union-types)
    
@@ -663,12 +675,12 @@
    (define (repr self)
      `(Set-type ,(gen-repr (Set-Type-content-type self))))
 
-   (define (apply-concrete-helper fn self)
+   (define (apply-on-symbolic-type-helper self fn)
      (for/all ([content-type (Set-Type-content-type self)])
-       (gen-apply-concrete-helper
+       (gen-apply-on-symbolic-type-helper
+        content-type
         (lambda (concrete-content-type)
-          (fn (Set-Type concrete-content-type)))
-        content-type)))
+          (fn (Set-Type concrete-content-type))))))
 
    (define (unify self other-type mapping)
      (if (not (Set-Type? other-type))
@@ -679,6 +691,9 @@
                            mapping)])
            (and new-content (Set-Type new-content)))))
 
+   (define (get-free-type-vars self)
+     (gen-get-free-type-vars (Set-Type-content-type self)))
+   
    (define (replace-type-vars self mapping [default #f])
      (Set-Type (gen-replace-type-vars (Set-Type-content-type self)
                                       mapping default)))
@@ -758,20 +773,49 @@
     (error (format "Cannot make a Set-type containing ~a~%" content-type)))
   (Set-Type content-type))
 
-;; domain-types: List of types of arguments consumed.
-;; range-type:   Type of value produced.
-(struct Procedure-Type Any-Type (domain-types range-type) #:transparent
+;; Procedure types are complicated primarily because of how they
+;; interact with type variables.
+;; In particular, there is a difference between the following types:
+;; forall T:     (T -> T') -> T -> T'
+;; forall T, T': (T -> T') -> T -> T'
+;; As a result, Procedure types need to store the type variables they
+;; are quantified over. This should be sufficient, because
+;; Hindley-Milner only allows top-level type quantification, and it
+;; applies to procedures -- we don't need to do this for other types,
+;; which are base types.
+;; READ and WRITE procedures:
+;; A read procedure is one that can be applied to a data structure.
+;; If it is applied to a mutable data structure, then it will produce
+;; a value that is allowed to be mutated. (Note that it might not make
+;; sense to mutate it -- if you use vector-ref on a vector of ints,
+;; you get an int, which you wouldn't want to mutate.)
+;; A write procedure is one that mutates exactly one of its arguments.
+;; write-index is the index into the domain that identifies which
+;; argument to the procedure contains the data structure to mutate.
+;; A procedure cannot be both a read and a write procedure.
+;; domain-types:    List of types of arguments consumed.
+;; range-type:      Type of value produced.
+;; bound-type-vars: Set of type variables that are quantified here.
+;; read-index:      0 <= read-index < (length domain-types) or #f.
+;;                  If not #f, given (proc . args), the data structure
+;;                  proc reads is (list-ref args read-index)
+;; write-index:     0 <= write-index < (length domain-types) or #f.
+;;                  If not #f, given (proc . args), the data structure
+;;                  proc writes is (list-ref args write-index)
+(struct Procedure-Type Any-Type (domain-types range-type bound-type-vars read-index write-index) #:transparent
   #:methods gen:Type
   [(define/generic gen-is-supertype? is-supertype?)
    (define/generic gen-repr repr)
-   (define/generic gen-apply-concrete-helper apply-concrete-helper)
+   (define/generic gen-apply-on-symbolic-type-helper apply-on-symbolic-type-helper)
    (define/generic gen-unify unify)
+   (define/generic gen-get-free-type-vars get-free-type-vars)
    (define/generic gen-replace-type-vars replace-type-vars)
    (define/generic gen-union-types union-types)
 
    (define (get-parent self)
      (struct-copy Any-Type self))
 
+   ;; TODO: Handle type variables.
    (define (is-supertype? self other-type)
      (or (Bottom-Type? other-type)
          (and (Procedure-Type? other-type)
@@ -785,108 +829,166 @@
                        (gen-is-supertype? other-dom-type self-dom-type))
                      (gen-is-supertype? self-range other-range))))))
 
+   ;; TODO: This will only work for user-defined Procedure types,
+   ;; where the bound variables can be deduced from the domain and
+   ;; range. If we ever construct Procedure types programmatically
+   ;; that contain free variables, this will not work.
    (define (repr self)
-     (let ([domain-types (Procedure-Type-domain-types self)]
-           [range-type (Procedure-Type-range-type self)])
-       `(Procedure-type (list ,@(map gen-repr domain-types))
-                        ,(gen-repr range-type))))
+     (when (union? self) (internal-error "Should not get a union here"))
+     (match self
+       [(Procedure-Type domain-types range-type _ ridx widx)
+        `(Procedure-type (list ,@(map gen-repr domain-types))
+                         ,(gen-repr range-type)
+                         #:read-index ,ridx
+                         #:write-index ,widx)]))
 
-   (define (apply-concrete-helper fn self)
+   (define (apply-on-symbolic-type-helper self fn)
+
+     ;; TODO: Does this work if the list has symbolic length?
+     ;; I think so, because lists with different lengths have
+     ;; different guards, and so after a for/all the list should have
+     ;; concrete length. Worth checking though.
+     (define (helper-for-list lst fn)
+       (if (null? lst)
+           (fn lst)
+           (for/all ([type (car lst)])
+             (gen-apply-on-symbolic-type-helper
+              type
+              (lambda (c-type)
+                (helper-for-list
+                 (cdr lst)
+                 (lambda (c-lst)
+                   (fn (cons c-type c-lst)))))))))
+     
+     ;; TODO: Simplify using a macro
      (for/all ([domain-types (Procedure-Type-domain-types self)])
        (for/all ([range-type (Procedure-Type-range-type self)])
-         (gen-apply-concrete-helper
-          (lambda (concrete-domain-types)
-            (gen-apply-concrete-helper
-             (lambda (concrete-range-type)
-               (fn (Procedure-Type domain-types range-type)))
-             range-type))
-          domain-types))))
+         (for/all ([bound-vars (Procedure-Type-bound-type-vars self)])
+           (for/all ([ridx (Procedure-Type-read-index self)])
+             (for/all ([widx (Procedure-Type-write-index self)])
+                (helper-for-list
+                 domain-types
+                 (lambda (cdts)
+                   (gen-apply-on-symbolic-type-helper
+                    range-type
+                    (lambda (crt)
+                      (helper-for-list
+                       bound-vars
+                       (lambda (cbvs)
+                         (fn (Procedure-Type cdts crt cbvs ridx widx))))))))))))))
 
+   ;; TODO: What to do about read and write indexes?
    (define (unify self other-type mapping)
-     (if (not (Procedure-Type? other-type))
-         (default-unify self other-type mapping)
-         (begin
-           (define self-domain (Procedure-Type-domain-types self))
-           (define other-domain (Procedure-Type-domain-types other-type))
-           (and (= (length self-domain) (length other-domain))
-                ;; For unification, we want to find a type that is
-                ;; simultaneously self and other-type, so contravariance
-                ;; does not apply. (Contravariance happens if you want to
-                ;; find something that can be *substituted*.)
-                (let ([new-domain
-                       (map (lambda (x y) (gen-unify x y mapping))
-                            self-domain other-domain)]
-                      [new-range
-                       (gen-unify (Procedure-Type-range-type self)
-                                  (Procedure-Type-range-type other-type)
-                                  mapping)])
-                  (and (andmap identity new-domain) new-range
-                       (Procedure-type new-domain new-range)))))))
+     (define copy (make-fresh self))
 
+     ;; Now do normal unification
+     (for/all ([other-type other-type])
+       (if (not (Procedure-Type? other-type))
+           (default-unify copy other-type mapping)
+           (match* (copy other-type)
+             [((Procedure-Type copy-domain copy-range _ copy-ridx copy-widx)
+               (Procedure-Type other-domain other-range _ other-ridx other-widx))
+              (and (= (length copy-domain) (length other-domain))
+                   ;; For unification, we want to find a type that is
+                   ;; simultaneously copy and other-type, so contravariance
+                   ;; does not apply. (Contravariance happens if you want to
+                   ;; find something that can be *substituted*.)
+                   (let ([new-domain
+                          (map (lambda (x y) (gen-unify x y mapping))
+                               copy-domain other-domain)]
+                         [new-range
+                          (gen-unify copy-range other-range mapping)])
+                     (and (andmap identity new-domain) new-range
+                          (Procedure-type new-domain new-range
+                                          #:read-index copy-ridx
+                                          #:write-index copy-widx))))]))))
+
+   (define (get-free-type-vars self)
+     (when (union? self) (internal-error "Should not get a union here"))
+     
+     (match self
+       [(Procedure-Type domain range bound-vars _ _)
+        (remove* (apply append (gen-get-free-type-vars range)
+                        (map gen-get-free-type-vars domain))
+                 bound-vars)]))
+
+   ;; TODO: Handle procedure types with free variables
    (define (replace-type-vars self mapping [default #f])
-     (Procedure-type
-      (map (lambda (x) (gen-replace-type-vars x mapping default))
-           (Procedure-Type-domain-types self))
-      (gen-replace-type-vars (Procedure-Type-range-type self) mapping
-                             default)))
+     (when (union? self) (internal-error "Should not be a union"))
+     (match self
+       [(Procedure-Type domain range bound-vars ridx widx)
+        (Procedure-type
+         (map (lambda (x) (gen-replace-type-vars x mapping default)) domain)
+         (gen-replace-type-vars range mapping default)
+         #:read-index ridx
+         #:write-index widx)]))
 
+   ;; Assumes that there are no type variables
    (define (union-types self other-type)
-     (if (Procedure-Type? other-type)
-         (match-let ([(Procedure-Type self-domain self-range) self]
-                     [(Procedure-Type other-domain other-range) other-type])
-           (unless (= (length self-domain) (length other-domain))
-             (error "Cannot union procedures that require different numbers of arguments"))
-           (Procedure-Type (map gen-union-types self-domain other-domain)
-                           (gen-union-types self-range other-range)))
-         (default-union-types self other-type)))])
-
-;; A read procedure is one that can be applied to a data structure.
-;; If it is applied to a mutable data structure, then it will produce
-;; a value that is allowed to be mutated.
-;; (Note that it might not make sense to mutate it -- if you use
-;; vector-ref on a vector of ints, you get an int, which you wouldn't
-;; want to mutate.)
-;; read-index is the index into the domain that identifies which
-;; argument to the procedure would contain the data structure.
-(struct Read-Procedure-Type Procedure-Type (read-index) #:transparent)
-
-;; A write procedure is one that mutates exactly one of its arguments.
-;; write-index is the index into the domain that identifies which
-;; argument to the procedure contains the data structure to mutate.
-(struct Write-Procedure-Type Procedure-Type (write-index) #:transparent)
+     (for/all ([other-type other-type])
+       (if (Procedure-Type? other-type)
+           (match* (self other-type)
+             [((Procedure-Type self-domain self-range self-bound
+                               self-ridx self-widx)
+               (Procedure-Type other-domain other-range other-bound
+                               other-ridx other-widx))
+              
+              (unless (= (length self-domain) (length other-domain))
+                (error "Union: Procedures have different arities"))
+              (unless (and (equal? self-ridx other-ridx)
+                           (equal? self-widx other-widx))
+                (error "Union: Procedures have different read/write indexes"))
+              
+              (Procedure-Type (map gen-union-types self-domain other-domain)
+                              (gen-union-types self-range other-range)
+                              '() self-ridx self-widx)])
+           (default-union-types self other-type))))])
 
 (define (Procedure-type domain-types range-type
                         #:read-index [ridx #f]
                         #:write-index [widx #f])
-  (cond [(and ridx widx)
-         (error "A procedure cannot both read and write")]
-        [ridx
-         (Read-Procedure-Type domain-types range-type ridx)]
-        [widx
-         (Write-Procedure-Type domain-types range-type widx)]
-        [else
-         (Procedure-Type domain-types range-type)]))
+  (when (and ridx widx)
+    (error "A procedure cannot both read and write"))
 
-;; TODO: Is it possible that type variables collide (that is, they are
-;; forced to bind to the same type even though they could be allowed
-;; to have different types)?
-;; Potential solution: Copy proc-type here, with all type variables
-;; being replaced by fresh type variables.
+  (define bound-vars
+    (apply append (get-free-type-vars range-type)
+           (map get-free-type-vars domain-types)))
+  
+  (Procedure-Type domain-types range-type bound-vars ridx widx))
+
+
+;; Return a hash that maps the bound type variables of proc-type to
+;; fresh type variables.
+(define (get-replace-map proc-type)
+  (for/all ([bound-vars (Procedure-Type-bound-type-vars proc-type)])
+    (for/hash ([type-var bound-vars])
+      (match type-var
+        [(Type-Var id default)
+         (values type-var (Type-Var (gensym id) default))]))))
+
+;; Returns a copy of proc-type where all type variables are replaced
+;; by new fresh type variables.
+(define (make-fresh proc-type)
+  ;; Use #f as default so free type variables don't get replaced.
+  (replace-type-vars proc-type (get-replace-map proc-type) #f))
+
 (define (apply-type proc-type arg-types)
-  (let ([domain (Procedure-Type-domain-types proc-type)]
-        [range (Procedure-Type-range-type proc-type)])
-    (unless (= (length domain) (length arg-types))
-      (error "Incorrect number of arguments -- apply-type"))
-    
-    (define mapping (make-type-map))
-    ;; TODO: Is a for loop okay here?
-    (for ([expected-type domain]
-          [actual-type arg-types])
-      (unless (unify expected-type actual-type mapping)
-        (error (format "Cannot apply type ~a to arguments ~a"
-                       proc-type arg-types))))
-
-    (replace-type-vars range mapping)))
+  (define copy (make-fresh proc-type))  
+  (for/all ([copy copy])
+    (for/all ([arg-types arg-types])
+      (let ([domain (Procedure-Type-domain-types copy)]
+            [range (Procedure-Type-range-type copy)])
+        (unless (= (length domain) (length arg-types))
+          (error "Incorrect number of arguments -- apply-type"))
+        
+        (define mapping (make-type-map))
+        (for ([expected-type domain]
+              [actual-type arg-types])
+          (unless (unify expected-type actual-type mapping)
+            (error (format "Cannot apply type ~a to arguments ~a"
+                           copy arg-types))))
+        
+        (replace-type-vars range mapping)))))
 
 (define (get-domain-given-range proc-type range-type [default #f])
   (let ([domain (Procedure-Type-domain-types proc-type)]
@@ -932,7 +1034,9 @@
 ;; ADTs for unification -- type variables, and type binding maps
 (struct Type-Var (id default) #:transparent
   #:methods gen:Type
-  [(define/generic gen-replace-type-vars replace-type-vars)
+  [(define/generic gen-repr repr)
+   (define/generic gen-apply-on-symbolic-type-helper apply-on-symbolic-type-helper)
+   (define/generic gen-replace-type-vars replace-type-vars)
    
    (define (get-parent self)
      (error "Cannot call get-parent on a type variable"))
@@ -941,13 +1045,24 @@
      (error "Cannot call is-supertype? on a type variable"))
 
    (define (repr self)
-     `(Type-Var ,(Type-Var-id self)))
+     `(Type-Var ,(Type-Var-id self) ,(gen-repr (Type-Var-default self))))
 
+   (define (apply-on-symbolic-type-helper self fn)
+     (for/all ([id (Type-Var-id self)])
+       (for/all ([default (Type-Var-default self)])
+         (gen-apply-on-symbolic-type-helper
+          default
+          (lambda (c-default)
+            (fn (Type-Var id c-default)))))))
+   
    (define (unify self other-type mapping)
      (if (equal? self other-type)
          other-type
          (and (add-type-binding! mapping self other-type)
               other-type)))
+
+   (define (get-free-type-vars self)
+     (list self))
 
    (define (replace-type-vars self mapping [default #f])
      (cond [(hash-has-key? mapping self)
@@ -993,8 +1108,8 @@
 ;; The result of a procedure application can only be mutable if it
 ;; reads from a mutable data structure.
 (define (is-application-mutable? proc-type args-mutable?)
-  (and (Read-Procedure-Type? proc-type)
-       (list-ref args-mutable? (Read-Procedure-Type-read-index proc-type))))
+  (let ([ridx (Procedure-Type-read-index proc-type)])
+    (and ridx (list-ref args-mutable? ridx))))
 
 ;; Like get-domain-given-range, but includes constraints on
 ;; mutability.
@@ -1013,19 +1128,17 @@
 
 ;; Fixes results to account for Read and Write procedures.
 (define (handle-read-write proc-type range-mutable? domain-pairs)
-  (cond [(Write-Procedure-Type? proc-type)
-         ;; A Write procedure forces one of its arguments to be
-         ;; mutable.
-         (and (not range-mutable?)
-              (make-mutable
-               domain-pairs
-               (Write-Procedure-Type-write-index proc-type)))]
-        ;; A Read procedure forces one of its arguments to be mutable
-        ;; if it needs to produce a mutable result.
-        [(and (Read-Procedure-Type? proc-type) range-mutable?)
-         (make-mutable domain-pairs
-                       (Read-Procedure-Type-read-index proc-type))]
-        [else domain-pairs]))
+  (let ([ridx (Procedure-Type-read-index proc-type)]
+        [widx (Procedure-Type-write-index proc-type)])
+    (cond [widx
+           ;; A Write procedure forces one of its arguments to be mutable.
+           (and (not range-mutable?)
+                (make-mutable domain-pairs widx))]
+          ;; A Read procedure forces one of its arguments to be mutable
+          ;; if it needs to produce a mutable result.
+          [(and ridx range-mutable?)
+           (make-mutable domain-pairs ridx)]
+          [else domain-pairs])))
 
 ;; Replaces the pair at the specified index with a new pair containing
 ;; the same type and the mutability flag set (i.e. #t)

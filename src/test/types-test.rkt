@@ -1,4 +1,4 @@
-#lang racket
+#lang rosette
 
 (require rackunit rackunit/text-ui)
 (require "../rosette/types.rkt")
@@ -29,10 +29,12 @@
           [enum (Enum-type 'Word 12)]
           [vec (Vector-type 10 (Boolean-type))]
           [sett (Set-type enum)]
-          [proc (Procedure-type (list int int) (Integer-type))]
+          [proc (Procedure-type (list (Vector-type 3 int)) (Integer-type))]
+          [rproc (Procedure-type (list (Vector-type 3 int)) int #:read-index 0)]
+          [wproc (Procedure-type (list (Vector-type 3 int)) int #:write-index 0)]
           [err (Error-type)]
           [void (Void-type)]
-          [all (list any bot idx bool int enum vec proc err void)])
+          [all (list any bot idx bool int enum vec proc rproc wproc err void)])
      (test-case "Constructors, selectors and equality for types"
        (check-exn exn:fail? (lambda () (Vector-type bool int)))
        (check-exn exn:fail? (lambda () (Vector-type any int)))
@@ -47,7 +49,8 @@
        (check-equal? vec (Vector-type 10 bool))
        (check-equal? sett (Set-type enum))
        (check-not-equal? sett (Set-type (Enum-type 'Word 12)))
-       (check-equal? proc (Procedure-type (list (Integer-type) int) (Integer-type)))
+       (check-equal? proc (Procedure-type (list (Vector-type 3 (Integer-type))) (Integer-type)))
+       (check-not-equal? rproc wproc)
        (check-equal? err (Error-type))
        (check-equal? void (Void-type))
 
@@ -65,6 +68,8 @@
        (check-equal? (get-parent vec) any)
        (check-equal? (get-parent sett) any)
        (check-equal? (get-parent proc) any)
+       (check-equal? (get-parent rproc) any)
+       (check-equal? (get-parent wproc) any)
        (check-equal? (get-parent err) any)
        (check-equal? (get-parent void) any))
 
@@ -97,7 +102,7 @@
                Enum-type? (set bot enum)
                Vector-type? (set bot vec)
                Set-type? (set bot sett)
-               Procedure-type? (set bot proc)
+               Procedure-type? (set bot proc rproc wproc)
                Error-type? (set bot err)
                Void-type? (set bot void)))
 
@@ -110,6 +115,9 @@
                       (check-true (is-supertype? type-for-pred t)))
                (begin (check-false (pred t))
                       (check-false (is-supertype? type-for-pred t))))))
+       
+       (check-true (is-supertype? rproc wproc))
+       (check-true (is-supertype? wproc rproc))
 
        (check-true (symbolic? int))
        (check-false (has-setters? int))
@@ -167,9 +175,55 @@
          (unless (member t (list enum vec sett))
            (check-equal? t (eval (repr t) ns)))))
 
+     (test-case "apply-on-symbolic-type"
+       (define-symbolic b1 b2 b3 boolean?)
+       (define sym-type
+         (if (or b1 b2)
+             (Procedure-type (if b2 (list (if b1 int idx)) (list bool bool))
+                             (Vector-type 3 (if b1 bool int)))
+             (Set-type enum)))
+       
+       (define (anywhere-symbolic? lst)
+         (or (union? lst)
+             (and (list? lst) (ormap anywhere-symbolic? lst))))
+       (define (concrete-repr x)
+         (define result (repr x))
+         (when (anywhere-symbolic? result)
+           (error (format "Symbolic output ~a" result)))
+         result)
+       
+       (define sym-code
+         (apply-on-symbolic-type concrete-repr sym-type))
+
+       (define results
+         (hash (and b1 b2)
+               '(Procedure-type (list (Integer-type))
+                                (Vector-type 3 (Boolean-type))
+                                #:read-index #f #:write-index #f)
+               
+               (and b1 (not b2))
+               '(Procedure-type (list (Boolean-type) (Boolean-type))
+                                (Vector-type 3 (Boolean-type))
+                                #:read-index #f #:write-index #f)
+               
+               (and (not b1) b2)
+               '(Procedure-type (list (Index-type))
+                                (Vector-type 3 (Integer-type))
+                                #:read-index #f #:write-index #f)
+               
+               (and (not b1) (not b2))
+               '(Set-type Word)))
+
+       (for ([(condition code) results])
+         (define synth (solve (assert condition)))
+         (check-equal? (evaluate sym-code synth) code)))
+
      (test-case "Unification without type variables"
-       (for* ([t1 all]
-              [t2 all])
+       ;; Don't compare multiple read and write procedures since unification
+       ;; is not smart about read and write indexes
+       (define almost-all (remove rproc (remove wproc all)))
+       (for* ([t1 almost-all]
+              [t2 almost-all])
          (cond [(is-supertype? t1 t2)
                 (check-equal?
                  (unify-types t1 t2) t2
@@ -205,13 +259,23 @@
                        (Procedure-type (list (Vector-type a1 a2) a1) a2)
                        (Procedure-type (list (Vector-type int a1) a3) int))
                       (Procedure-type (list (Vector-type int int) int) int)))
+       ;; Renaming of type variables is important here
+       (check-equal? (unify-types
+                      (Procedure-type (list (Vector-type a1 a2) a1) a2)
+                      (Procedure-type (list (Vector-type int a1) a2) enum))
+                     (Procedure-type (list (Vector-type int enum) int) enum))
+       ;; Here even taking quantification into account we cannot unify.
+       ;; The first type must have a1 = int and a2 = bool
+       ;; But then the second type must have a1 = int and a1 = bool.
        (check-false (unify-types
                      (Procedure-type (list (Vector-type a1 a2) a1) a2)
-                     (Procedure-type (list (Vector-type int a1) a3) bool))))
+                     (Procedure-type (list (Vector-type int a1) a1) enum))))
+                    
 
      (test-case "union-types"
        (for ([t all])
-         (check-equal? (union-types t t) t)
+         (check-equal? (union-types t t) t
+                       (format "Type ~a does not obey (union-types x x) = x" t))
          (commutative (check-equal? (union-types t any) any))
          (commutative (check-equal? (union-types t bot) t)))
 
@@ -231,9 +295,10 @@
        ;; numbers of arguments:
        (check-exn exn:fail?
                   (lambda ()
-                    (union-types proc (Procedure-type (list int) int))))
+                    (union-types proc (Procedure-type (list int int) int))))
        (commutative
-        (check-equal? (union-types proc (Procedure-type (list enum int) bool))
+        (check-equal? (union-types (Procedure-type (list int int) int)
+                                   (Procedure-type (list enum int) bool))
                       (Procedure-type (list idx int) any)))
        (commutative
         (check-equal? (union-types
@@ -279,7 +344,7 @@
 
      (test-case "get-domain-given-range"
        (check-equal? (get-domain-given-range proc int)
-                     (list int int))
+                     (list (Vector-type 3 int)))
 
        (match-define (list alpha-v1 alpha-v2)
          (build-list 2 (lambda (i) (Type-var (Index-type)))))

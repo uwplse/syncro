@@ -1,6 +1,7 @@
 #lang rosette
 
-(require "grammar.rkt" "language.rkt" "../util.rkt"
+(require racket/generator)
+(require "grammar.rkt" "language.rkt" "lifted-operators.rkt" "../util.rkt"
          "../../../../synapse/opsyn/engine/search.rkt"
          "../../../../synapse/opsyn/engine/metasketch.rkt")
 
@@ -28,33 +29,40 @@
      1)
    
    (define (cost self program)
-     ;; Computes the number of nodes in the program
-     (fold-lifted program (const 1) +))
+     ;; Compute the number of nodes in the program
+     #;(fold-lifted program (const 1) +)
+     ;; Compute cost based solely on the sketch.
+     (sum (first program)))
+        
    
    (define (sketches self [c +inf.0])
-     (set (make-sketch self '(2 3 1)))
-     #;(list->set
-      (for*/list ([i 4] [j 4])
-        (make-sketch self (list (+ i 1) (+ j 1) 1)))))
+     (sketch-space self c))
 
    (define (get-sketch self idx)
      (make-sketch self idx))])
 
 (define (make-sketch ms index)
-  (grammar-sketch ms index #f #f))
+  (grammar-sketch ms index #f #f #f))
 
-(struct grammar-sketch (meta index [program #:mutable] [postconditions #:mutable])
+(struct grammar-sketch (meta index
+                             [program #:mutable]
+                             [grammar-assertions #:mutable]
+                             [postconditions #:mutable])
   #:methods gen:sketch
   [(define (metasketch self)
      (grammar-sketch-meta self))
 
    (define (index self)
      (grammar-sketch-index self))
-   
+
+   ;; To enable the cost function to look at the sketch index, we'll
+   ;; just have a program be a list of two elements -- the sketch that
+   ;; generated it, and the actual symbolic program.
    (define (programs self [sol (sat)])
-      (if (zero? (dict-count (model sol)))
-          (get-program self)
-          (evaluate (get-program self) sol)))
+     (list (grammar-sketch-index self)
+           (if (zero? (dict-count (model sol)))
+               (get-program self)
+               (evaluate (get-program self) sol))))
    
    (define (pre self)
      (grammar-ms-preconditions (grammar-sketch-meta self)))
@@ -84,55 +92,74 @@
        (when (hash-ref options 'verbose?)
          (printf "Creating symbolic program: (grammar ~a ~a ~a)~%"
                  num-stmts expr-depth guard-depth))
-       
-       (set-grammar-sketch-program!
-        sketch
-        (grammar terminal-info num-stmts expr-depth
-                 #:num-temps 0 #:guard-depth guard-depth
-                 #:version (hash-ref options 'grammar-version)
-                 #:choice-version (hash-ref options 'grammar-choice)))]))
+
+       ;; Generate the symbolic program, collecting any generated assertions
+       (define-values (sym-prog assertions)
+         (with-asserts
+            (grammar terminal-info operator-info num-stmts expr-depth
+                     #:num-temps 0 #:guard-depth guard-depth
+                     #:version (hash-ref options 'grammar-version)
+                     #:choice-version (hash-ref options 'grammar-choice))))
+       (set-grammar-sketch-program! sketch sym-prog)
+       (set-grammar-sketch-grammar-assertions! sketch assertions)]))
   
   (grammar-sketch-program sketch))
 
 (define (get-postconditions sketch)
   
   (when (false? (grammar-sketch-postconditions sketch))
+    (define ms (grammar-sketch-meta sketch))
+    
     ;; Reset to the initial state
-    ((grammar-ms-reset-fn (grammar-sketch-meta sketch)))
-    ;; Run the symbolic program
-    (eval-lifted (get-program sketch))
+    ((grammar-ms-reset-fn ms))
+
+    (define sym-prog (get-program sketch))
+    (define-values (_ assertions)
+      ;; If the program would just raise an error, don't run it and
+      ;; just add the assertion #f to make it immediately UNSAT.
+      (if (and (not (union? sym-prog)) (lifted-error? sym-prog))
+          (values #f (list #f))
+          ;; Run the symbolic program, collecting assertions
+          (with-asserts (eval-lifted (get-program sketch)))))
+
+    ;; Calculate postconditions
+    (define posts ((grammar-ms-postconditions-fn ms)))
+
+    ;; Set postconditions, including generated assertions
     (set-grammar-sketch-postconditions!
      sketch
-     ((grammar-ms-postconditions-fn (grammar-sketch-meta sketch)))))
+     (append assertions (grammar-sketch-grammar-assertions sketch) posts)))
 
   (grammar-sketch-postconditions sketch))
 
-;; (struct space (c) 
-;;   #:transparent
-;;   #:guard (lambda (c name) (max c 0))
-;;   #:property prop:sequence
-;;   (lambda (self) (in-set self))
-;;   #:methods gen:set
-;;   [(define (set-count self) 
-;;      (match self
-;;        [(space 0) 0]
-;;        [(space c) (+ 1 (/ (* (- c 1) c) 2))]))
-   
-;;    (define (set-member? self idx)
-;;      (match-define (list i b) idx)
-;;      (and
-;;       (< i (space-c self))
-;;       (or (and (= i 0) (= b 0))
-;;           (< b i))))
-   
-;;    (define (in-set self)
-;;      (in-generator
-;;       (match self 
-;;         [(space c)
-;;          (when (> c 0)
-;;            (yield '(0 0)))
-;;          (for*([i (in-range 0 c)][b i]) 
-;;            (yield (list i b)))])))])
-  
-  
 
+(struct sketch-space (ms cost)
+  #:transparent
+  #:property prop:sequence
+  (lambda (self) (in-set self))
+  #:methods gen:set
+  [(define (set-count self)
+     (define c (sketch-space-cost self))
+     (+ 1 (for/sum ([guard 3])
+            (triangle (- c guard 1)))))
+   
+   (define (set-member? self sketch)
+     (and (grammar-sketch? sketch)
+          (equal? (grammar-sketch-meta sketch) (sketch-space-ms self))
+          (< (sum (grammar-sketch-index sketch)) (sketch-space-cost self))))
+   
+   (define (in-set self)
+     (match self
+       [(sketch-space ms max-cost)
+        (in-generator
+         (yield (make-sketch ms '(0 0 0)))
+         (for* ([c (in-range 0 max-cost)]
+                [guard (in-range 0 (min 3 (- c 1)))]
+                [stmt (in-range 1 (- c guard))])
+           (yield (make-sketch ms (list stmt (- c guard stmt) guard)))))]))])
+
+(define (sum lst)
+  (for/sum ([x lst]) x))
+
+(define (triangle n)
+  (if (<= n 0) 0 (/ (* n (+ n 1)) 2)))
