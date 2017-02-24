@@ -1,5 +1,7 @@
 #lang racket
 
+(require (only-in "../rosette/util.rkt" display-errors?))
+
 (provide cmd-parse)
 
 (define (cmd-parse [args (current-command-line-arguments)])
@@ -17,7 +19,8 @@
    #:once-each
    [("-d" "--debug")
     "Execute with debugging information."
-    (hash-set! options 'debug? #t)]
+    (begin (display-errors? #t)
+           (hash-set! options 'debug? #t))]
    
    [("-v" "--verbose")
     "Execute with verbose messages."

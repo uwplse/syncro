@@ -74,10 +74,10 @@
        (check-equal? (get-parent void) any))
 
      (test-case "Predicates on types"
-       (check-false (type? 12))
+       (check-false (Type? 12))
 
        (for ([t all])
-         (check-true (type? t))
+         (check-true (Type? t))
          (check-true (Any-type? t))
          (check-true (is-supertype? any t))
          (check-true (is-supertype? t bot)))
@@ -193,7 +193,7 @@
          result)
        
        (define sym-code
-         (apply-on-symbolic-type concrete-repr sym-type))
+         (apply-on-symbolic-type sym-type concrete-repr))
 
        (define results
          (hash (and b1 b2)
@@ -356,8 +356,13 @@
        (define vector-set!-type
          (Procedure-type (list (Vector-type alpha-v1 beta-v1) alpha-v1 beta-v1)
                          void))
-       (check-equal? (get-domain-given-range vector-set!-type void)
-                     (list (Vector-type alpha-v1 beta-v1) alpha-v1 beta-v1))
+       ;; Type variables can get renamed so can't just use check-equal?
+       (match (get-domain-given-range vector-set!-type void)
+         [`(,vec-type ,alpha-type ,beta-type)
+          (check-true (and (Type-var? alpha-type) (Type-var? beta-type)))
+          (check-equal? (Vector-index-type vec-type) alpha-type)
+          (check-equal? (Vector-output-type vec-type) beta-type)])
+       ;; If we use defaults then we don't have to worry about renaming
        (check-equal? (get-domain-given-range vector-set!-type void #t)
                      (list (Vector-type idx any) idx any))
        
@@ -365,8 +370,11 @@
        (define vector-ref-type
          (Procedure-type (list (Vector-type alpha-v2 beta-v2) alpha-v2)
                          beta-v2))
-       (check-equal? (get-domain-given-range vector-ref-type int)
-                     (list (Vector-type alpha-v2 int) alpha-v2))
+       (match (get-domain-given-range vector-ref-type int)
+         [`(,vec-type ,alpha-type)
+          (check-true (Type-var? alpha-type))
+          (check-equal? (Vector-index-type vec-type) alpha-type)
+          (check-equal? (Vector-output-type vec-type) int)])
        (check-equal? (get-domain-given-range vector-ref-type int #t)
                      (list (Vector-type idx int) idx)))
        

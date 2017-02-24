@@ -1,9 +1,15 @@
 #lang rosette
 
-(provide internal-error
+(provide display-errors? maybe-internal-error internal-error
          input-val input-preconditions input?
          (rename-out [input make-input])
          my-for/sum my-for/or coerce-evaluate clone)
+
+(define display-errors? (make-parameter #f))
+(define (maybe-internal-error str)
+  (when (display-errors?)
+    (displayln str))
+  (error str))
 
 (define (internal-error str)
   (displayln str)

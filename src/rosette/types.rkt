@@ -1,22 +1,45 @@
 #lang rosette
 
-(require "util.rkt")
+(require (for-syntax syntax/parse (only-in racket/syntax format-id))
+         "symhash.rkt" "util.rkt")
 
-(provide Any-type Bottom-type Index-type Boolean-type Integer-type Enum-type
-         Vector-type Set-type Procedure-type Error-type Void-type Type? symbolic?
-         (rename-out [Vector-Type-index-type Vector-index-type]
-                     [Vector-Type-output-type Vector-output-type]
-                     [Set-Type-content-type Set-content-type]
-                     [Procedure-Type-domain-types Procedure-domain-types]
-                     [Procedure-Type-range-type Procedure-range-type])
-         get-parent is-supertype? repr apply-on-symbolic-type has-setters? symbolic-code
-         generate-update-arg-names update-code old-values-code symbolic-update-code
-         Type-var unify-types apply-type get-domain-given-range union-types
-         get-domain-given-range-with-mutability is-application-mutable?
-         type? Any-type? Bottom-type? Boolean-type? Index-type? Integer-type? Enum-type?
-         Vector-type? Set-type? Procedure-type? Error-type? Void-type?
-         make-type-map unify make-fresh replace-type-vars
-         (rename-out [Type-Var? Type-var?]))
+(provide
+ ;; Constructors
+ Any-type Bottom-type Index-type Boolean-type Integer-type Enum-type
+ Vector-type Set-type define-record-type Procedure-type
+ Error-type Void-type Type-var
+
+ ;; Predicates on types
+ Any-type? Bottom-type? Boolean-type? Index-type? Integer-type? Enum-type?
+ Vector-type? Set-type? Record-type? Procedure-type?
+ Error-type? Void-type? (rename-out [Type-Var? Type-var?])
+
+ ;; Selectors (for some types)
+ ;; TODO: Maybe refactor code so that we don't have to export these?
+ (rename-out [Vector-Type-index-type Vector-index-type]
+             [Vector-Type-output-type Vector-output-type]
+             [Set-Type-content-type Set-content-type]
+             [Procedure-Type-domain-types Procedure-domain-types]
+             [Procedure-Type-range-type Procedure-range-type])
+
+ ;; Generic function stuff
+ gen:Type Type? gen:symbolic symbolic?
+
+ ;; General utility functions
+ get-parent is-supertype? repr apply-on-symbolic-type
+
+ ;; Useful functions for type analysis
+ ;; Higher level functions
+ unify-types apply-type get-domain-given-range union-types
+ ;; Lower level functions (for constraint generation)
+ make-type-map unify make-fresh replace-type-vars
+
+ ;; Useful functions for mutability analysis
+ has-setters? get-domain-given-range-with-mutability is-application-mutable?
+
+ ;; Operations used for symbolic code generation
+ symbolic-code generate-update-arg-names
+ update-code old-values-code symbolic-update-code)
 
 ;; Creates type predicates that properly handle Bottom types.
 (define-syntax (make-type-predicates stx)
@@ -28,11 +51,11 @@
               ...))]))
 
 (make-type-predicates
- [Type? type?] [Any-Type? Any-type?] [Bottom-Type? Bottom-type?]
+ [Any-Type? Any-type?] [Bottom-Type? Bottom-type?]
  [Boolean-Type? Boolean-type?] [Index-Type? Index-type?]
  [Integer-Type? Integer-type?] [Enum-Type? Enum-type?]
  [Vector-Type? Vector-type?] [Set-Type? Set-type?]
- [Procedure-Type? Procedure-type?]
+ [Record-Type? Record-type?] [Procedure-Type? Procedure-type?]
  [Error-Type? Error-type?] [Void-Type? Void-type?] )
 
 (define (set-add-code set-name val)
@@ -46,8 +69,8 @@
 
 (define (add-bounded-var-code var low high set-name)
   (add-var-code var integer? set-name
-           #`(list (>= #,var #,low)
-                   (< #,var #,high))))
+                #`(list (>= #,var #,low)
+                        (< #,var #,high))))
 
 
 (define-generics Type
@@ -100,9 +123,24 @@
 
 ;; Like apply-on-symbolic-type-helper, but can take symbolic unions as inputs
 ;; as well.
-(define (apply-on-symbolic-type fn type)
+(define (apply-on-symbolic-type type fn)
   (for/all ([type type])
     (apply-on-symbolic-type-helper type fn)))
+
+;; TODO: Does this work if the list has symbolic length?
+;; I think so, because lists with different lengths have
+;; different guards, and so after a for/all the list should have
+;; concrete length. Worth checking though.
+(define (apply-on-symbolic-type-list lst fn)
+  (if (null? lst)
+      (fn lst)
+      (apply-on-symbolic-type
+       (car lst)
+       (lambda (c-type)
+         (apply-on-symbolic-type-list
+          (cdr lst)
+          (lambda (c-lst)
+            (fn (cons c-type c-lst))))))))
 
 (define (unify-types t1 t2)
   (let ([mapping (make-type-map)])
@@ -257,6 +295,8 @@
 
 (define (Boolean-type) (Boolean-Type))
 
+;; TODO: Create Basic-Types, which have an id (a number) that identify
+;; them. Allow the user to create new Basic-Types.
 (struct Index-Type Any-Type () #:transparent
   #:methods gen:Type
   [(define (get-parent self)
@@ -361,7 +401,7 @@
    ;; If you have Word be (Enum-Type 3) and Topic be (Enum-Type 3), they are
    ;; still semantically different and Words should not replace
    ;; Topics. So, check subtyping by identity equality.
-   ;; NOTE: This means that you cannot replace Topic with (Enum-Type% 3),
+   ;; NOTE: This means that you cannot replace Topic with (Enum-Type 3),
    ;; as the latter will create a new Enum type which will be interpreted
    ;; as a completely new type.
    (define (is-supertype? self other-type)
@@ -430,7 +470,6 @@
   #:methods gen:Type
   [(define/generic gen-is-supertype? is-supertype?)
    (define/generic gen-repr repr)
-   (define/generic gen-apply-on-symbolic-type-helper apply-on-symbolic-type-helper)
    (define/generic gen-unify unify)
    (define/generic gen-get-free-type-vars get-free-type-vars)
    (define/generic gen-replace-type-vars replace-type-vars)
@@ -458,15 +497,13 @@
 
    (define (apply-on-symbolic-type-helper self fn)
      (for/all ([len (Vector-Type-len self)])
-       (for/all ([index-type (Vector-Type-index-type self)])
-          (for/all ([output-type (Vector-Type-output-type self)])
-            (gen-apply-on-symbolic-type-helper
-             index-type
-             (lambda (c-index-type)
-               (gen-apply-on-symbolic-type-helper
-                output-type
-                (lambda (c-output-type)
-                  (fn (Vector-Type len c-index-type c-output-type))))))))))
+       (apply-on-symbolic-type
+        (Vector-Type-index-type self)
+        (lambda (c-index-type)
+          (apply-on-symbolic-type
+           (Vector-Type-output-type self)
+           (lambda (c-output-type)
+             (fn (Vector-Type len c-index-type c-output-type))))))))
    
    (define (unify self other-type mapping)
      (if (not (Vector-Type? other-type))
@@ -656,7 +693,6 @@
   #:methods gen:Type
   [(define/generic gen-is-supertype? is-supertype?)
    (define/generic gen-repr repr)
-   (define/generic gen-apply-on-symbolic-type-helper apply-on-symbolic-type-helper)
    (define/generic gen-unify unify)
    (define/generic gen-get-free-type-vars get-free-type-vars)
    (define/generic gen-replace-type-vars replace-type-vars)
@@ -676,11 +712,9 @@
      `(Set-type ,(gen-repr (Set-Type-content-type self))))
 
    (define (apply-on-symbolic-type-helper self fn)
-     (for/all ([content-type (Set-Type-content-type self)])
-       (gen-apply-on-symbolic-type-helper
-        content-type
-        (lambda (concrete-content-type)
-          (fn (Set-Type concrete-content-type))))))
+     (apply-on-symbolic-type
+      (Set-Type-content-type self)
+      (lambda (concrete-type) (fn (Set-Type concrete-type)))))
 
    (define (unify self other-type mapping)
      (if (not (Set-Type? other-type))
@@ -773,6 +807,117 @@
     (error (format "Cannot make a Set-type containing ~a~%" content-type)))
   (Set-Type content-type))
 
+;; A Record maps a fixed number of fields to values.
+;; Fields must be known at compile time and cannot change.
+;; So, a Record type should know all of the fields, and the types of
+;; values that each field can contain.
+;; Like Enum types, equality on Record types is checked with eq? --
+;; even if two Record types have the same fields and field types, if
+;; they were produced by different calls to Record-Type they will be
+;; different types with no subtyping relationship. This is a major
+;; difference from the standard PL record types.
+(struct Record-Type Any-Type (constructor fields field-types) #:transparent
+  ;; Record types are not allowed to have type variables inside them.
+  ;; Use defaults for unify, get-free-type-vars, replace-type-vars,
+  ;; Since we compare records by identity, we can use the default
+  ;; implementation of union-types too.
+  #:methods gen:Type
+  [(define (get-parent self)
+     (struct-copy Any-Type self))
+
+   (define (is-supertype? self other-type)
+     (or (Bottom-Type? other-type)
+         (eq? self other-type)))
+
+   (define (repr self)
+     (Record-Type-constructor self))
+
+   (define (apply-on-symbolic-type-helper self fn)
+     (for/all ([constructor (Record-Type-constructor self)])
+       (for/all ([fields (Record-Type-fields self)])
+         (apply-on-symbolic-type-list
+          (Record-Type-field-types self)
+          (lambda (concrete-types)
+            (fn (Record-Type constructor fields concrete-types)))))))]
+  
+  #:methods gen:symbolic
+  [(define/generic gen-symbolic-code symbolic-code)
+   (define/generic gen-generate-update-arg-names generate-update-arg-names)
+   (define/generic gen-update-code update-code)
+   (define/generic gen-old-values-code old-values-code)
+   (define/generic gen-symbolic-update-code symbolic-update-code)
+   
+   (define (has-setters? self) #t)
+   
+   (define (symbolic-code self var varset-name)
+     #`(define #,var
+         (#,(Record-Type-constructor self)
+          #,@(for/list ([field-name (Record-Type-fields self)]
+                        [field-type (Record-Type-field-types self)])
+               #`(let ()
+                   #,(gen-symbolic-code field-type field-name varset-name)
+                   #,field-name)))))
+
+   ;; TODO: We assume that the updates are of the form
+   ;; record.field = value  // value is symbolically generated
+   ;; We may also want built-in support for something like
+   ;; record.field1.field2 = value
+   (define (generate-update-arg-names self update-type)
+     (if (member update-type (Record-Type-fields self))
+         (list (gensym update-type))
+         (error (format "Unknown Record field: ~a~%" update-type))))
+
+   (define (update-code self update-type)
+     (if (member update-type (Record-Type-fields self))
+         (lambda (record value)
+           #`(set-field #,record #,update-type #,value))
+         (error (format "Unknown Record field: ~a~%" update-type))))
+
+   (define (old-values-code self update-type var . update-args)
+     (if (member update-type (Record-Type-fields self))
+         (let ([old-val-tmp (gensym update-type)])
+           (list #`(define #,old-val-tmp
+                     (get-field #,(car update-args) #,update-type))
+                 (list old-val-tmp)
+                 (list (get-record-field-type self update-type))))
+         (error (format "Unknown Record update type: ~a~%" update-type))))
+
+   (define (symbolic-update-code self update-type var update-args varset-name)
+     (if (member update-type (Record-Type-fields self))
+         (match update-args
+           [`(,record ,tmp-val)
+            (let ([field-type (get-record-field-type self update-type)])
+              (list (gen-symbolic-code field-type tmp-val varset-name)
+                    #`(set-field #,record #,update-type #,tmp-val)
+                    (list field-type)))])
+         (error (format "Unknown Record update type: ~a~%" update-type))))])
+
+(define (get-record-field-type record field-name)
+  (for/all ([record record])
+    ;; Assume that field names and types are not symbolic
+    (for/first ([name (Record-Type-fields record)]
+                #:when (equal? name field-name)
+                [type (Record-Type-field-types record)])
+      type)))
+
+(define-syntax (define-record-type stx)
+  (syntax-parse stx
+    [(_ name:id (field-name:id type:expr) ...)
+     (let ([num-fields (length (syntax-e #'(field-name ...)))])
+       (with-syntax ([type-name (format-id #'name "~a-type" (syntax-e #'name))]
+                     [num-stx (datum->syntax stx num-fields)])
+       (syntax/loc stx
+         (begin
+           (define (name . args)
+             (unless (= (length args) num-args)
+               (error (format "Incorrect number of arguments to ~a: ~a expected, got ~a~%  Given arguments: ~a"
+                              'name num-stx (length args) args)))
+             (make-hash (for/list ([f '(field-name ...)] [arg args])
+                          (cons f arg))))
+
+           (define type-name
+             (Record-Type 'name '(field-name ...) (list type ...)))))))]))
+
 ;; Procedure types are complicated primarily because of how they
 ;; interact with type variables.
 ;; In particular, there is a difference between the following types:
@@ -843,36 +988,19 @@
                          #:write-index ,widx)]))
 
    (define (apply-on-symbolic-type-helper self fn)
-
-     ;; TODO: Does this work if the list has symbolic length?
-     ;; I think so, because lists with different lengths have
-     ;; different guards, and so after a for/all the list should have
-     ;; concrete length. Worth checking though.
-     (define (helper-for-list lst fn)
-       (if (null? lst)
-           (fn lst)
-           (for/all ([type (car lst)])
-             (gen-apply-on-symbolic-type-helper
-              type
-              (lambda (c-type)
-                (helper-for-list
-                 (cdr lst)
-                 (lambda (c-lst)
-                   (fn (cons c-type c-lst)))))))))
-     
      ;; TODO: Simplify using a macro
      (for/all ([domain-types (Procedure-Type-domain-types self)])
        (for/all ([range-type (Procedure-Type-range-type self)])
          (for/all ([bound-vars (Procedure-Type-bound-type-vars self)])
            (for/all ([ridx (Procedure-Type-read-index self)])
              (for/all ([widx (Procedure-Type-write-index self)])
-                (helper-for-list
+                (apply-on-symbolic-type-list
                  domain-types
                  (lambda (cdts)
                    (gen-apply-on-symbolic-type-helper
                     range-type
                     (lambda (crt)
-                      (helper-for-list
+                      (apply-on-symbolic-type-list
                        bound-vars
                        (lambda (cbvs)
                          (fn (Procedure-Type cdts crt cbvs ridx widx))))))))))))))
@@ -880,8 +1008,6 @@
    ;; TODO: What to do about read and write indexes?
    (define (unify self other-type mapping)
      (define copy (make-fresh self))
-
-     ;; Now do normal unification
      (for/all ([other-type other-type])
        (if (not (Procedure-Type? other-type))
            (default-unify copy other-type mapping)
@@ -956,48 +1082,52 @@
   
   (Procedure-Type domain-types range-type bound-vars ridx widx))
 
-
-;; Return a hash that maps the bound type variables of proc-type to
-;; fresh type variables.
-(define (get-replace-map proc-type)
-  (for/all ([bound-vars (Procedure-Type-bound-type-vars proc-type)])
-    (for/hash ([type-var bound-vars])
-      (match type-var
-        [(Type-Var id default)
-         (values type-var (Type-Var (gensym id) default))]))))
-
 ;; Returns a copy of proc-type where all type variables are replaced
 ;; by new fresh type variables.
 (define (make-fresh proc-type)
+  (define mapping (make-type-map))
+  (for/all ([bound-vars (Procedure-Type-bound-type-vars proc-type)])
+    (for/list ([type-var bound-vars])
+      (match type-var
+        [(Type-Var id default)
+         (add-type-binding! mapping type-var (Type-Var (gensym id) default))])))
   ;; Use #f as default so free type variables don't get replaced.
-  (replace-type-vars proc-type (get-replace-map proc-type) #f))
+  (replace-type-vars proc-type mapping #f))
 
 (define (apply-type proc-type arg-types)
   (define copy (make-fresh proc-type))  
-  (for/all ([copy copy])
-    (for/all ([arg-types arg-types])
-      (let ([domain (Procedure-Type-domain-types copy)]
-            [range (Procedure-Type-range-type copy)])
-        (unless (= (length domain) (length arg-types))
-          (error "Incorrect number of arguments -- apply-type"))
+  (for*/all ([copy copy]
+             [arg-types arg-types])
+    (let ([domain (Procedure-Type-domain-types copy)]
+          [range (Procedure-Type-range-type copy)])
+      (for/all ([domain domain])
+        (begin
+          (unless (= (length domain) (length arg-types))
+            (error "Incorrect number of arguments -- apply-type"))
         
-        (define mapping (make-type-map))
-        (for ([expected-type domain]
-              [actual-type arg-types])
-          (unless (unify expected-type actual-type mapping)
-            (error (format "Cannot apply type ~a to arguments ~a"
-                           copy arg-types))))
-        
-        (replace-type-vars range mapping)))))
+          (define mapping (make-type-map))
+          (for ([expected-type domain]
+                [actual-type arg-types])
+            (unless (unify expected-type actual-type mapping)
+              (error (format "Cannot apply type ~a to arguments ~a"
+                             copy arg-types))))
+        ;; TODO: The result of replace-type-vars should not have any
+        ;; of the introduced fresh type variables. However it can have
+        ;; other type variables (such as ones in the arg-types).
+          (replace-type-vars range mapping))))))
 
+;; This can return types that contain free type variables.
 (define (get-domain-given-range proc-type range-type [default #f])
-  (let ([domain (Procedure-Type-domain-types proc-type)]
-        [range (Procedure-Type-range-type proc-type)])
-    (define mapping (make-type-map))
-    (and (unify range range-type mapping)
-         (map (lambda (domain-type)
-                (replace-type-vars domain-type mapping default))
-              domain))))
+  (define proc-copy (make-fresh proc-type))
+  (let ([domain (Procedure-Type-domain-types proc-copy)]
+        [range (Procedure-Type-range-type proc-copy)])
+    (for/all ([domain domain])
+      (begin
+        (define mapping (make-type-map))
+        (and (unify range range-type mapping)
+             (map (lambda (domain-type)
+                    (replace-type-vars domain-type mapping default))
+                  domain))))))
 
 (struct Error-Type Any-Type () #:transparent
   #:methods gen:Type
@@ -1045,7 +1175,7 @@
      (error "Cannot call is-supertype? on a type variable"))
 
    (define (repr self)
-     `(Type-Var ,(Type-Var-id self) ,(gen-repr (Type-Var-default self))))
+     `(Type-Var ',(Type-Var-id self) ,(gen-repr (Type-Var-default self))))
 
    (define (apply-on-symbolic-type-helper self fn)
      (for/all ([id (Type-Var-id self)])
@@ -1065,10 +1195,17 @@
      (list self))
 
    (define (replace-type-vars self mapping [default #f])
-     (cond [(hash-has-key? mapping self)
-            (gen-replace-type-vars (hash-ref mapping self) mapping default)]
+     (cond [(has-binding? mapping self)
+            (gen-replace-type-vars (get-binding mapping self) mapping default)]
            [default (Type-Var-default self)]
            [else self]))]
+
+  #:methods gen:custom-write
+  [(define (write-proc self port mode)
+     (case mode
+       [(#t) (write (Type-Var-id self) port)]
+       [(#f) (display (Type-Var-id self) port)]
+       [else (print (Type-Var-id self) port mode)]))]
 
   #:methods gen:equal+hash
   [(define (equal-proc x y recursive-equal?)
@@ -1084,21 +1221,31 @@
 (define (Type-var [default (Any-type)])
   (Type-Var (gensym 'alpha) default))
 
-;; TODO: Should this be not a hash map (since that is not supported by Rosette)?
 (define (make-type-map)
-  (make-hash))
+  (box (rhash)))
 
-(define (add-type-binding! mapping type-var value)
+(define (has-binding? boxed-map type-var)
+  (rhash-has-key? (unbox boxed-map) type-var))
+
+(define (get-binding boxed-map type-var)
+  (rhash-ref (unbox boxed-map) type-var))
+
+(define (add-type-binding! boxed-map type-var value)
   ;; TODO: Should we check that type-var does not appear in value?
   ;; TODO: Even if we do, should we also check for cycles?
   ;; For example, alpha = (List beta), beta = (List alpha)
   (define new-value
-    (if (hash-has-key? mapping type-var)
+    (if (rhash-has-key? (unbox boxed-map) type-var)
         ;; TODO: Is it a problem that we recursively call unify before
         ;; adding the constraint encoded by value?
-        (unify value (hash-ref mapping type-var) mapping)
+        (unify value (rhash-ref (unbox boxed-map) type-var) boxed-map)
         value))
-  (and new-value (hash-set! mapping type-var new-value)))
+  ;; Make sure to always unbox boxed-map, rather than do
+  ;; (define mapping (unbox boxed-map))
+  ;; Any mutations to boxed-map in between (such as the recursive call
+  ;; to unify) will not have an effect.
+  (and new-value
+       (set-box! boxed-map (rhash-set (unbox boxed-map) type-var new-value))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;

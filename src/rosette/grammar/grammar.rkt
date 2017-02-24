@@ -81,7 +81,11 @@
   ;; cache.
   (define (cached-grammar desired-type #:mutable? mutable? depth
                           lookup-cache insert-cache remove?)
+    ;; This depends on an understanding of the internals of Rosette.
+    ;; In particular, this uses lots of impure code (hash-set! for the
+    ;; cache) inside of a for/all, which documentation disallows.
     (apply-on-symbolic-type
+     desired-type
      (lambda (concrete-type)
        (let* ([key (cons concrete-type mutable?)]
               [cache-val-list (if cache? (hash-ref lookup-cache key '()) '())])
@@ -104,8 +108,7 @@
              (let ([result (car cache-val-list)])
                (when (and remove? result)
                  (hash-set! lookup-cache key (cdr cache-val-list)))
-               result))))
-     desired-type))
+               result))))))
 
   ;; We only want if to be used for statements, not expressions
   (define if-type

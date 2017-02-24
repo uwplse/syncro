@@ -22,17 +22,14 @@
   (Procedure-type (list (Integer-type) (Integer-type)) (Boolean-type)))
 (define arith-type
   (Procedure-type (list (Integer-type) (Integer-type)) (Integer-type)))
+(define vec-inc/dec-type
+  (Procedure-type (list (Vector-type alpha-v1 (Integer-type)) alpha-v1)
+                  (Void-type) #:write-index 0))
 
 (define-lifted
   [void void^ (Procedure-type '() (Void-type))]
-  [vector-increment!
-   vector-increment!^
-   (Procedure-type (list (Vector-type alpha-v1 (Integer-type)) alpha-v1)
-                   (Void-type) #:write-index 0)]
-  [vector-decrement!
-   vector-decrement!^
-   (Procedure-type (list (Vector-type alpha-v2 (Integer-type)) alpha-v2)
-                   (Void-type) #:write-index 0)]
+  [vector-increment! vector-increment!^ vec-inc/dec-type]
+  [vector-decrement! vector-decrement!^ vec-inc/dec-type]
   [vector-set!
    vector-set!^
    (Procedure-type (list (Vector-type alpha-v3 beta-v3) alpha-v3 beta-v3)
