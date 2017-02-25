@@ -2,17 +2,26 @@
 ;; once synthesis is complete.
 #lang rosette
 
-(require "../types.rkt" "../util.rkt" "../variable.rkt" racket/serialize)
+(require "../record.rkt" "../types.rkt" "../util.rkt" "../variable.rkt"
+         racket/serialize)
 
-(provide define-lifted lifted? if^ begin^ define-expr^ set!^
-         eval-lifted lifted-code fold-lifted infer-type mutable?
-         force-type-helper
-         lifted-writer gen:lifted gen:inferable
-         lifted-error lifted-error? make-lifted-variable
-         deserialize-lifted-variable deserialize-lifted-apply
-         deserialize-lifted-begin deserialize-lifted-if
-         deserialize-lifted-define deserialize-lifted-set!
-         deserialize-lifted-error)
+(provide
+ ;; Various constructs in the language
+ define-lifted lifted? if^ begin^ get-field^ set-field!^ define-expr^ set!^
+ lifted-error lifted-error? make-lifted-variable
+
+ ;; Operations on lifted programs
+ eval-lifted lifted-code fold-lifted infer-type mutable? force-type-helper
+
+ ;; Generic interfaces to extend the language
+ lifted-writer gen:lifted gen:inferable
+
+ ;; Deserialization procedures
+ deserialize-lifted-variable deserialize-lifted-apply
+ deserialize-lifted-begin deserialize-lifted-if
+ deserialize-lifted-get-field deserialize-lifted-set-field!
+ deserialize-lifted-define deserialize-lifted-set!
+ deserialize-lifted-error)
 
 ;; Since Rosette doesn't support objects, we'll use structs and
 ;; generic functions on those structs.
@@ -44,6 +53,7 @@
   (infer-type inferable)
   (force-type-helper inferable type mapping)
   ;; Mutability inference
+  ;; Returns #t if you are allowed to mutate the return value, #f otherwise
   (mutable? inferable)
   #:defaults
   ([integer?
@@ -303,7 +313,7 @@
            [ttype (gen-infer-type (lifted-if-then-branch self))]
            [etype (gen-infer-type (lifted-if-else-branch self))])
        (unless (Boolean-type? ctype)
-         (error "If condition must be a boolean, got" ctype))
+         (error (format "If condition must be a boolean, got ~a" ctype)))
        (unify-types ttype etype)))
 
    (define (force-type-helper self type mapping)
@@ -319,6 +329,147 @@
   (if (or (lifted-error? t) (lifted-error? c) (lifted-error? e))
       (lifted-error)
       (lifted-if t c e)))
+
+
+
+(define deserialize-lifted-get-field
+  (make-deserialize-info
+   (lambda lst (apply lifted-get-field lst))
+   (const #f)))
+(struct lifted-get-field lifted-writer (record field-name) #:transparent
+  #:property prop:serializable
+  (make-serialize-info
+   (lambda (s) (vector (lifted-get-field-record s)
+                       (lifted-get-field-field-name s)))
+   #'deserialize-lifted-get-field
+   #f
+   (or (current-load-relative-directory) (current-directory)))
+  #:methods gen:lifted
+  [(define/generic gen-eval-lifted eval-lifted)
+   (define/generic gen-lifted-code lifted-code)
+   (define/generic gen-fold-lifted fold-lifted)
+
+   (define (eval-lifted self)
+     (get-field (gen-eval-lifted (lifted-get-field-record self))
+                (lifted-get-field-field-name self)))
+
+   (define (lifted-code self)
+     (list 'get-field
+           (gen-lifted-code (lifted-get-field-record self))
+           (list 'quote (lifted-get-field-field-name self))))
+   
+   (define (fold-lifted self mapper reducer)
+     (reducer
+      (mapper self)
+      (gen-fold-lifted (lifted-get-field-record self) mapper reducer)))]
+
+  #:methods gen:inferable
+  [(define/generic gen-infer-type infer-type)
+   (define/generic gen-force-type-helper force-type-helper)
+   (define/generic gen-mutable? mutable?)
+
+   (define (infer-type self)
+     (let ([record-type (gen-infer-type (lifted-get-field-record self))])
+       (unless (Record-type? record-type)
+         (error (format "First argument to get-field must be a record, got ~a"
+                        record-type)))
+       (get-record-field-type record-type (lifted-get-field-field-name self))))
+
+   (define (force-type-helper self type mapping)
+     (when (union? self)
+       (internal-error (format "set-field!: Should not be a union: ~a" self)))
+     (match self
+       [(lifted-get-field record fname)
+        (gen-force-type-helper record (Record-type (list fname) (list type))
+                               mapping)]))
+
+   (define (mutable? self)
+     (gen-mutable? (lifted-get-field-record self)))])
+
+(define (get-field^ record field-name)
+  (unless (symbol? field-name)
+    (internal-error
+     (format "get-field^: Expected field name to be a symbol, got ~a"
+             field-name)))
+  (if (lifted-error? record)
+      (lifted-error)
+      (lifted-get-field record field-name)))
+
+
+
+(define deserialize-lifted-set-field!
+  (make-deserialize-info
+   (lambda lst (apply lifted-set-field! lst))
+   (const #f)))
+(struct lifted-set-field! lifted-writer (record field-name value) #:transparent
+  #:property prop:serializable
+  (make-serialize-info
+   (lambda (s) (vector (lifted-set-field!-record s)
+                       (lifted-set-field!-field-name s)
+                       (lifted-set-field!-value s)))
+   #'deserialize-lifted-set-field!
+   #f
+   (or (current-load-relative-directory) (current-directory)))
+  #:methods gen:lifted
+  [(define/generic gen-eval-lifted eval-lifted)
+   (define/generic gen-lifted-code lifted-code)
+   (define/generic gen-fold-lifted fold-lifted)
+
+   (define (eval-lifted self)
+     (set-field! (gen-eval-lifted (lifted-set-field!-record self))
+                 (lifted-set-field!-field-name self)
+                 (gen-eval-lifted (lifted-set-field!-value self))))
+
+   (define (lifted-code self)
+     (list 'set-field!
+           (gen-lifted-code (lifted-set-field!-record self))
+           (list 'quote (lifted-set-field!-field-name self))
+           (gen-lifted-code (lifted-set-field!-value self))))
+   
+   (define (fold-lifted self mapper reducer)
+     (reducer
+      (mapper self)
+      (gen-fold-lifted (lifted-set-field!-record self) mapper reducer)
+      (gen-fold-lifted (lifted-set-field!-value self) mapper reducer)))]
+
+  #:methods gen:inferable
+  [(define/generic gen-infer-type infer-type)
+   (define/generic gen-force-type-helper force-type-helper)
+   (define/generic gen-mutable? mutable?)
+
+   (define (infer-type self)
+     (let ([record-type (gen-infer-type (lifted-set-field!-record self))]
+           [field-name (lifted-set-field!-field-name self)]
+           [value-type (gen-infer-type (lifted-set-field!-value self))])
+       (unless (Record-type? record-type)
+         (error (format "First argument to set-field! must be a record, got ~a"
+                        record-type)))
+       (unify (get-record-field-type record-type field-name) value-type)
+       (Void-type)))
+
+   (define (force-type-helper self type mapping)
+     (when (union? self)
+       (internal-error (format "set-field!: Should not be a union: ~a" self)))
+
+     (assert-type type (Void-type) mapping "set-field!")
+     (match self
+       [(lifted-set-field! record fname value)
+        (let* ([fresh-var (Type-var)]
+               [expected-type (Record-type (list fname) (list fresh-var))])
+          (gen-force-type-helper record expected-type mapping)
+          (gen-force-type-helper value fresh-var mapping))]))
+
+   (define (mutable? self)
+     #f)])
+
+(define (set-field!^ record field-name value)
+  (unless (symbol? field-name)
+    (internal-error
+     (format "set-field!^: Expected field name to be a symbol, got ~a"
+             field-name)))
+  (if (lifted-error? record)
+      (lifted-error)
+      (lifted-set-field! record field-name)))
 
 
 

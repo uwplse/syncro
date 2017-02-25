@@ -1,13 +1,15 @@
 #lang rosette
 
 (require (for-syntax syntax/parse (only-in racket/syntax format-id))
-         "symhash.rkt" "util.rkt")
+         "record.rkt" "symhash.rkt" "util.rkt")
 
 (provide
  ;; Constructors
  Any-type Bottom-type Index-type Boolean-type Integer-type Enum-type
- Vector-type Set-type define-record-type Procedure-type
+ Vector-type Set-type Record-type define-record Procedure-type
  Error-type Void-type Type-var
+ ;; The repr method for type variables must use Type-Var
+ Type-Var
 
  ;; Predicates on types
  Any-type? Bottom-type? Boolean-type? Index-type? Integer-type? Enum-type?
@@ -21,6 +23,7 @@
              [Set-Type-content-type Set-content-type]
              [Procedure-Type-domain-types Procedure-domain-types]
              [Procedure-Type-range-type Procedure-range-type])
+ get-record-field-type
 
  ;; Generic function stuff
  gen:Type Type? gen:symbolic symbolic?
@@ -78,6 +81,7 @@
   (get-parent Type)
   ;; Returns #t if type is a supertype of other-type, #f otherwise
   ;; Can only be called on types that do not contain type variables.
+  ;; TODO: Deprecate. Behavior can be achieved using unify.
   (is-supertype? Type other-type)
   ;; Returns an S-expression that could be used to create a new
   ;; instance of the type.
@@ -214,12 +218,14 @@
      (Any-Type? other-type))
 
    (define (repr self)
-     '(Any-type))]
+     (list 'Any-type))]
 
   #:methods gen:custom-write
   [(define (write-proc self port mode)
-     ((if mode write display)
-      (repr self) port))])
+     (case mode
+       [(#t) (write (repr self) port)]
+       [(#f) (display (repr self) port)]
+       [else (print (repr self) port mode)]))])
 
 (define (Any-type) (Any-Type))
 
@@ -232,7 +238,7 @@
      (Bottom-Type? other-type))
 
    (define (repr self)
-     '(Bottom-type))])
+     (list 'Bottom-type))])
 
 (define (Bottom-type) (Bottom-Type))
 
@@ -246,7 +252,7 @@
          (Boolean-Type? other-type)))
 
    (define (repr self)
-     '(Boolean-type))]
+     (list 'Boolean-type))]
 
   #:methods gen:symbolic
   [(define (has-setters? self) #f)
@@ -307,7 +313,7 @@
          (Index-Type? other-type)))
 
    (define (repr self)
-     '(Index-type))])
+     (list 'Index-type))])
 
 (define (Index-type) (Index-Type))
 
@@ -321,7 +327,7 @@
          (Integer-Type? other-type)))
 
    (define (repr self)
-     '(Integer-type))]
+     (list 'Integer-type))]
 
   #:methods gen:symbolic
   [(define (has-setters? self) #f)
@@ -488,12 +494,14 @@
                                  (Vector-Type-output-type other-type)))))
 
    (define (repr self)
-     (if (or (Enum-Type? (Vector-Type-index-type self))
-             (not (integer? (Vector-Type-len self))))
-         `(Vector-type ,(gen-repr (Vector-Type-index-type self))
-                       ,(gen-repr (Vector-Type-output-type self)))
-         `(Vector-type ,(Vector-Type-len self)
-                       ,(gen-repr (Vector-Type-output-type self)))))
+     (list 'Vector-type
+           ;; The first argument is either the index type or the
+           ;; vector length.
+           (if (or (Enum-Type? (Vector-Type-index-type self))
+                   (not (integer? (Vector-Type-len self))))
+               (gen-repr (Vector-Type-index-type self))
+               (Vector-Type-len self))
+           (gen-repr (Vector-Type-output-type self))))
 
    (define (apply-on-symbolic-type-helper self fn)
      (for/all ([len (Vector-Type-len self)])
@@ -709,7 +717,7 @@
                                  (Set-Type-content-type other-type)))))
 
    (define (repr self)
-     `(Set-type ,(gen-repr (Set-Type-content-type self))))
+     (list 'Set-type (gen-repr (Set-Type-content-type self))))
 
    (define (apply-on-symbolic-type-helper self fn)
      (apply-on-symbolic-type
@@ -817,20 +825,30 @@
 ;; different types with no subtyping relationship. This is a major
 ;; difference from the standard PL record types.
 (struct Record-Type Any-Type (constructor fields field-types) #:transparent
-  ;; Record types are not allowed to have type variables inside them.
-  ;; Use defaults for unify, get-free-type-vars, replace-type-vars,
-  ;; Since we compare records by identity, we can use the default
-  ;; implementation of union-types too.
   #:methods gen:Type
-  [(define (get-parent self)
+  [(define/generic gen-is-supertype? is-supertype?)
+   (define/generic gen-repr repr)
+   (define/generic gen-unify unify)
+   (define/generic gen-get-free-type-vars get-free-type-vars)
+   (define/generic gen-replace-type-vars replace-type-vars)
+   (define/generic gen-union-types union-types)
+   
+   (define (get-parent self)
      (struct-copy Any-Type self))
 
    (define (is-supertype? self other-type)
      (or (Bottom-Type? other-type)
-         (eq? self other-type)))
+         (and (Record-Type? other-type)
+              (for/and ([id (Record-Type-fields self)])
+                (and (member id (Record-Type-fields other-type))
+                     (is-supertype? (get-record-field-type self id)
+                                    (get-record-field-type other-type id)))))))
 
    (define (repr self)
-     (Record-Type-constructor self))
+     (list 'Record-type
+           (list 'quote (Record-Type-constructor self))
+           (cons 'list (map (curry list 'quote) (Record-Type-fields self)))
+           (cons 'list (map gen-repr (Record-Type-field-types self)))))
 
    (define (apply-on-symbolic-type-helper self fn)
      (for/all ([constructor (Record-Type-constructor self)])
@@ -838,7 +856,50 @@
          (apply-on-symbolic-type-list
           (Record-Type-field-types self)
           (lambda (concrete-types)
-            (fn (Record-Type constructor fields concrete-types)))))))]
+            (fn (Record-Type constructor fields concrete-types)))))))
+
+   ;; This unification is not commutative. It takes the name from
+   ;; self and ignores the name of other-type.
+   (define (unify self other-type mapping)
+     (when (union? self) (internal-error "Should not get a union here"))
+     (if (not (Record-Type? other-type))
+         (default-unify self other-type mapping)
+         (for/all ([other-type other-type])
+           (match* (self other-type)
+             [((Record-Type self-name self-fields self-types)
+               (Record-Type other-name other-fields other-types))
+              (for/all ([self-fields self-fields])
+                (begin
+                  (define common-fields
+                    (for/list ([id self-fields]
+                               #:when (member id other-fields))
+                      id))
+                  (define self-common-types
+                    (map (curry lookup-field-type self-fields self-types)
+                         common-fields))
+                  (define other-common-types
+                    (map (curry lookup-field-type other-fields other-types)
+                         common-fields))
+                  (define common-types
+                    (for/list ([t1 self-common-types] [t2 other-common-types])
+                      (gen-unify t1 t2 mapping)))
+                  (Record-type self-name common-fields common-types)))]))))
+
+   (define (get-free-type-vars self)
+     (apply append
+            (map gen-get-free-type-vars
+                 (Record-Type-field-types self))))
+
+   (define (replace-type-vars self mapping [default #f])
+     (when (union? self) (internal-error "Should not get a union here"))
+     (match self
+       [(Record-Type constructor fields field-types)
+        (Record-type constructor fields
+                     (for/list ([type field-types])
+                       (gen-replace-type-vars type mapping default)))]))
+
+   (define (union-types self other-type)
+     (error "Not implemented"))]
   
   #:methods gen:symbolic
   [(define/generic gen-symbolic-code symbolic-code)
@@ -893,30 +954,46 @@
          (error (format "Unknown Record update type: ~a~%" update-type))))])
 
 (define (get-record-field-type record field-name)
-  (for/all ([record record])
-    ;; Assume that field names and types are not symbolic
-    (for/first ([name (Record-Type-fields record)]
-                #:when (equal? name field-name)
-                [type (Record-Type-field-types record)])
-      type)))
+  (lookup-field-type (Record-Type-fields record)
+                     (Record-Type-field-types record)
+                     field-name))
 
-(define-syntax (define-record-type stx)
+(define (lookup-field-type fields field-types field-name)
+  (for*/all ([fields fields] [field-types field-types])
+    (for/first ([name fields] [type field-types]
+                #:when (equal? name field-name))
+      type)))
+  
+
+(define (Record-type constructor-name fields types)
+  ;; No matter what symbolic stuff we do, it should always be the
+  ;; case that the fields are (possibly symbolic) Racket symbols.
+  ;; Use internal-error instead of maybe-internal-error.
+  (unless (andmap symbol? fields)
+    (internal-error (format "Record fields must be symbols, but got ~a"
+                            fields)))
+  (unless (equal? fields (remove-duplicates fields))
+    (maybe-internal-error
+     (format "Records cannot have duplicate fields, given ~a" fields)))
+  (Record-Type constructor-name fields types))
+
+(define-syntax (define-record stx)
   (syntax-parse stx
     [(_ name:id (field-name:id type:expr) ...)
      (let ([num-fields (length (syntax-e #'(field-name ...)))])
        (with-syntax ([type-name (format-id #'name "~a-type" (syntax-e #'name))]
                      [num-stx (datum->syntax stx num-fields)])
-       (syntax/loc stx
-         (begin
-           (define (name . args)
-             (unless (= (length args) num-args)
-               (error (format "Incorrect number of arguments to ~a: ~a expected, got ~a~%  Given arguments: ~a"
-                              'name num-stx (length args) args)))
-             (make-hash (for/list ([f '(field-name ...)] [arg args])
-                          (cons f arg))))
+         (syntax/loc stx
+           (begin
+             (define (name . args)
+               (unless (= (length args) num-args)
+                 (error (format "Incorrect number of arguments to ~a: ~a expected, got ~a~%  Given arguments: ~a"
+                                'name num-stx (length args) args)))
+               (make-record (for/list ([f '(field-name ...)] [arg args])
+                              (cons f arg))))
 
-           (define type-name
-             (Record-Type 'name '(field-name ...) (list type ...)))))))]))
+             (define type-name
+               (Record-type 'name '(field-name ...) (list type ...)))))))]))
 
 ;; Procedure types are complicated primarily because of how they
 ;; interact with type variables.
@@ -960,7 +1037,6 @@
    (define (get-parent self)
      (struct-copy Any-Type self))
 
-   ;; TODO: Handle type variables.
    (define (is-supertype? self other-type)
      (or (Bottom-Type? other-type)
          (and (Procedure-Type? other-type)
@@ -969,9 +1045,7 @@
                     [self-range (Procedure-Type-range-type self)]
                     [other-range (Procedure-Type-range-type other-type)])
                 (and (= (length self-domain) (length other-domain))
-                     (for/and ([self-dom-type self-domain]
-                               [other-dom-type other-domain])
-                       (gen-is-supertype? other-dom-type self-dom-type))
+                     (andmap gen-is-supertype? other-domain self-domain)
                      (gen-is-supertype? self-range other-range))))))
 
    ;; TODO: This will only work for user-defined Procedure types,
@@ -982,10 +1056,11 @@
      (when (union? self) (internal-error "Should not get a union here"))
      (match self
        [(Procedure-Type domain-types range-type _ ridx widx)
-        `(Procedure-type (list ,@(map gen-repr domain-types))
-                         ,(gen-repr range-type)
-                         #:read-index ,ridx
-                         #:write-index ,widx)]))
+        (list 'Procedure-type
+              (cons 'list (map gen-repr domain-types))
+              (gen-repr range-type)
+              '#:read-index ridx
+              '#:write-index widx)]))
 
    (define (apply-on-symbolic-type-helper self fn)
      ;; TODO: Simplify using a macro
@@ -1139,7 +1214,7 @@
          (Error-Type? other-type)))
 
    (define (repr self)
-     '(Error-type))])
+     (list 'Error-type))])
 
 (define (Error-type) (Error-Type))
 
@@ -1153,7 +1228,7 @@
          (Void-Type? other-type)))
 
    (define (repr self)
-     '(Void-type))])
+     (list 'Void-type))])
 
 (define (Void-type) (Void-Type))
 
