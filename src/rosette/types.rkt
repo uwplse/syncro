@@ -841,8 +841,8 @@
          (and (Record-Type? other-type)
               (for/and ([id (Record-Type-fields self)])
                 (and (member id (Record-Type-fields other-type))
-                     (is-supertype? (get-record-field-type self id)
-                                    (get-record-field-type other-type id)))))))
+                     (gen-is-supertype? (get-record-field-type self id)
+                                        (get-record-field-type other-type id)))))))
 
    (define (repr self)
      (list 'Record-type

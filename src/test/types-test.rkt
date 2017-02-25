@@ -169,13 +169,12 @@
        ;; Rec maps a -> int and b -> vec
        (check-true (is-supertype? rec (Record-type 'foo (list 'a 'b 'c)
                                                    (list int vec bool))))
-       (check-false (is-supertype? rec (Record-type 'foo (list 'a) int)))
+       (check-false (is-supertype? rec (Record-type 'foo (list 'a) (list int))))
        (check-false (is-supertype? rec (Record-type 'foo (list 'a 'b 'c)
                                                     (list bool vec int))))
-       (check-true
-        (is-supertype? (Record-type 'foo (list 'c 'a 'b)
-                                    (list bool int (Vector-type 10 any)))
-                       rec))
+       (check-true (is-supertype? (Record-type 'foo (list 'b)
+                                               (list (Vector-type 10 any)))
+                                  rec))
        
        (check-false (is-supertype? (Procedure-type (list int) int)
                                    (Procedure-type (list int int) int)))
@@ -295,10 +294,8 @@
        (define new-rec-type
          (unify-types rec-var
                       (Record-type 'foo '(c a b) (list idx sett vec-var))))
-       (displayln new-rec-type)
        (check-equal? (get-record-field-type new-rec-type 'a) sett)
        (check-equal? (get-record-field-type new-rec-type 'b) vec-var)
-       (check-equal? (get-record-field-type new-rec-type 'c) idx)
 
        (commutative
         (check-equal? (unify-types
