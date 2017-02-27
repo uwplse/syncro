@@ -12,6 +12,7 @@
   (error str))
 
 (define (internal-error str)
+  (display "INTERNAL ERROR: ")
   (displayln str)
   (error str))
 

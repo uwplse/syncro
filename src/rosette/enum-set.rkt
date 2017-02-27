@@ -1,5 +1,7 @@
 #lang rosette
 
+(require "util.rkt")
+
 (provide enum-make-set enum-make-symbolic-set
          enum-make-symbolic-set-with-tracking
          enum-set-add! enum-set-remove! enum-set-contains? enum-set-size
@@ -11,11 +13,12 @@
 (define (enum-make-symbolic-set num-things)
   (build-vector num-things (lambda (i) (define-symbolic* choice boolean?) choice)))
 
+;; TODO: This should probably be somewhere else?
 (define (enum-make-symbolic-set-with-tracking num-things varset)
   (build-vector num-things
                 (lambda (i)
                   (define-symbolic* choice boolean?)
-                  (set-add! varset choice)
+                  (set-add! varset (make-input choice '()))
                   choice)))
 
 ;; TODO: Rename to enum-set-member?

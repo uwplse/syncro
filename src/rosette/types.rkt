@@ -1165,9 +1165,16 @@
     (for/list ([type-var bound-vars])
       (match type-var
         [(Type-Var id default)
-         (add-type-binding! mapping type-var (Type-Var (gensym id) default))])))
+         (add-type-binding! mapping type-var
+                            (Type-Var (checked-gensym id) default))])))
   ;; Use #f as default so free type variables don't get replaced.
   (replace-type-vars proc-type mapping #f))
+
+;; TODO: We could get unions of ids, what do we do in such cases?
+(define (checked-gensym id)
+  (when (union? id)
+    (internal-error (format "Called gensym on a symbolic union: ~a" id)))
+  (gensym id))
 
 (define (apply-type proc-type arg-types)
   (define copy (make-fresh proc-type))  

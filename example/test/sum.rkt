@@ -6,28 +6,30 @@
 ;; bitwidth of 10 and vector length of 10). However, making the vector
 ;; smaller makes it considerably faster.
 
-(define-incremental nums (Vector-type 2 (Integer-type)) () (assign)
-  (make-vector 2 0))
+(incremental
+ (define-incremental nums (Vector-type 4 (Integer-type))
+   #:initialize (make-vector 4 0)
+   #:updates [(assign-nums! assign)])
 
-(define-incremental sum (Integer-type) (nums) ()
-  (vector-sum nums))
+ (define-incremental sum (Integer-type)
+   #:value (vector-sum nums)
+   #:depends (nums))
 
-;; Expected result:
-;; (set! sum (+ sum (- val17042 old-value17044)))
+ ;; Expected result:
+ ;; (set! sum (+ sum (- val17042 old-value17044)))
 
-;; Or, with more statements but smaller expression depth:
-;; (set! sum (- sum old-value17044))
-;; (set! sum (+ sum val17042)))
+ ;; Or, with more statements but smaller expression depth:
+ ;; (set! sum (- sum old-value17044))
+ ;; (set! sum (+ sum val17042)))
 
-(finalize)
-
-(displayln sum) ;; expect 0
-(assign-nums! 0 8)
-(assign-nums! 1 8)
-(assign-nums! 5 5)
-(displayln sum) ;; expect 21
-(assign-nums! 0 5)
-(assign-nums! 1 5)
-(displayln sum) ;; expect 15
-(assign-nums! 2 10)
-(displayln sum) ;; expect 25
+ (algorithm
+  (displayln sum) ;; expect 0
+  (assign-nums! 0 8)
+  (assign-nums! 1 8)
+  (assign-nums! 3 5)
+  (displayln sum) ;; expect 21
+  (assign-nums! 0 5)
+  (assign-nums! 1 5)
+  (displayln sum) ;; expect 15
+  (assign-nums! 2 10)
+  (displayln sum))) ;; expect 25

@@ -13,18 +13,22 @@
 
 ;; TODO: Add and, or, not
 
-(match-define (list alpha-v1 alpha-v2 alpha-v3 alpha-v4)
-  (build-list 4 (lambda (i) (Type-var (Index-type)))))
-(match-define (list beta-v3 beta-v4 alpha-v5 alpha-v6 alpha-v7 alpha-v8)
-  (build-list 6 (lambda (i) (Type-var))))
+(define alpha-any (Type-var))
+(define alpha-idx (Type-var (Index-type)))
 
 (define cmp-type
   (Procedure-type (list (Integer-type) (Integer-type)) (Boolean-type)))
 (define arith-type
   (Procedure-type (list (Integer-type) (Integer-type)) (Integer-type)))
 (define vec-inc/dec-type
-  (Procedure-type (list (Vector-type alpha-v1 (Integer-type)) alpha-v1)
+  (Procedure-type (list (Vector-type alpha-idx (Integer-type)) alpha-idx)
                   (Void-type) #:write-index 0))
+(define enum-set-modify-type
+  (Procedure-type (list (Set-type alpha-any) alpha-any)
+                  (Void-type) #:write-index 0))
+(define enum-set-contains?-type
+  (Procedure-type (list (Set-type alpha-any) alpha-any)
+                  (Boolean-type) #:read-index 0))
 
 (define-lifted
   [void void^ (Procedure-type '() (Void-type))]
@@ -32,24 +36,16 @@
   [vector-decrement! vector-decrement!^ vec-inc/dec-type]
   [vector-set!
    vector-set!^
-   (Procedure-type (list (Vector-type alpha-v3 beta-v3) alpha-v3 beta-v3)
+   (Procedure-type (list (Vector-type alpha-idx alpha-any) alpha-idx alpha-any)
                    (Void-type) #:write-index 0)]
   [vector-ref
    vector-ref^
-   (Procedure-type (list (Vector-type alpha-v4 beta-v4) alpha-v4)
-                   beta-v4 #:read-index 0)]
-  [enum-set-add!
-   enum-set-add!^
-   (Procedure-type (list (Set-type alpha-v5) alpha-v5)
-                   (Void-type) #:write-index 0)]
-  [enum-set-remove!
-   enum-set-remove!^
-   (Procedure-type (list (Set-type alpha-v6) alpha-v6)
-                   (Void-type) #:write-index 0)]
-  [enum-set-contains?
-   enum-set-contains?^
-   (Procedure-type (list (Set-type alpha-v7) alpha-v7) (Boolean-type))]
-  [equal? equal?^ (Procedure-type (list alpha-v8 alpha-v8) (Boolean-type))]
+   (Procedure-type (list (Vector-type alpha-idx alpha-any) alpha-idx)
+                   alpha-any #:read-index 0)]
+  [enum-set-add! enum-set-add!^ enum-set-modify-type]
+  [enum-set-remove! enum-set-remove!^ enum-set-modify-type]
+  [enum-set-contains? enum-set-contains?^ enum-set-contains?-type]
+  [equal? equal?^ (Procedure-type (list alpha-any alpha-any) (Boolean-type))]
   [= =^ cmp-type] [< <^ cmp-type]
   [+ +^ arith-type] [- -^ arith-type] [* *^ arith-type] #;[/ /^ arith-type])
 
