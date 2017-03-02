@@ -124,7 +124,7 @@
            (and result (apply if^ result)))))
   
   (define (make-subexp-set! cache desired-type mutable? depth)
-    (and (is-supertype? desired-type (Void-type))
+    (and (unify-types (Void-type) desired-type)
          (not mutable?)
          ;; We only need to get one item out of cache, so no need to
          ;; make a copy which we then mutate.
@@ -212,7 +212,7 @@
 
     ;; Special case: Integer hole
     (define integer-hole
-      (if (is-supertype? desired-type (Integer-type))
+      (if (unify-types (Integer-type) desired-type)
           (list (let () (define-symbolic* hole integer?) hole))
           '()))
 
@@ -331,7 +331,7 @@
   
   ;; enum-set-contains?
   (define (enum-set-contains-expr desired-type depth)
-    (if (not (is-supertype? desired-type (Boolean-type)))
+    (if (not (unify-types (Boolean-type) desired-type))
         (lifted-error)
         (let* ([sett (expr-grammar (Set-type (Any-type)) (- depth 1))]
                [sett-type (infer-type sett)])
@@ -346,7 +346,7 @@
   (define (base-expr-grammar desired-type depth)
     (send chooser start-options)
     (let ([options '()])
-      (when (is-supertype? desired-type (Boolean-type))
+      (when (unify-types (Boolean-type) desired-type)
         (let* (#;[_ (send chooser begin-next-option)]
                #;[b1 (expr-grammar (Boolean-type) (- depth 1))]
                #;[b2 (expr-grammar (Boolean-type) (- depth 1))]
@@ -363,7 +363,7 @@
                               #;(and b1 b2)
                               #;(or b1 b2)
                               #;(not b1))))))
-      (when (is-supertype? desired-type (Integer-type))
+      (when (unify-types (Integer-type) desired-type)
         (let ([_ (send chooser begin-next-option)]
               [i1 (expr-grammar (Integer-type) (- depth 1))]
               [i2 (expr-grammar (Integer-type) (- depth 1))])
