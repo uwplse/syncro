@@ -267,6 +267,45 @@
          (define synth (solve (assert condition)))
          (check-equal? (evaluate sym-code synth) code)))
 
+     (test-case "Concrete type map operations"
+       (match-define (list a1 a2 a3 a4 a5 a6)
+         (build-list 6 (lambda (i) (Type-var))))
+
+       (define (get-final-value tmap key)
+         (if (has-binding? tmap key)
+             (get-final-value tmap (get-binding tmap key))
+             key))
+
+       (check-true (Type-var? (get-final-value (make-type-map) a1)))
+       
+       (define tmap (make-type-map))
+       (check-true (add-type-binding! tmap a1 a2))
+       (check-true (add-type-binding! tmap a3 a2))
+       (check-true (add-type-binding! tmap a4 a3))
+       (check-true (add-type-binding! tmap a5 int))
+
+       (define (check-tmap tmap msg)
+         (for ([var (list a1 a2 a3 a4 a6)])
+           (check-true (Type-var? (get-final-value tmap var)) msg))
+         (check-equal? (get-final-value tmap a5) int msg))
+
+       (check-tmap tmap "Initial tmap")
+       ;; Try creating cycles
+       (for* ([var1 (list a1 a2 a3 a4)]
+              [var2 (remove var1 (list a1 a2 a3 a4))])
+         (check-true (add-type-binding! tmap var1 var2))
+         (check-tmap tmap (format "Tmap after adding ~a -> ~a" var1 var2)))
+
+       (check-true (add-type-binding! tmap a3 bool))
+       (for ([var (list a1 a2 a3 a4)])
+         (check-equal? (get-final-value tmap var) bool))
+       (check-equal? (get-final-value tmap a5) int)
+       (check-true (Type-var? (get-final-value tmap a6)))
+
+       (for ([var (list a1 a2 a3 a4)])
+         (check-false (add-type-binding! tmap var a5))
+         (check-false (add-type-binding! tmap a5 var))))
+
      (test-case "Unification without type variables"
        ;; Don't compare multiple read and write procedures since unification
        ;; is not smart about read and write indexes

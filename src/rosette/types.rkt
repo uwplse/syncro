@@ -37,6 +37,7 @@
  unify-types apply-type get-domain-given-range union-types
  ;; Lower level functions (for constraint generation)
  make-type-map unify make-fresh replace-type-vars
+ has-binding? get-binding add-type-binding!
 
  ;; Useful functions for mutability analysis
  has-setters? get-domain-given-range-with-mutability is-application-mutable?
@@ -1498,22 +1499,28 @@
 (define (get-binding boxed-map type-var)
   (rhash-ref (unbox boxed-map) type-var))
 
+;; Ensure that cycles don't develop
+;; Returns #t on success, #f otherwise
+;; This is essentially creating a disjoint set data structure
 (define (add-type-binding! boxed-map type-var value)
-  ;; TODO: Should we check that type-var does not appear in value?
-  ;; TODO: Even if we do, should we also check for cycles?
-  ;; For example, alpha = (List beta), beta = (List alpha)
-  (define new-value
-    (if (rhash-has-key? (unbox boxed-map) type-var)
-        ;; TODO: Is it a problem that we recursively call unify before
-        ;; adding the constraint encoded by value?
-        (unify value (rhash-ref (unbox boxed-map) type-var) boxed-map)
-        value))
-  ;; Make sure to always unbox boxed-map, rather than do
-  ;; (define mapping (unbox boxed-map))
-  ;; Any mutations to boxed-map in between (such as the recursive call
-  ;; to unify) will not have an effect.
-  (and new-value
-       (set-box! boxed-map (rhash-set (unbox boxed-map) type-var new-value))))
+  (define (make var val)
+    (unless (Type-Var? var)
+      (internal-error (format "Should be a type variable: ~a" var)))
+    (set-box! boxed-map (rhash-set (unbox boxed-map) var val))
+    #t)
+
+  (define (get-final-value key)
+    (if (has-binding? boxed-map key)
+        (get-final-value (get-binding boxed-map key))
+        key))
+
+  (define orig-value (get-final-value type-var))
+  (define new-value (get-final-value value))
+
+  (cond [(eq? orig-value new-value) #t]
+        [(Type-Var? orig-value) (make orig-value new-value)]
+        [(Type-Var? new-value) (make new-value orig-value)]
+        [else (unify orig-value new-value boxed-map)]))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;
