@@ -6,14 +6,14 @@
 (provide
  ;; Constructors
  Any-type Bottom-type Index-type Boolean-type Integer-type Enum-type
- Vector-type Set-type Record-type define-record Procedure-type
+ Vector-type Set-type DAG-type Record-type define-record Procedure-type
  Error-type Void-type Type-var
  ;; The repr method for type variables must use Type-Var
  Type-Var
 
  ;; Predicates on types
  Any-type? Bottom-type? Boolean-type? Index-type? Integer-type? Enum-type?
- Vector-type? Set-type? Record-type? Procedure-type?
+ Vector-type? Set-type? DAG-type? Record-type? Procedure-type?
  Error-type? Void-type? (rename-out [Type-Var? Type-var?])
 
  ;; Selectors (for some types)
@@ -21,6 +21,7 @@
  (rename-out [Vector-Type-index-type Vector-index-type]
              [Vector-Type-output-type Vector-output-type]
              [Set-Type-content-type Set-content-type]
+             [DAG-Type-vertex-type DAG-vertex-type]
              [Procedure-Type-domain-types Procedure-domain-types]
              [Procedure-Type-range-type Procedure-range-type])
  get-record-field-type
@@ -57,7 +58,7 @@
  [Any-Type? Any-type?] [Bottom-Type? Bottom-type?]
  [Boolean-Type? Boolean-type?] [Index-Type? Index-type?]
  [Integer-Type? Integer-type?] [Enum-Type? Enum-type?]
- [Vector-Type? Vector-type?] [Set-Type? Set-type?]
+ [Vector-Type? Vector-type?] [Set-Type? Set-type?] [DAG-Type? DAG-type?]
  [Record-Type? Record-type?] [Procedure-Type? Procedure-type?]
  [Error-Type? Error-type?] [Void-Type? Void-type?] )
 
@@ -79,6 +80,7 @@
 (define-generics Type
   ;; Returns an instance of the parent type with the same fields.
   (get-parent Type)
+  (typeof-predicate Type)
   ;; Returns #t if type is a supertype of other-type, #f otherwise
   ;; Can only be called on types that do not contain type variables.
   ;; TODO: Deprecate. Behavior can be achieved using unify.
@@ -99,7 +101,7 @@
   ;; mapping is a type map that stores the unification bindings so far
   ;; (see bottom of this file).
   ;; Returns the unified type, or #f if unification is impossible.
-  (unify Type other-type mapping)
+  (unify-helper Type other-type mapping)
   ;; Returns a list of the free type variables in the type.
   (get-free-type-vars Type)
   ;; Replaces type variables in this type with their values as given
@@ -114,9 +116,6 @@
   [(define (apply-on-symbolic-type-helper self fn)
      ;; Works for any type that doesn't contain other types within it.
      (fn self))
-   
-   (define (unify self other-type mapping)
-     (default-unify self other-type mapping))
 
    ;; Most types can never have type variables inside themselves
    (define (get-free-type-vars self) '())
@@ -153,15 +152,19 @@
 
 ;; Unifies types assuming there are no type variables inside self.
 ;; other-type may be a type variable.
-(define (default-unify self other-type mapping)
-  (cond [(Type-Var? other-type)
-         (and (add-type-binding! mapping other-type self)
-              self)]
-        [(is-supertype? self other-type)
-         other-type]
-        [(is-supertype? other-type self)
-         self]
-        [else #f]))
+(define (unify t1 t2 mapping)
+  (for*/all ([t1 t1] [t2 t2])
+    (cond [(Type-Var? t1)
+           (unify-helper t1 t2 mapping)]
+          [(Type-Var? t2)
+           (unify-helper t2 t1 mapping)]
+          [(Bottom-Type? t1) t1]
+          [(Bottom-Type? t2) t2]
+          [((typeof-predicate t1) t2)
+           (unify-helper t1 t2 mapping)]
+          [((typeof-predicate t2) t1)
+           (unify-helper t2 t1 mapping)]
+          [else #f])))
 
 ;; Unifies types that don't have parameters. Types with parameters
 ;; (eg. Vectors) will have to do something extra.
@@ -214,11 +217,18 @@
   [(define (get-parent self)
      (error "Any-type does not have a parent"))
 
+   (define (typeof-predicate self) Any-Type?)
+
    (define (is-supertype? self other-type)
      (Any-Type? other-type))
 
    (define (repr self)
-     (list 'Any-type))]
+     (list 'Any-type))
+
+   (define (unify-helper self other-type mapping)
+      (unless (and (not (term? other-type)) (Any-Type? other-type))
+        (internal-error "unify-helper requirement not satisfied"))
+      other-type)]
 
   #:methods gen:custom-write
   [(define (write-proc self port mode)
@@ -234,11 +244,18 @@
   [(define (get-parent self)
      (struct-copy Any-Type self))
 
+   (define (typeof-predicate self) Bottom-Type?)
+
    (define (is-supertype? self other-type)
      (Bottom-Type? other-type))
 
    (define (repr self)
-     (list 'Bottom-type))])
+     (list 'Bottom-type))
+
+   (define (unify-helper self other-type mapping)
+      (unless (and (not (term? other-type)) (Bottom-Type? other-type))
+        (internal-error "unify-helper requirement not satisfied"))
+      other-type)])
 
 (define (Bottom-type) (Bottom-Type))
 
@@ -247,12 +264,19 @@
   [(define (get-parent self)
      (struct-copy Any-Type self))
 
+   (define (typeof-predicate self) Boolean-Type?)
+   
    (define (is-supertype? self other-type)
      (or (Bottom-Type? other-type)
          (Boolean-Type? other-type)))
 
    (define (repr self)
-     (list 'Boolean-type))]
+     (list 'Boolean-type))
+
+   (define (unify-helper self other-type mapping)
+      (unless (and (not (term? other-type)) (Boolean-Type? other-type))
+        (internal-error "unify-helper requirement not satisfied"))
+      other-type)]
 
   #:methods gen:symbolic
   [(define (has-setters? self) #f)
@@ -308,12 +332,19 @@
   [(define (get-parent self)
      (struct-copy Any-Type self))
 
+   (define (typeof-predicate self) Index-Type?)
+
    (define (is-supertype? self other-type)
      (or (Bottom-Type? other-type)
          (Index-Type? other-type)))
 
    (define (repr self)
-     (list 'Index-type))])
+     (list 'Index-type))
+
+   (define (unify-helper self other-type mapping)
+      (unless (and (not (term? other-type)) (Index-Type? other-type))
+        (internal-error "unify-helper requirement not satisfied"))
+      other-type)])
 
 (define (Index-type) (Index-Type))
 
@@ -322,12 +353,19 @@
   [(define (get-parent self)
      (struct-copy Index-Type self))
 
+   (define (typeof-predicate self) Integer-Type?)
+
    (define (is-supertype? self other-type)
      (or (Bottom-Type? other-type)
          (Integer-Type? other-type)))
 
    (define (repr self)
-     (list 'Integer-type))]
+     (list 'Integer-type))
+
+   (define (unify-helper self other-type mapping)
+      (unless (and (not (term? other-type)) (Integer-Type? other-type))
+        (internal-error "unify-helper requirement not satisfied"))
+      other-type)]
 
   #:methods gen:symbolic
   [(define (has-setters? self) #f)
@@ -404,6 +442,8 @@
   [(define (get-parent self)
      (struct-copy Index-Type self))
 
+   (define (typeof-predicate self) Enum-Type?)
+
    ;; If you have Word be (Enum-Type 3) and Topic be (Enum-Type 3), they are
    ;; still semantically different and Words should not replace
    ;; Topics. So, check subtyping by identity equality.
@@ -415,7 +455,13 @@
          (eq? self other-type)))
 
    (define (repr self)
-     (Enum-Type-name self))]
+     (Enum-Type-name self))
+
+   (define (unify-helper self other-type mapping)
+      (unless (and (not (term? other-type)) (Enum-Type? other-type))
+        (internal-error "unify-helper requirement not satisfied"))
+      (and (equal? (Enum-Type-name self) (Enum-Type-name other-type))
+           other-type))]
 
   #:methods gen:symbolic
   [(define (has-setters? self) #f)
@@ -476,13 +522,14 @@
   #:methods gen:Type
   [(define/generic gen-is-supertype? is-supertype?)
    (define/generic gen-repr repr)
-   (define/generic gen-unify unify)
    (define/generic gen-get-free-type-vars get-free-type-vars)
    (define/generic gen-replace-type-vars replace-type-vars)
    (define/generic gen-union-types union-types)
    
    (define (get-parent self)
      (struct-copy Any-Type self))
+
+   (define (typeof-predicate self) Vector-Type?)
 
    ;; TODO: The output type has to be both co- and contra-variant
    (define (is-supertype? self other-type)
@@ -513,34 +560,34 @@
            (lambda (c-output-type)
              (fn (Vector-Type len c-index-type c-output-type))))))))
    
-   (define (unify self other-type mapping)
-     (if (not (Vector-Type? other-type))
-         (default-unify self other-type mapping)
-         (begin
-           (define my-len (Vector-Type-len self))
-           (define other-len (Vector-Type-len other-type))
+   (define (unify-helper self other-type mapping)
+     (unless (and (not (term? other-type)) (Vector-Type? other-type))
+       (internal-error "unify-helper requirement not satisfied"))
+     (define my-len (Vector-Type-len self))
+     (define other-len (Vector-Type-len other-type))
 
-           (define compatible-lengths?
-             (not (and (integer? my-len) (integer? other-len)
-                       (not (= my-len other-len)))))
+     (define compatible-lengths?
+       (not (and (integer? my-len) (integer? other-len)
+                 (not (= my-len other-len)))))
            
-           (define new-len
-             (if (integer? my-len) my-len other-len))
-           ;; For unification, we want to find a type that is
-           ;; simultaneously self and other-type, so contravariance
-           ;; does not apply. (Contravariance happens if you want to
-           ;; find something that can be *substituted*.)
-           (define new-index
-             (gen-unify (Vector-Type-index-type self)
-                        (Vector-Type-index-type other-type)
-                        mapping))
-           (define new-output
-             (gen-unify (Vector-Type-output-type self)
-                        (Vector-Type-output-type other-type)
-                        mapping))
-           (and compatible-lengths?
-                new-index new-output
-                (Vector-Type new-len new-index new-output)))))
+     (define new-len
+       (if (integer? my-len) my-len other-len))
+     ;; For unification, we want to find a type that is
+     ;; simultaneously self and other-type, so contravariance
+     ;; does not apply. (Contravariance happens if you want to
+     ;; find something that can be *substituted*.)
+     (define new-index
+       (and compatible-lengths?
+            (unify (Vector-Type-index-type self)
+                   (Vector-Type-index-type other-type)
+                   mapping)))
+     (define new-output
+       (and new-index
+            (unify (Vector-Type-output-type self)
+                   (Vector-Type-output-type other-type)
+                   mapping)))
+     
+     (and new-output (Vector-Type new-len new-index new-output)))
 
    (define (get-free-type-vars self)
      (append (gen-get-free-type-vars (Vector-Type-index-type self))
@@ -675,11 +722,10 @@
 ;; TODO: Currently impossible to create a vector type with known
 ;; length but a type variable for an index type.
 (define (Vector-type length-or-input output)
-  (unless (and (or (is-supertype? (Index-type) length-or-input)
+  (unless (and (or (Index-type? length-or-input)
                    (integer? length-or-input)
                    (and (Type-Var? length-or-input)
-                        (is-supertype? (Index-type)
-                                       (Type-Var-default length-or-input))))
+                        (Index-type? (Type-Var-default length-or-input))))
                (Type? output))
     (error (format "Invalid arguments to Vector-type: ~a and ~a~%"
                    length-or-input output)))
@@ -701,13 +747,14 @@
   #:methods gen:Type
   [(define/generic gen-is-supertype? is-supertype?)
    (define/generic gen-repr repr)
-   (define/generic gen-unify unify)
    (define/generic gen-get-free-type-vars get-free-type-vars)
    (define/generic gen-replace-type-vars replace-type-vars)
    (define/generic gen-union-types union-types)
    
    (define (get-parent self)
      (struct-copy Any-Type self))
+
+   (define (typeof-predicate self) Set-Type?)
 
    ;; TODO: The content type has to be both co- and contra-variant
    (define (is-supertype? self other-type)
@@ -724,14 +771,14 @@
       (Set-Type-content-type self)
       (lambda (concrete-type) (fn (Set-Type concrete-type)))))
 
-   (define (unify self other-type mapping)
-     (if (not (Set-Type? other-type))
-         (default-unify self other-type mapping)
-         (let ([new-content
-                (gen-unify (Set-Type-content-type self)
-                           (Set-Type-content-type other-type)
-                           mapping)])
-           (and new-content (Set-Type new-content)))))
+   (define (unify-helper self other-type mapping)
+     (unless (and (not (term? other-type)) (Set-Type? other-type))
+       (internal-error "unify-helper requirement not satisfied"))
+
+     (let ([new-content (unify (Set-Type-content-type self)
+                               (Set-Type-content-type other-type)
+                               mapping)])
+       (and new-content (Set-Type new-content))))
 
    (define (get-free-type-vars self)
      (gen-get-free-type-vars (Set-Type-content-type self)))
@@ -759,9 +806,7 @@
    (define (symbolic-code self var varset-name)
      (define len (Enum-Type-num-items (Set-Type-content-type self)))
      #`(define #,var
-         #,(if varset-name
-               #`(enum-make-symbolic-set-with-tracking #,len #,varset-name)
-               #`(enum-make-symbolic-set #,len))))
+         (enum-make-symbolic-set #,len #,varset-name)))
 
    (define (generate-update-arg-names self update-type)
      (cond [(member update-type '(add remove))
@@ -815,26 +860,146 @@
     (error (format "Cannot make a Set-type containing ~a~%" content-type)))
   (Set-Type content-type))
 
-;; A Record maps a fixed number of fields to values.
-;; Fields must be known at compile time and cannot change.
-;; So, a Record type should know all of the fields, and the types of
-;; values that each field can contain.
-;; Like Enum types, equality on Record types is checked with eq? --
-;; even if two Record types have the same fields and field types, if
-;; they were produced by different calls to Record-Type they will be
-;; different types with no subtyping relationship. This is a major
-;; difference from the standard PL record types.
-(struct Record-Type Any-Type (constructor fields field-types) #:transparent
+;; vertex-type must be an Enum type, Any-type, or a type variable
+(struct DAG-Type Any-Type (vertex-type) #:transparent
   #:methods gen:Type
   [(define/generic gen-is-supertype? is-supertype?)
    (define/generic gen-repr repr)
-   (define/generic gen-unify unify)
    (define/generic gen-get-free-type-vars get-free-type-vars)
    (define/generic gen-replace-type-vars replace-type-vars)
    (define/generic gen-union-types union-types)
    
    (define (get-parent self)
      (struct-copy Any-Type self))
+
+   (define (typeof-predicate self) DAG-Type?)
+
+   ;; TODO: The vertex type has to be both co- and contra-variant
+   (define (is-supertype? self other-type)
+     (or (Bottom-Type? other-type)
+         (and (DAG-Type? other-type)
+              (gen-is-supertype? (DAG-Type-vertex-type self)
+                                 (DAG-Type-vertex-type other-type)))))
+
+   (define (repr self)
+     (list 'DAG-type (gen-repr (DAG-Type-vertex-type self))))
+
+   (define (apply-on-symbolic-type-helper self fn)
+     (apply-on-symbolic-type
+      (DAG-Type-vertex-type self)
+      (lambda (concrete-type) (fn (DAG-Type concrete-type)))))
+
+   (define (unify-helper self other-type mapping)
+     (unless (and (not (term? other-type)) (DAG-Type? other-type))
+       (internal-error "unify-helper requirement not satisfied"))
+
+     (let ([new-vertex (unify (DAG-Type-vertex-type self)
+                              (DAG-Type-vertex-type other-type)
+                              mapping)])
+       (and new-vertex (DAG-Type new-vertex))))
+
+   (define (get-free-type-vars self)
+     (gen-get-free-type-vars (DAG-Type-vertex-type self)))
+   
+   (define (replace-type-vars self mapping [default #f])
+     (DAG-Type (gen-replace-type-vars (DAG-Type-vertex-type self)
+                                      mapping default)))
+
+   (define (union-types self other-type)
+     (if (DAG-Type? other-type)
+         (DAG-Type (gen-union-types (DAG-Type-vertex-type self)
+                                    (DAG-Type-vertex-type other-type)))
+         (default-union-types self other-type)))]
+  
+  #:methods gen:symbolic
+  [(define/generic gen-has-setters? has-setters?)
+   (define/generic gen-symbolic-code symbolic-code)
+   (define/generic gen-generate-update-arg-names generate-update-arg-names)
+   (define/generic gen-update-code update-code)
+   (define/generic gen-old-values-code old-values-code)
+   (define/generic gen-symbolic-update-code symbolic-update-code)
+   
+   (define (has-setters? self) #t)
+   
+   (define (symbolic-code self var varset-name)
+     (define size (Enum-Type-num-items (DAG-Type-vertex-type self)))
+     #`(define #,var
+         (make-symbolic-graph #,size #,varset-name #:acyclic? #t)))
+
+   (define (generate-update-arg-names self update-type)
+     (cond [(member update-type '(add-edge remove-edge))
+            (define name (Enum-Type-name (DAG-Type-vertex-type self)))
+            (list (gensym (string->symbol (format "~a-~a" name 'parent)))
+                  (gensym (string->symbol (format "~a-~a" name 'child))))]
+
+           [else
+            (error (format "Unknown DAG update type: ~a~%" update-type))]))
+
+   (define (update-code self update-type)
+     (cond [(member update-type '(add-edge remove-edge))
+            (define update-name
+              (if (equal? update-type 'add-edge)
+                  #'add-edge!
+                  #'remove-edge!))
+            (lambda (graph parent child)
+              #`(#,update-name #,graph #,parent #,child))]
+
+           [else
+            (error (format "Unknown DAG update type: ~a~%" update-type))]))
+
+   (define (old-values-code self update-type var . update-args)
+     (cond [(member update-type '(add-edge remove-edge))
+            (let ([old-val-tmp (gensym 'was-in-graph?)])
+              (list #`(define #,old-val-tmp
+                        (has-edge? #,var #,@update-args))
+                    (list old-val-tmp)
+                    (list (Boolean-type))))]
+           
+           [else
+            (error (format "Unknown DAG update type: ~a~%" update-type))]))
+
+   (define (symbolic-update-code self update-type var update-args varset-name)
+     (cond [(member update-type '(add-edge remove-edge))
+            (match update-args
+              [(list parent-var child-var)
+               (let ([update-name (if (equal? update-type 'add-edge)
+                                      #'add-edge!
+                                      #'remove-edge!)]
+                     [vertex-type (DAG-Type-vertex-type self)])
+                 (list
+                  #`(begin
+                      #,(gen-symbolic-code vertex-type parent-var varset-name)
+                      #,(gen-symbolic-code vertex-type child-var varset-name))
+                  ;; Perform the update
+                  #`(#,update-name #,var #,parent-var #,child-var)
+                  (list vertex-type vertex-type)))])]
+
+           [else
+            (error (format "Unknown DAG update type: ~a~%" update-type))]))])
+
+(define (DAG-type vertex-type)
+  (unless (or (Any-Type? vertex-type)
+              (Enum-Type? vertex-type)
+              (Type-Var? vertex-type))
+    (error (format "Cannot make a DAG-type containing ~a~%" vertex-type)))
+  (DAG-Type vertex-type))
+
+;; A Record maps a fixed number of fields to values.
+;; Fields must be known at compile time and cannot change.
+;; So, a Record type should know all of the fields, and the types of
+;; values that each field can contain.
+(struct Record-Type Any-Type (constructor fields field-types) #:transparent
+  #:methods gen:Type
+  [(define/generic gen-is-supertype? is-supertype?)
+   (define/generic gen-repr repr)
+   (define/generic gen-get-free-type-vars get-free-type-vars)
+   (define/generic gen-replace-type-vars replace-type-vars)
+   (define/generic gen-union-types union-types)
+   
+   (define (get-parent self)
+     (struct-copy Any-Type self))
+
+   (define (typeof-predicate self) Record-Type?)
 
    (define (is-supertype? self other-type)
      (or (Bottom-Type? other-type)
@@ -860,30 +1025,31 @@
 
    ;; This unification is not commutative. It takes the name from
    ;; self and ignores the name of other-type.
-   (define (unify self other-type mapping)
+   (define (unify-helper self other-type mapping)
      (when (union? self) (internal-error "Should not get a union here"))
-     (if (not (Record-Type? other-type))
-         (default-unify self other-type mapping)
-         (for/all ([other-type other-type])
-           (match* (self other-type)
-             [((Record-Type self-name self-fields self-types)
-               (Record-Type other-name other-fields other-types))
-              (for/all ([self-fields self-fields])
-                (begin
-                  (define common-fields
-                    (for/list ([id self-fields]
-                               #:when (member id other-fields))
-                      id))
-                  (define self-common-types
-                    (map (curry lookup-field-type self-fields self-types)
-                         common-fields))
-                  (define other-common-types
-                    (map (curry lookup-field-type other-fields other-types)
-                         common-fields))
-                  (define common-types
-                    (for/list ([t1 self-common-types] [t2 other-common-types])
-                      (gen-unify t1 t2 mapping)))
-                  (Record-type self-name common-fields common-types)))]))))
+     (unless (and (not (term? other-type)) (Record-Type? other-type))
+       (internal-error "unify-helper requirement not satisfied"))
+
+     (for/all ([other-type other-type])
+       (match* (self other-type)
+         [((Record-Type self-name self-fields self-types)
+           (Record-Type other-name other-fields other-types))
+          (for/all ([self-fields self-fields])
+            (begin
+              (define common-fields
+                (for/list ([id self-fields]
+                           #:when (member id other-fields))
+                  id))
+              (define self-common-types
+                (map (curry lookup-field-type self-fields self-types)
+                     common-fields))
+              (define other-common-types
+                (map (curry lookup-field-type other-fields other-types)
+                     common-fields))
+              (define common-types
+                (for/list ([t1 self-common-types] [t2 other-common-types])
+                  (unify t1 t2 mapping)))
+              (Record-type self-name common-fields common-types)))])))
 
    (define (get-free-type-vars self)
      (apply append
@@ -1029,13 +1195,14 @@
   [(define/generic gen-is-supertype? is-supertype?)
    (define/generic gen-repr repr)
    (define/generic gen-apply-on-symbolic-type-helper apply-on-symbolic-type-helper)
-   (define/generic gen-unify unify)
    (define/generic gen-get-free-type-vars get-free-type-vars)
    (define/generic gen-replace-type-vars replace-type-vars)
    (define/generic gen-union-types union-types)
 
    (define (get-parent self)
      (struct-copy Any-Type self))
+
+   (define (typeof-predicate self) Procedure-Type?)
 
    (define (is-supertype? self other-type)
      (or (Bottom-Type? other-type)
@@ -1081,28 +1248,28 @@
                          (fn (Procedure-Type cdts crt cbvs ridx widx))))))))))))))
 
    ;; TODO: What to do about read and write indexes?
-   (define (unify self other-type mapping)
+   (define (unify-helper self other-type mapping)
+     (unless (and (not (term? other-type)) (Procedure-Type? other-type))
+       (internal-error "unify-helper requirement not satisfied"))
+
      (define copy (make-fresh self))
-     (for/all ([other-type other-type])
-       (if (not (Procedure-Type? other-type))
-           (default-unify copy other-type mapping)
-           (match* (copy other-type)
-             [((Procedure-Type copy-domain copy-range _ copy-ridx copy-widx)
-               (Procedure-Type other-domain other-range _ other-ridx other-widx))
-              (and (= (length copy-domain) (length other-domain))
-                   ;; For unification, we want to find a type that is
-                   ;; simultaneously copy and other-type, so contravariance
-                   ;; does not apply. (Contravariance happens if you want to
-                   ;; find something that can be *substituted*.)
-                   (let ([new-domain
-                          (map (lambda (x y) (gen-unify x y mapping))
-                               copy-domain other-domain)]
-                         [new-range
-                          (gen-unify copy-range other-range mapping)])
-                     (and (andmap identity new-domain) new-range
-                          (Procedure-type new-domain new-range
-                                          #:read-index copy-ridx
-                                          #:write-index copy-widx))))]))))
+     (match* (copy other-type)
+       [((Procedure-Type copy-domain copy-range _ copy-ridx copy-widx)
+         (Procedure-Type other-domain other-range _ other-ridx other-widx))
+        (and (= (length copy-domain) (length other-domain))
+             ;; For unification, we want to find a type that is
+             ;; simultaneously copy and other-type, so contravariance
+             ;; does not apply. (Contravariance happens if you want to
+             ;; find something that can be *substituted*.)
+             (let ([new-domain
+                    (map (lambda (x y) (unify x y mapping))
+                         copy-domain other-domain)]
+                   [new-range
+                    (unify copy-range other-range mapping)])
+               (and (andmap identity new-domain) new-range
+                    (Procedure-type new-domain new-range
+                                    #:read-index copy-ridx
+                                    #:write-index copy-widx))))]))
 
    (define (get-free-type-vars self)
      (when (union? self) (internal-error "Should not get a union here"))
@@ -1162,7 +1329,7 @@
 (define (make-fresh proc-type)
   (define mapping (make-type-map))
   (for/all ([bound-vars (Procedure-Type-bound-type-vars proc-type)])
-    (for/list ([type-var bound-vars])
+    (for ([type-var bound-vars])
       (match type-var
         [(Type-Var id default)
          (add-type-binding! mapping type-var
@@ -1216,12 +1383,19 @@
   [(define (get-parent self)
      (struct-copy Any-Type self))
 
+   (define (typeof-predicate self) Error-Type?)
+
    (define (is-supertype? self other-type)
      (or (Bottom-Type? other-type)
          (Error-Type? other-type)))
 
    (define (repr self)
-     (list 'Error-type))])
+     (list 'Error-type))
+
+   (define (unify-helper self other-type mapping)
+     (unless (and (not (term? other-type)) (Error-Type? other-type))
+       (internal-error "unify-helper requirement not satisfied"))
+     other-type)])
 
 (define (Error-type) (Error-Type))
 
@@ -1230,12 +1404,19 @@
   [(define (get-parent self)
      (struct-copy Any-Type self))
 
+   (define (typeof-predicate self) Void-Type?)
+
    (define (is-supertype? self other-type)
      (or (Bottom-Type? other-type)
          (Void-Type? other-type)))
 
    (define (repr self)
-     (list 'Void-type))])
+     (list 'Void-type))
+
+   (define (unify-helper self other-type mapping)
+     (unless (and (not (term? other-type)) (Void-Type? other-type))
+       (internal-error "unify-helper requirement not satisfied"))
+     other-type)])
 
 (define (Void-type) (Void-Type))
 
@@ -1253,6 +1434,8 @@
    (define (get-parent self)
      (error "Cannot call get-parent on a type variable"))
 
+   (define (typeof-predicate self) Type-Var?)
+
    (define (is-supertype? self other-type)
      (error "Cannot call is-supertype? on a type variable"))
 
@@ -1267,7 +1450,10 @@
           (lambda (c-default)
             (fn (Type-Var id c-default)))))))
    
-   (define (unify self other-type mapping)
+   (define (unify-helper self other-type mapping)
+     (unless (not (term? other-type))
+       (internal-error "unify-helper requirement not satisfied"))
+
      (if (equal? self other-type)
          other-type
          (and (add-type-binding! mapping self other-type)

@@ -225,9 +225,9 @@
                 (synthesize #:forall (map input-val inputs-list)
                             #:guarantee
                             (begin (assert ,postcondition-expr)
-                                   ,@(debug-code `(displayln "Completed symbolic generation!"))))))
+                                   ,@(debug-code `(displayln "Completed symbolic generation! Running the solver:"))))))
              (and (sat? synth)
-                  (lifted-code (coerce-evaluate program synth)))))
+                  (time (coerce-evaluate (lifted-code program) synth)))))
 
         (when (hash-ref options 'debug?) (pretty-print rosette-code))
         (run-in-rosette rosette-code))

@@ -200,10 +200,16 @@
    ;; TODO: Don't assume that we can call infer-type on the procedure
    ;; TODO: Maybe we should memoize calls to infer-type?
    (define (force-type-helper self type mapping)
-     (let ([proc-type (make-fresh (gen-infer-type (lifted-apply-proc self)))])
-       (assert-type type (Procedure-range-type proc-type) mapping "procedure")
+     (let* ([proc-type (make-fresh (gen-infer-type (lifted-apply-proc self)))]
+            [domain (Procedure-domain-types proc-type)]
+            [range (Procedure-range-type proc-type)]
+            [args (lifted-apply-args self)])
+       (unless (= (length domain) (length args))
+         (error "force-type: Incorrect number of arguments"))
+       
+       (assert-type type range mapping "procedure")
        (for-each (lambda (x y) (gen-force-type-helper x y mapping))
-                 (lifted-apply-args self) (Procedure-domain-types proc-type))))
+                 args domain)))
 
    (define (mutable? self)
      (is-application-mutable? (infer-type (lifted-apply-proc self))
@@ -444,7 +450,10 @@
        (unless (Record-type? record-type)
          (error (format "First argument to set-field! must be a record, got ~a"
                         record-type)))
-       (unify (get-record-field-type record-type field-name) value-type)
+       (define expected-type (get-record-field-type record-type field-name))
+       (unless (unify-types expected-type value-type)
+         (error (format "Field ~a of ~a should have type ~a, but was ~a"
+                        field-name record-type expected-type value-type)))
        (Void-type)))
 
    (define (force-type-helper self type mapping)

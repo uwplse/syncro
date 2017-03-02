@@ -1,6 +1,7 @@
 #lang rosette
 
-(require "../enum-set.rkt" "../operators.rkt" "language.rkt" "../types.rkt")
+(require "../enum-set.rkt" "../graph.rkt" "../operators.rkt" "../types.rkt"
+          "language.rkt")
 
 (provide operator-info (struct-out special-form)
          void^ vector-increment!^ vector-decrement!^ vector-set!^ vector-ref^
@@ -42,6 +43,10 @@
    vector-ref^
    (Procedure-type (list (Vector-type alpha-idx alpha-any) alpha-idx)
                    alpha-any #:read-index 0)]
+  [has-edge?
+   has-edge?^
+   (Procedure-type (list (DAG-type alpha-any) alpha-any alpha-any)
+                   (Boolean-type) #:read-index 0)]
   [enum-set-add! enum-set-add!^ enum-set-modify-type]
   [enum-set-remove! enum-set-remove!^ enum-set-modify-type]
   [enum-set-contains? enum-set-contains?^ enum-set-contains?-type]
@@ -53,6 +58,6 @@
 (struct special-form (name constructor) #:transparent)
 (define operator-info
   (list void^ vector-increment!^ vector-decrement!^ vector-set!^ vector-ref^
-        enum-set-add!^ enum-set-remove!^ enum-set-contains?^
+        enum-set-add!^ enum-set-remove!^ enum-set-contains?^ has-edge?^
         equal?^ =^ <^ +^ -^ *^
         (special-form 'if if^) (special-form 'set! set!^)))
