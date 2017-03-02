@@ -28,13 +28,14 @@
           [int (Integer-type)]
           [vec (Vector-type 10 (Boolean-type))]
           [sett (Set-type (Any-type))]
+          [dag (DAG-type (Any-type))]
           [rec (Record-type 'foo '(a b) (list int vec))]
           [proc (Procedure-type (list (Vector-type 3 int)) (Integer-type))]
           [rproc (Procedure-type (list (Vector-type 3 int)) int #:read-index 0)]
           [wproc (Procedure-type (list (Vector-type 3 int)) int #:write-index 0)]
           [err (Error-type)]
           [void (Void-type)]
-          [all-no-enum-var (list any bot idx bool int vec rec
+          [all-no-enum-var (list any bot idx bool int vec sett dag rec
                                  proc rproc wproc err void)]
           [enum (Enum-type 'Word 12)]
           [set-enum (Set-type enum)]
@@ -59,6 +60,7 @@
        (check-equal? int (Vector-index-type vec))
        (check-equal? vec (Vector-type 10 bool))
        (check-equal? sett (Set-type (Any-type)))
+       (check-equal? dag (DAG-type (Any-type)))
        (check-equal? proc (Procedure-type (list (Vector-type 3 (Integer-type)))
                                           (Integer-type)))
        (check-not-equal? rproc wproc)
@@ -89,6 +91,7 @@
        (check-equal? (get-parent int) idx)
        (check-equal? (get-parent vec) any)
        (check-equal? (get-parent sett) any)
+       (check-equal? (get-parent dag) any)
        (check-equal? (get-parent proc) any)
        (check-equal? (get-parent rproc) any)
        (check-equal? (get-parent wproc) any)
@@ -115,7 +118,8 @@
                Integer-type? int
                Enum-type? enum
                Vector-type? vec
-               Set-type? set-enum
+               Set-type? sett
+               DAG-type? dag
                Record-type? rec
                Procedure-type? proc
                Error-type? err
@@ -129,6 +133,7 @@
                Enum-type? (set bot enum)
                Vector-type? (set bot vec vec-var)
                Set-type? (set bot sett set-enum)
+               DAG-type? (set bot dag)
                Record-type? (set bot rec rec-var)
                Procedure-type? (set bot proc rproc wproc)
                Error-type? (set bot err)
@@ -139,10 +144,18 @@
          (define type-for-pred (hash-ref predicate->type pred))
          (for ([t all-no-var])
            (if (set-member? expected t)
-               (begin (check-true (pred t))
-                      (check-true (is-supertype? type-for-pred t)))
-               (begin (check-false (pred t))
-                      (check-false (is-supertype? type-for-pred t))))))
+               (begin
+                 (check-true (pred t)
+                             (format "(~a ~a) should be true" pred t))
+                 (check-true (is-supertype? type-for-pred t)
+                             (format "~a should be a supertype of ~a"
+                                     type-for-pred t)))
+               (begin
+                 (check-false (pred t)
+                              (format "(~a ~a) should be false" pred t))
+                 (check-false (is-supertype? type-for-pred t)
+                              (format "~a should not be a supertype of ~a"
+                                      type-for-pred t))))))
        
        (check-true (is-supertype? rproc wproc))
        (check-true (is-supertype? wproc rproc))

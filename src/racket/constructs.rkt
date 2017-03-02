@@ -6,11 +6,13 @@
          "program.rkt"
          "synthesis.rkt"
          "../rosette/enum-set.rkt"
+         "../rosette/graph.rkt"
          "../rosette/operators.rkt"
          "../rosette/types.rkt"
          "../rosette/variable.rkt")
 
 (provide (all-from-out "../rosette/enum-set.rkt") ;; TODO: Remove the "enum-"
+         (all-from-out "../rosette/graph.rkt")
          (all-from-out "../rosette/operators.rkt")
          (except-out (all-from-out "../rosette/types.rkt") Enum-type)
          incremental algorithm my-for/sum my-for/or)

@@ -6,14 +6,14 @@
 (provide
  ;; Constructors
  Any-type Bottom-type Index-type Boolean-type Integer-type Enum-type
- Vector-type Set-type Record-type define-record Procedure-type
+ Vector-type Set-type DAG-type Record-type define-record Procedure-type
  Error-type Void-type Type-var
  ;; The repr method for type variables must use Type-Var
  Type-Var
 
  ;; Predicates on types
  Any-type? Bottom-type? Boolean-type? Index-type? Integer-type? Enum-type?
- Vector-type? Set-type? Record-type? Procedure-type?
+ Vector-type? Set-type? DAG-type? Record-type? Procedure-type?
  Error-type? Void-type? (rename-out [Type-Var? Type-var?])
 
  ;; Selectors (for some types)
@@ -21,6 +21,7 @@
  (rename-out [Vector-Type-index-type Vector-index-type]
              [Vector-Type-output-type Vector-output-type]
              [Set-Type-content-type Set-content-type]
+             [DAG-Type-vertex-type DAG-vertex-type]
              [Procedure-Type-domain-types Procedure-domain-types]
              [Procedure-Type-range-type Procedure-range-type])
  get-record-field-type
@@ -57,7 +58,7 @@
  [Any-Type? Any-type?] [Bottom-Type? Bottom-type?]
  [Boolean-Type? Boolean-type?] [Index-Type? Index-type?]
  [Integer-Type? Integer-type?] [Enum-Type? Enum-type?]
- [Vector-Type? Vector-type?] [Set-Type? Set-type?]
+ [Vector-Type? Vector-type?] [Set-Type? Set-type?] [DAG-Type? DAG-type?]
  [Record-Type? Record-type?] [Procedure-Type? Procedure-type?]
  [Error-Type? Error-type?] [Void-Type? Void-type?] )
 
@@ -805,9 +806,7 @@
    (define (symbolic-code self var varset-name)
      (define len (Enum-Type-num-items (Set-Type-content-type self)))
      #`(define #,var
-         #,(if varset-name
-               #`(enum-make-symbolic-set-with-tracking #,len #,varset-name)
-               #`(enum-make-symbolic-set #,len))))
+         (enum-make-symbolic-set #,len #,varset-name)))
 
    (define (generate-update-arg-names self update-type)
      (cond [(member update-type '(add remove))
@@ -861,15 +860,134 @@
     (error (format "Cannot make a Set-type containing ~a~%" content-type)))
   (Set-Type content-type))
 
+;; vertex-type must be an Enum type, Any-type, or a type variable
+(struct DAG-Type Any-Type (vertex-type) #:transparent
+  #:methods gen:Type
+  [(define/generic gen-is-supertype? is-supertype?)
+   (define/generic gen-repr repr)
+   (define/generic gen-get-free-type-vars get-free-type-vars)
+   (define/generic gen-replace-type-vars replace-type-vars)
+   (define/generic gen-union-types union-types)
+   
+   (define (get-parent self)
+     (struct-copy Any-Type self))
+
+   (define (typeof-predicate self) DAG-Type?)
+
+   ;; TODO: The vertex type has to be both co- and contra-variant
+   (define (is-supertype? self other-type)
+     (or (Bottom-Type? other-type)
+         (and (DAG-Type? other-type)
+              (gen-is-supertype? (DAG-Type-vertex-type self)
+                                 (DAG-Type-vertex-type other-type)))))
+
+   (define (repr self)
+     (list 'DAG-type (gen-repr (DAG-Type-vertex-type self))))
+
+   (define (apply-on-symbolic-type-helper self fn)
+     (apply-on-symbolic-type
+      (DAG-Type-vertex-type self)
+      (lambda (concrete-type) (fn (DAG-Type concrete-type)))))
+
+   (define (unify-helper self other-type mapping)
+     (unless (and (not (term? other-type)) (DAG-Type? other-type))
+       (internal-error "unify-helper requirement not satisfied"))
+
+     (let ([new-vertex (unify (DAG-Type-vertex-type self)
+                              (DAG-Type-vertex-type other-type)
+                              mapping)])
+       (and new-vertex (DAG-Type new-vertex))))
+
+   (define (get-free-type-vars self)
+     (gen-get-free-type-vars (DAG-Type-vertex-type self)))
+   
+   (define (replace-type-vars self mapping [default #f])
+     (DAG-Type (gen-replace-type-vars (DAG-Type-vertex-type self)
+                                      mapping default)))
+
+   (define (union-types self other-type)
+     (if (DAG-Type? other-type)
+         (DAG-Type (gen-union-types (DAG-Type-vertex-type self)
+                                    (DAG-Type-vertex-type other-type)))
+         (default-union-types self other-type)))]
+  
+  #:methods gen:symbolic
+  [(define/generic gen-has-setters? has-setters?)
+   (define/generic gen-symbolic-code symbolic-code)
+   (define/generic gen-generate-update-arg-names generate-update-arg-names)
+   (define/generic gen-update-code update-code)
+   (define/generic gen-old-values-code old-values-code)
+   (define/generic gen-symbolic-update-code symbolic-update-code)
+   
+   (define (has-setters? self) #t)
+   
+   (define (symbolic-code self var varset-name)
+     (define size (Enum-Type-num-items (DAG-Type-vertex-type self)))
+     #`(define #,var
+         (make-symbolic-graph #,size #,varset-name #:acyclic? #t)))
+
+   (define (generate-update-arg-names self update-type)
+     (cond [(member update-type '(add-edge remove-edge))
+            (define name (Enum-Type-name (DAG-Type-vertex-type self)))
+            (list (gensym (string->symbol (format "~a-~a" name 'parent)))
+                  (gensym (string->symbol (format "~a-~a" name 'child))))]
+
+           [else
+            (error (format "Unknown DAG update type: ~a~%" update-type))]))
+
+   (define (update-code self update-type)
+     (cond [(member update-type '(add-edge remove-edge))
+            (define update-name
+              (if (equal? update-type 'add-edge)
+                  #'add-edge!
+                  #'remove-edge!))
+            (lambda (graph parent child)
+              #`(#,update-name #,graph #,parent #,child))]
+
+           [else
+            (error (format "Unknown DAG update type: ~a~%" update-type))]))
+
+   (define (old-values-code self update-type var . update-args)
+     (cond [(member update-type '(add-edge remove-edge))
+            (let ([old-val-tmp (gensym 'was-in-graph?)])
+              (list #`(define #,old-val-tmp
+                        (has-edge? #,var #,@update-args))
+                    (list old-val-tmp)
+                    (list (Boolean-type))))]
+           
+           [else
+            (error (format "Unknown DAG update type: ~a~%" update-type))]))
+
+   (define (symbolic-update-code self update-type var update-args varset-name)
+     (cond [(member update-type '(add-edge remove-edge))
+            (match update-args
+              [(list parent-var child-var)
+               (let ([update-name (if (equal? update-type 'add-edge)
+                                      #'add-edge!
+                                      #'remove-edge!)]
+                     [vertex-type (DAG-Type-vertex-type self)])
+                 (list
+                  #`(begin
+                      #,(gen-symbolic-code vertex-type parent-var varset-name)
+                      #,(gen-symbolic-code vertex-type child-var varset-name))
+                  ;; Perform the update
+                  #`(#,update-name #,var #,parent-var #,child-var)
+                  (list vertex-type vertex-type)))])]
+
+           [else
+            (error (format "Unknown DAG update type: ~a~%" update-type))]))])
+
+(define (DAG-type vertex-type)
+  (unless (or (Any-Type? vertex-type)
+              (Enum-Type? vertex-type)
+              (Type-Var? vertex-type))
+    (error (format "Cannot make a DAG-type containing ~a~%" vertex-type)))
+  (DAG-Type vertex-type))
+
 ;; A Record maps a fixed number of fields to values.
 ;; Fields must be known at compile time and cannot change.
 ;; So, a Record type should know all of the fields, and the types of
 ;; values that each field can contain.
-;; Like Enum types, equality on Record types is checked with eq? --
-;; even if two Record types have the same fields and field types, if
-;; they were produced by different calls to Record-Type they will be
-;; different types with no subtyping relationship. This is a major
-;; difference from the standard PL record types.
 (struct Record-Type Any-Type (constructor fields field-types) #:transparent
   #:methods gen:Type
   [(define/generic gen-is-supertype? is-supertype?)
