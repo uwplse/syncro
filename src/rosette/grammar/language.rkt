@@ -8,7 +8,7 @@
 (provide
  ;; Various constructs in the language
  define-lifted lifted? if^ begin^ get-field^ set-field!^ define-expr^ set!^
- lifted-error lifted-error? make-lifted-variable
+ lifted-error lifted-error? make-lifted-variable update-lifted-variable
 
  ;; Operations on lifted programs
  eval-lifted lifted-code fold-lifted infer-type mutable? force-type-helper
@@ -111,6 +111,8 @@
    (lambda (var)
      (lifted-variable var (Any-type) (unknown-value) #f #f))
    (const #f)))
+;; Note that we depend on equality doing the right thing, which only
+;; happens because of #:transparent
 (struct lifted-variable variable () #:transparent
   #:property prop:procedure apply-wrapper
   #:property prop:serializable
@@ -154,6 +156,20 @@
                               #:mutable? [mutable? #f]
                               #:definition [definition #f])
   (lifted-variable symbol type value mutable? definition))
+
+(define (update-lifted-variable var
+                                #:symbol [symbol #f]
+                                #:type [type #f]
+                                #:value [value (unknown-value)]
+                                #:mutable? [mutable? #f]
+                                #:definition [definition #f])
+  (unless (lifted-variable? var)
+    (error (format "update-lifted-variable: Not a lifted variable: ~a" var)))
+  (lifted-variable (or symbol (variable-symbol var))
+                   (or type (variable-type var))
+                   (if (unknown-value? value) (variable-value var) value)
+                   (or mutable? (variable-mutable? var))
+                   (or definition (variable-definition var))))
 
 
 

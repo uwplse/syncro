@@ -189,10 +189,12 @@
             (let ([sketch (send output-node get-sketch update-name)])
               `((define program
                   (make-lifted terminal-info operator-info ',sketch))
-                (force-type program (Void-type)
-                            (lambda (type)
-                              ,(make-grammar-expr 1 2 0 0 'type)))))
-            `((define program ,(make-grammar-expr 2 3 0 1 '(Void-type))))))
+                (time
+                 (force-type program (Void-type)
+                             (lambda (type)
+                               ,(make-grammar-expr 1 2 0 0 'type))))))
+            `((define program
+                (time ,(make-grammar-expr 2 3 0 1 '(Void-type)))))))
 
       (define (debug-code code)
         (if (hash-ref options 'verbose?)
@@ -227,6 +229,7 @@
                             (begin (assert ,postcondition-expr)
                                    ,@(debug-code `(displayln "Completed symbolic generation! Running the solver:"))))))
              (and (sat? synth)
+                  ,@(debug-code '(displayln "Solution found! Generating code:"))
                   (time (coerce-evaluate (lifted-code program) synth)))))
 
         (when (hash-ref options 'debug?) (pretty-print rosette-code))
@@ -278,7 +281,6 @@
             (run-synthesis)))
       (if result
           (begin
-            (when (hash-ref options 'verbose?) (displayln "Solution found!"))
             (when (hash-ref options 'debug?) (pretty-print result))
             (send input-relation add-update-code update-name result))
           (begin

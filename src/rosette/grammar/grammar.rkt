@@ -1,12 +1,14 @@
 #lang rosette
 
-(require racket/syntax)
+(require racket/syntax racket/generator)
 
 (require "choice.rkt" "grammar-synthax-deep.rkt"
          "lifted-operators.rkt" "language.rkt"
          "../types.rkt" "../variable.rkt")
 
-(provide grammar Terminal-Info% eval-lifted lifted-code)
+(provide grammar Terminal-Info% eval-lifted lifted-code
+         ;; For testing
+         remove-polymorphism)
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -14,20 +16,25 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; terminal-info: A Terminal-Info object
+;; operator-info: A list of operators to use
 ;; num-stmts:     Number of statements to allow
 ;; depth:         Expression depth to allow
 ;; #:num-temps:   Number of temporary variables to add to the sketch
 ;; #:guard-depth: Depth of the guard expression. If this is #f, no
 ;;                guard is inserted.
+;; #:type:        The output type of the expression to be generated.
+;; #:version and #:choice-version are settings determining which
+;; grammar to use and how to use it.
 ;; Note that the num-stmts and depth do not have exact meanings, they
 ;; are simply used as costs. (For example, despite an if having
 ;; multiple statements inside it, it counts as only one statement.)
-(define (grammar terminal-info operators num-stmts depth
+(define (grammar terminal-info operator-info num-stmts depth
                  #:num-temps [num-temps 0]
                  #:guard-depth [guard-depth 0]
                  #:type [type (Void-type)]
                  #:version [version 'basic]
                  #:choice-version [choice-version 'basic])
+  (define operators (remove-polymorphism operator-info terminal-info))
   (define chooser (make-chooser choice-version))
   (define result
     (if (or (= num-stmts 0) (= depth 0))
@@ -412,6 +419,99 @@
           (if^ guard-expr (void^) result)))
   result)
 
+;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Remove polymorphism ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; Polymorphism during grammar generation is really annoying because
+;; it means you need to have a symbolic unification algorithm. Rather
+;; than doing that, we infer all possible concrete types that could
+;; come up during grammar generation, and use those instead, so that
+;; there is no polymorphism left.
+;; This depends on a crucial property -- no lifted operator creates a
+;; "bigger" type than its arguments, where the size of a type is the
+;; number of type constructors called to make that type. Since there
+;; are a finite number of types of size <= k for any constant k, this
+;; must terminate.
+;; This also has the nice property of removing any operators that
+;; cannot be applied in the grammar since there is no way of using
+;; them. (eg. In a program using only vector types, we'd remove
+;; enum-set functions.)
+;; TODO: Also look at mutability, for additional filtering. Not needed
+;; for correctness but would help performance.
+(define (remove-polymorphism operator-info terminal-info)
+  ;; Split into two phases -- first, construct all types that could
+  ;; possibly arise, and second, specialize procedure types in all
+  ;; the ways possible.
+  (define-values (specials operators)
+    (partition special-form? operator-info))
+
+  (define init-types
+    ;; set! can create a void type if necessary
+    ;; if can only create void types
+    ;; TODO: get-field and set-field! can create new types
+    (cons (Void-type)
+          (map variable-type
+               (send terminal-info all-terminals))))
+
+  (define all-types-set (get-all-types operators init-types))
+  (define new-operators (specialize-operators operators all-types-set))
+  (append specials new-operators))
+
+(define (get-all-types operators types)
+  (let loop ([types-set (for/set ([t types]) t)])
+    (define new-types-set
+      (for*/set ([op operators]
+                 [proc-type (try-apply-op op types-set)])
+        (Procedure-range-type proc-type)))
+
+    (if (subset? new-types-set types-set)
+        types-set
+        (loop (set-union types-set new-types-set)))))
+
+(define (specialize-operators operators types)
+  (set->list
+   (for*/set ([op operators]
+              [proc-type (try-apply-op op types)])
+     (update-lifted-variable op #:type proc-type))))
+
+;; op: Lifted operator whose type is a Procedure-type.
+;; types: A sequence of non-polymorphic types.
+;; Returns a sequence (that wraps a generator).
+;; Each element of the sequence is an instantiation of the type of op
+;; that corresponds to a possible application of op to values whose
+;; types are in types. (That is, each element is a Procedure-Type with
+;; no type varables in it.)
+;; This sequence could contain duplicates.
+;; Stupid algorithm: Try all combinations of types. Can definitely
+;; improve this if necessary -- if we use functional type maps, then
+;; we can do a recursive procedure where we match each element of the
+;; domain at a time and only go on if it succeeds. Still worst case
+;; O(n^d) where d is (length domain), but *much* more filtering that
+;; makes it a lot better in normal cases.
+(define (try-apply-op op types)
+  (define (n-product seq n)
+    (if (= n 0)
+        (in-generator (yield '()))
+        (in-generator
+         (let ([subseq (n-product seq (- n 1))])
+           (for* ([sublst subseq]
+                  [elem seq])
+             (yield (cons elem sublst)))))))
+
+  (let* ([proc-type (variable-type op)]
+         [domain (Procedure-domain-types proc-type)]
+         [range (Procedure-range-type proc-type)])
+    (in-generator
+     (for ([possible-domain (n-product types (length domain))])
+       (define mapping (make-type-map))
+       (define compatible?
+         (for/and ([t1 domain] [t2 possible-domain])
+           (unify t1 t2 mapping)))
+       (when compatible?
+         (define new-range (replace-type-vars range mapping))
+         (yield (Procedure-type possible-domain new-range)))))))
+
 ;;;;;;;;;;;;;;;
 ;; Terminals ;;
 ;;;;;;;;;;;;;;;
@@ -435,6 +535,9 @@
       (when (hash-has-key? symbol->terminal symbol)
         (error (format "Terminal ~a is already present!~%" symbol)))
       (hash-set! symbol->terminal symbol terminal))
+
+    (define/public (all-terminals)
+      (hash-values symbol->terminal))
 
     (define/public (has-terminal? id)
       (hash-has-key? symbol->terminal id))

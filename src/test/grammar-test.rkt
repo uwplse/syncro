@@ -4,7 +4,8 @@
 (require "../rosette/grammar/grammar.rkt"
          "../rosette/grammar/language.rkt"
          "../rosette/types.rkt" "../rosette/variable.rkt"
-         (only-in "../rosette/grammar/lifted-operators.rkt" operator-info))
+         (only-in "../rosette/grammar/lifted-operators.rkt"
+                  special-form? operator-info))
 
 (provide run-grammar-tests)
 
@@ -51,12 +52,8 @@
        (check-equal? (get #:type idx #:mutable? #t) (set 'v 'x))
        (check-equal? (get #:type bool) (set 'w))
        (check-equal? (get #:type any) (set 'v 'w 'x 'y 'z))))
-   
 
-   ;;;;;;;;;;;;;;;;;;;;;;;;
-   ;; Grammar definition ;;
-   ;;;;;;;;;;;;;;;;;;;;;;;;
-   
+   ;; Define a Terminal-info for the next set of tests
    (let* ([info (new Terminal-Info%)]
           [int (Integer-type)]
           [Word (Enum-type 'Word 12)]
@@ -78,6 +75,15 @@
      (make 'int1 0 int #:mutable? #f)
      (make 'word1 3 Word #:mutable? #f)
      (make 'word2 5 Word #:mutable? #t)
+
+     ;; TODO: More removing polymorphism tests
+     (test-case "Removing polymorphism"
+       (let ([new-ops (remove-polymorphism operator-info info)])
+         (check-equal? (for/set ([op new-ops] #:unless (special-form? op))
+                         (variable-symbol op))
+                       (set 'equal? 'void 'vector-ref 'vector-set!
+                            'vector-increment! 'vector-decrement!
+                            '+ '- '* '< '=))))
 
      ;; If in-grammar? is #f, checks that prog *cannot* be specialized to code
      ;; If it is #t, checks that prog *can* be specialized to code
