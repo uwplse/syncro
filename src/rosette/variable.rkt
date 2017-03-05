@@ -13,6 +13,8 @@
 ;;             define the variable and give it its initial value.
 ;; value: The value that the variable currently has.
 ;; mutable?: Whether or not this variable can be changed using set!
+;; Note that we depend on equality doing the right thing, which only
+;; happens because of #:transparent
 (struct variable (symbol type [value #:mutable] mutable? definition)
   #:transparent)
 

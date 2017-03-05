@@ -12,7 +12,7 @@
                      (cons 'bitwidth 10)
                      (cons 'timeout 3600)
                      (cons 'module-file "metasketch-module-file.rkt")
-                     (cons 'grammar-version 'general)
+                     (cons 'grammar-version 'caching)
                      (cons 'grammar-choice 'basic))))
   (command-line
    #:argv args
