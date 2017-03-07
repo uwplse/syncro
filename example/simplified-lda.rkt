@@ -100,9 +100,9 @@
    #:value (my-for/sum ([x num1]) x)
    #:depends (num1))
 
- ;; (define-incremental num2sum (Integer-type)
- ;;   #:value (my-for/sum ([x num2]) x)
- ;;   #:depends (num2))
+ (define-incremental num2sum (Integer-type)
+   #:value (my-for/sum ([x num2]) x)
+   #:depends (num2))
  
  (algorithm
   ;; TODO: Here we assume that the programmer only uses our update

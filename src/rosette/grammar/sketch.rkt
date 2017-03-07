@@ -44,7 +44,10 @@
      (gen-infer-type (lifted-grammar-value self)))
 
    (define (force-type-helper self type mapping)
-     (set-lifted-grammar-type! self type))
+     (if (lifted-grammar-type self)
+         (unless (unify-types type (lifted-grammar-type self))
+           (error "Impossible"))
+         (set-lifted-grammar-type! self type)))
 
    (define (mutable? self)
      (check-grammar-defined self)
@@ -53,8 +56,8 @@
 (define (check-grammar-defined x)
   (unless (lifted-grammar-value x)
     (error "Lifted grammar has not performed grammar generation yet!")))
-(define (make-lifted-grammar)
-  (lifted-grammar #f #f))
+(define (make-lifted-grammar [type #f])
+  (lifted-grammar #f type))
 
 
 ;; Sets the types of any lifted-grammar nodes in lifted such that the
@@ -108,6 +111,7 @@
          (define-expr^ (helper var) value))]
       ;; Grammar generation
       [`(??) (make-lifted-grammar)]
+      [`(?? ,type) (make-lifted-grammar type)]
 
       ;; Procedure application
       [`(,proc . ,args) (apply (helper proc) (map helper args))]

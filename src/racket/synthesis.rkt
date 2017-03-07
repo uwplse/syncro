@@ -75,7 +75,7 @@
     (match-define (list define-input update-args update-defns-code update-code update-arg-types define-overwritten-vals overwritten-vals overwritten-vals-types)
       (datumify
        (get-symbolic-info input-relation update-name 'inputs-set)))
-    
+
     (define intermediate-ids '())
     (for ([output-id (cdr (get-ids graph))])
       (printf "Synthesizing update rule for ~a upon update ~a to ~a~%"
@@ -196,7 +196,7 @@
             `((define program
                 (time ,(make-grammar-expr 2 3 0 1 '(Void-type)))))))
 
-      (define (debug-code code)
+      (define (verbose-code code)
         (if (hash-ref options 'verbose?)
             (list code)
             '()))
@@ -210,10 +210,10 @@
              ,@update-intermediate-stmts
              ,@terminal-info-stmts
 
-             ,@(debug-code '(displayln "Creating symbolic program"))
+             ,@(verbose-code '(displayln "Creating symbolic program"))
              ,@program-definition
              ;; Symbolically run the sampled program
-             ,@(debug-code '(displayln "Running the generated program"))
+             ,@(verbose-code '(displayln "Running the generated program"))
              (time (eval-lifted program))
 
              ;; Assert all preconditions
@@ -227,9 +227,9 @@
                 (synthesize #:forall (map input-val inputs-list)
                             #:guarantee
                             (begin (assert ,postcondition-expr)
-                                   ,@(debug-code `(displayln "Completed symbolic generation! Running the solver:"))))))
+                                   ,@(verbose-code `(displayln "Completed symbolic generation! Running the solver:"))))))
              (and (sat? synth)
-                  ,@(debug-code '(displayln "Solution found! Generating code:"))
+                  ,@(verbose-code '(displayln "Solution found! Generating code:"))
                   (time (coerce-evaluate (lifted-code program) synth)))))
 
         (when (hash-ref options 'debug?) (pretty-print rosette-code))
@@ -288,7 +288,7 @@
              (format "No program found to update ~a upon change ~a to ~a"
                      output-id update-name input-id))
             (send input-relation add-update-code update-name
-                  (send input-relation get-update-code 'recompute))))
+                  (send output-relation get-update-code 'recompute))))
 
       (set! intermediate-ids (append intermediate-ids (list output-id))))
 
