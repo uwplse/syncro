@@ -1,7 +1,7 @@
 #lang rosette
 
 (require "language.rkt" "lifted-operators.rkt"
-         "../types.rkt" "../variable.rkt"
+         "../types.rkt" "../variable.rkt" "../util.rkt"
          racket/serialize)
 
 (provide make-lifted force-type deserialize-lifted-grammar)
@@ -55,7 +55,7 @@
 
 (define (check-grammar-defined x)
   (unless (lifted-grammar-value x)
-    (error "Lifted grammar has not performed grammar generation yet!")))
+    (internal-error "Lifted grammar has not performed grammar generation yet!")))
 (define (make-lifted-grammar [type #f])
   (lifted-grammar #f type))
 
@@ -92,36 +92,49 @@
   (define id->operator
     (for/hash ([op (filter (negate special-form?) operator-info)])
       (values (variable-symbol op) op)))
+
+  (define recurse (curry make-lifted terminal-info operator-info))
   
-  (let helper ([code code])
-    (match code
-      ;; Special forms
-      [`(begin . ,args) (apply begin^ (map helper args))]
-      [`(if ,x ,y ,z) (apply if^ (map helper (list x y z)))]
-      [`(set! ,var ,val) (apply set!^ (map helper (list var val)))]
-      [`(error . ,args) (lifted-error)]
-      
-      ;; Define is tricky, since we need to figure out the type of the
-      ;; new variable. We require that the user gives us an rhs does
-      ;; not contain any calls to the grammar.
-      [`(define ,var ,val)
-       (let* ([value (helper val)]
-              [type (infer-type value)])
-         (send terminal-info make-and-add-terminal var (unknown-value) type)
-         (define-expr^ (helper var) value))]
-      ;; Grammar generation
-      [`(??) (make-lifted-grammar)]
-      [`(?? ,type) (make-lifted-grammar type)]
+  (match code
+    ;; Special forms
+    [`(begin . ,args) (apply begin^ (map recurse args))]
+    [`(if ,x ,y ,z) (apply if^ (map recurse (list x y z)))]
+    [`(set! ,var ,val) (apply set!^ (map recurse (list var val)))]
+    [`(error . ,args) (lifted-error)]
 
-      ;; Procedure application
-      [`(,proc . ,args) (apply (helper proc) (map helper args))]
+    ;; Define is tricky, since we need to figure out the type of the
+    ;; new variable. We require that the user gives us an rhs does
+    ;; not contain any calls to the grammar.
+    ;; Same thing with loops.
+    [`(define ,var ,val)
+     (let* ([value (recurse val)]
+            [type (infer-type value)])
+       (send terminal-info make-and-add-terminal var (unknown-value) type)
+       (define-expr^ (recurse var) value))]
+    [`(for-enum-set ((,var ,set-expr)) . ,body)
+     (let* ([set (recurse set-expr)]
+            [set-type (infer-type set)])
+       (unless (Set-type? set-type)
+         (internal-error
+          (format "make-lifted -- Not a set type ~a" set-type)))
 
-      ;; Base cases
-      [(? number?) code]
-      [(? symbol?)
-       (cond [(send terminal-info has-terminal? code)
-              (send terminal-info get-terminal-by-id code)]
-             [(hash-has-key? id->operator code)
-              (hash-ref id->operator code)]
-             [else
-              (error (format "Unknown symbol ~a -- MAKE-LIFTED" code))])])))
+       (send terminal-info make-and-add-terminal var (unknown-value)
+             (Set-content-type set-type))
+       (for-enum-set^ (recurse var) set (recurse `(begin ,@body))))]
+
+    ;; Grammar generation
+    [`(??) (make-lifted-grammar)]
+    [`(?? ,type) (make-lifted-grammar type)]
+
+    ;; Procedure application
+    [`(,proc . ,args) (apply (recurse proc) (map recurse args))]
+
+    ;; Base cases
+    [(? number?) code]
+    [(? symbol?)
+     (cond [(send terminal-info has-terminal? code)
+            (send terminal-info get-terminal-by-id code)]
+           [(hash-has-key? id->operator code)
+            (hash-ref id->operator code)]
+           [else
+            (error (format "Unknown symbol ~a -- MAKE-LIFTED" code))])]))

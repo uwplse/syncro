@@ -188,11 +188,13 @@
         (if (send output-node has-sketch? update-name)
             (let ([sketch (send output-node get-sketch update-name)])
               `((define program
-                  (make-lifted terminal-info operator-info ',sketch))
+                  (make-lifted terminal-info
+                               (append operator-info extra-operators)
+                               ',sketch))
                 (time
                  (force-type program (Void-type)
                              (lambda (type)
-                               ,(make-grammar-expr 1 2 0 0 'type))))))
+                               ,(make-grammar-expr 2 3 0 0 'type))))))
             `((define program
                 (time ,(make-grammar-expr 2 3 0 1 '(Void-type)))))))
 
@@ -204,6 +206,7 @@
       (define (run-synthesis)
         (define rosette-code
           `(let ()
+             (clear-state!)
              (current-bitwidth ,(hash-ref options 'bitwidth))
              ,@initialization-stmts
              ,@update-stmts

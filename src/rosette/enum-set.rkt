@@ -61,9 +61,18 @@
   (filter (lambda (elem) (enum-set-contains? set elem))
           (range (vector-length set))))
 
-(define-syntax-rule (for-enum-set ([var set-expr]) expr ...)
+;; Semantics are redefined in grammar/language.rkt
+;; Syntax is redefined in grammar/language.rkt and grammar/sketch.rkt
+(define-syntax-rule (for-enum-set ([var set-expr]) body ...)
   (begin
     (define set set-expr)
-    (for ([var (vector-length set)])
+    (define num-items (vector-length set))
+    (when (term? num-items)
+      (internal-error
+       (format "for-enum-set: Number of items in enum set should be concrete, was ~a"
+               num-items)))
+
+    (for ([var num-items])
       (when (enum-set-contains? set var)
-        expr ...))))
+        body ...))
+    (void)))

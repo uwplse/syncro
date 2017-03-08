@@ -501,7 +501,9 @@
 
   (let* ([proc-type (variable-type op)]
          [domain (Procedure-domain-types proc-type)]
-         [range (Procedure-range-type proc-type)])
+         [range (Procedure-range-type proc-type)]
+         [ridx (Procedure-read-index proc-type)]
+         [widx (Procedure-write-index proc-type)])
     (in-generator
      (for ([possible-domain (n-product types (length domain))])
        (define mapping (make-type-map))
@@ -510,7 +512,8 @@
            (unify t1 t2 mapping)))
        (when compatible?
          (define new-range (replace-type-vars range mapping))
-         (yield (Procedure-type possible-domain new-range)))))))
+         (yield (Procedure-type possible-domain new-range
+                                #:read-index ridx #:write-index widx)))))))
 
 ;;;;;;;;;;;;;;;
 ;; Terminals ;;

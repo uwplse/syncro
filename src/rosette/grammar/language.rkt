@@ -2,13 +2,18 @@
 ;; once synthesis is complete.
 #lang rosette
 
-(require "../record.rkt" "../types.rkt" "../util.rkt" "../variable.rkt"
+(require "../enum-set.rkt" "../record.rkt"
+         "../types.rkt" "../util.rkt" "../variable.rkt"
          racket/serialize)
 
 (provide
  ;; Various constructs in the language
- define-lifted lifted? if^ begin^ get-field^ set-field!^ define-expr^ set!^
- lifted-error lifted-error? make-lifted-variable update-lifted-variable
+ define-lifted lifted? if^ begin^
+ get-field^ set-field!^
+ define-expr^ set!^
+ for-enum-set^
+ lifted-error lifted-error?
+ make-lifted-variable update-lifted-variable
 
  ;; Operations on lifted programs
  eval-lifted lifted-code fold-lifted infer-type mutable? force-type-helper
@@ -21,7 +26,7 @@
  deserialize-lifted-begin deserialize-lifted-if
  deserialize-lifted-get-field deserialize-lifted-set-field!
  deserialize-lifted-define deserialize-lifted-set!
- deserialize-lifted-error)
+ deserialize-lifted-for-enum-set deserialize-lifted-error)
 
 ;; Since Rosette doesn't support objects, we'll use structs and
 ;; generic functions on those structs.
@@ -614,6 +619,79 @@
   (if (or (lifted-error? var) (lifted-error? val))
       (lifted-error)
       (lifted-set! var val)))
+
+
+
+(define deserialize-lifted-for-enum-set
+  (make-deserialize-info
+   (lambda lst (apply lifted-for-enum-set lst))
+   (const #f)))
+(struct lifted-for-enum-set lifted-writer (var set-expr body) #:transparent
+  #:property prop:serializable
+  (make-serialize-info
+   (lambda (s) (vector (lifted-for-enum-set-var s)
+                       (lifted-for-enum-set-set-expr s)
+                       (lifted-for-enum-set-body s)))
+   #'deserialize-lifted-for-enum-set
+   #f
+   (or (current-load-relative-directory) (current-directory)))
+  #:methods gen:lifted
+  [(define/generic gen-eval-lifted eval-lifted)
+   (define/generic gen-lifted-code lifted-code)
+   (define/generic gen-fold-lifted fold-lifted)
+   (define (eval-lifted self)
+     (match self
+       [(lifted-for-enum-set var set-expr body)
+        (define set (gen-eval-lifted set-expr))
+        (define num-items (vector-length set))
+
+        (when (term? num-items)
+          (internal-error
+           (format "eval-lifted: Number of items in enum set should be concrete, was ~a"
+                   num-items)))
+
+        (for ([i num-items])
+          (when (enum-set-contains? set i)
+            (set-variable-value! var i)
+            (gen-eval-lifted body)))
+
+        (void)]))
+
+   (define (lifted-code self)
+     (match self
+       [(lifted-for-enum-set var set-expr body)
+        (list 'for-enum-set
+              (list (list (gen-lifted-code var)
+                          (gen-lifted-code set-expr)))
+              (gen-lifted-code body))]))
+
+   (define (fold-lifted self mapper reducer)
+     (match self
+       [(lifted-for-enum-set var set-expr body)
+        (reducer (mapper self)
+                 (gen-fold-lifted set-expr mapper reducer)
+                 (gen-fold-lifted body mapper reducer))]))]
+
+  #:methods gen:inferable
+  [(define/generic gen-force-type-helper force-type-helper)
+   (define (infer-type self)
+     (Void-type))
+
+   (define (force-type-helper self type mapping)
+     (assert-type type (Void-type) mapping "for-enum-set")
+     (match self
+       [(lifted-for-enum-set var set-expr body)
+        (let ([type-var (Type-var)])
+          (gen-force-type-helper set-expr (Set-type type-var) mapping)
+          (gen-force-type-helper var type-var mapping)
+          (gen-force-type-helper body (Void-type) mapping))]))
+
+   (define (mutable? self) #f)])
+
+(define (for-enum-set^ var set-expr body)
+  (if (or (lifted-error? var) (lifted-error? set-expr) (lifted-error? body))
+      (lifted-error)
+      (lifted-for-enum-set var set-expr body)))
 
 
 

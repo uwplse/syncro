@@ -12,7 +12,7 @@
  ;; Constants ;;
  ;;;;;;;;;;;;;;;
 
- (define NUM_NODES (Integer-type) 10)
+ (define NUM_NODES (Integer-type) 5)
  (define-enum-type Node NUM_NODES)
 
  ;;;;;;;;;;;;;;;;;;;;
@@ -61,7 +61,20 @@
         ;; Don't include the current node
         (enum-set-remove! result node)
         result)))
-   #:depends (graph))
+   #:depends (graph)
+   #:sketches
+   [(add-child!
+     (lambda (parent child)
+       ;; Fix things between parent and child
+       (??)
+       ;; Fix things for new aunt relations
+       (for-enum-set ([other-parent (vertex-parents graph child)])
+         (??))))
+    (remove-child!
+     (lambda (parent child)
+       (??)
+       (for-enum-set ([other-parent (vertex-parents graph child)])
+         (??))))])
 
  ;; Alternatively, a set theoretic definition:
  ;; parents + children +

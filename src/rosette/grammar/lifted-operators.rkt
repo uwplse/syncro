@@ -3,7 +3,7 @@
 (require "../enum-set.rkt" "../graph.rkt" "../operators.rkt" "../types.rkt"
           "language.rkt")
 
-(provide operator-info (struct-out special-form)
+(provide operator-info extra-operators (struct-out special-form)
          void^ vector-increment!^ vector-decrement!^ vector-set!^ vector-ref^
          enum-set-add!^ enum-set-remove!^ enum-set-contains?^
          equal?^ =^ <^ +^ -^ *^ #;/^)
@@ -30,6 +30,17 @@
 (define enum-set-contains?-type
   (Procedure-type (list (Set-type alpha-any) alpha-any)
                   (Boolean-type) #:read-index 0))
+(define graph-modify-type
+  (Procedure-type (list (DAG-type alpha-any) alpha-any alpha-any)
+                  (Void-type) #:write-index 0))
+(define graph-has-edge?-type
+  (Procedure-type (list (DAG-type alpha-any) alpha-any alpha-any)
+                  (Boolean-type) #:read-index 0))
+;; vertex-parent and vertex-children
+;; Not a Read procedure because you are not allowed to mutate the return value.
+(define graph-get-set-type
+  (Procedure-type (list (DAG-type alpha-any) alpha-any)
+                  (Set-type alpha-any)))
 
 (define-lifted
   [void void^ (Procedure-type '() (Void-type))]
@@ -43,10 +54,11 @@
    vector-ref^
    (Procedure-type (list (Vector-type alpha-idx alpha-any) alpha-idx)
                    alpha-any #:read-index 0)]
-  [has-edge?
-   has-edge?^
-   (Procedure-type (list (DAG-type alpha-any) alpha-any alpha-any)
-                   (Boolean-type) #:read-index 0)]
+  [add-edge! add-edge!^ graph-modify-type]
+  [remove-edge! remove-edge!^ graph-modify-type]
+  [has-edge? has-edge?^ graph-has-edge?-type]
+  [vertex-parents vertex-parents^ graph-get-set-type]
+  [vertex-children vertex-children^ graph-get-set-type]
   [enum-set-add! enum-set-add!^ enum-set-modify-type]
   [enum-set-remove! enum-set-remove!^ enum-set-modify-type]
   [enum-set-contains? enum-set-contains?^ enum-set-contains?-type]
@@ -54,10 +66,17 @@
   [= =^ cmp-type] [< <^ cmp-type]
   [+ +^ arith-type] [- -^ arith-type] [* *^ arith-type] #;[/ /^ arith-type])
 
+(display "add-edge: ") (displayln add-edge!^)
 
 (struct special-form (name constructor) #:transparent)
 (define operator-info
   (list void^ vector-increment!^ vector-decrement!^ vector-set!^ vector-ref^
-        enum-set-add!^ enum-set-remove!^ enum-set-contains?^ has-edge?^
+        enum-set-add!^ enum-set-remove!^ enum-set-contains?^
+        add-edge!^ remove-edge!^ has-edge?^
         equal?^ =^ <^ +^ -^ *^
         (special-form 'if if^) (special-form 'set! set!^)))
+
+;; Non constant time operators that can't be used in grammars but can
+;; be used in sketches
+(define extra-operators
+  (list vertex-parents^ vertex-children^))

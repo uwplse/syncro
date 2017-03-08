@@ -25,7 +25,8 @@
     (desugar prog expr) ...
     (set-program-initialization! prog (reverse (program-initialization prog)))
     (set-program-constants! prog (reverse (program-constants prog)))
-    (perform-synthesis prog (cmd-parse (current-command-line-arguments)))))
+    (pretty-print
+     (perform-synthesis prog (cmd-parse (current-command-line-arguments))))))
 
 ;; Desugars top-level expressions in the incremental form. Primarily
 ;; threads the prog variable through the other helper macros.
@@ -129,8 +130,7 @@
                 [fn-code 'val-exp]))
 
          ;; Add any sketches to the node
-         (begin
-           (define ancestor (get-node-for-update 'sketch-name))
+         (let ([ancestor (get-node-for-update 'sketch-name)])
            (send ancestor assert-update-arg-names! 'sketch-name
                  '(sketch-arg ...))
            (send node set-sketch! 'sketch-name '(begin sketch-expr ...)))
@@ -155,17 +155,11 @@
   (syntax-case stx ()
     [(_ ([i itr] ...) expr ...)
      (syntax/loc stx
-       (let ([sum 0])
-         (for ([i itr] ...)
-           (set! sum (+ sum (begin expr ...))))
-         sum))]))
+       (for/sum ([i itr] ...) expr ...))]))
 
 ;; NOTE: See caveat in src/rosette/util.rkt
 (define-syntax (my-for/or stx)
   (syntax-case stx ()
     [(_ ([i itr] ...) expr ...)
      (syntax/loc stx
-       (let ([val #f])
-         (for ([i itr] ...)
-           (set! val (or val (begin expr ...))))
-         val))]))
+       (for/or ([i itr] ...) expr ...))]))
