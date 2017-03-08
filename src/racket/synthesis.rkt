@@ -179,7 +179,7 @@
                  ,output-expr))
 
       (define (make-grammar-expr stmt expr temps guard type)
-        `(grammar terminal-info operator-info ,stmt ,expr
+        `(grammar terminal-info ,stmt ,expr
                   #:num-temps ,temps #:guard-depth ,guard #:type ,type
                   #:version ',(hash-ref options 'grammar-version)
                   #:choice-version ',(hash-ref options 'grammar-choice)))
@@ -188,9 +188,7 @@
         (if (send output-node has-sketch? update-name)
             (let ([sketch (send output-node get-sketch update-name)])
               `((define program
-                  (make-lifted terminal-info
-                               (append operator-info extra-operators)
-                               ',sketch))
+                  (make-lifted terminal-info all-operators ',sketch))
                 (time
                  (force-type program (Void-type)
                              (lambda (type)

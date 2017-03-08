@@ -4,8 +4,8 @@
 (require "../rosette/grammar/grammar.rkt"
          "../rosette/grammar/language.rkt"
          "../rosette/types.rkt" "../rosette/variable.rkt"
-         (only-in "../rosette/grammar/lifted-operators.rkt"
-                  special-form? operator-info))
+         (only-in "../rosette/grammar/grammar-operators.rkt"
+                  default-operators))
 
 (provide run-grammar-tests)
 
@@ -78,8 +78,8 @@
 
      ;; TODO: More removing polymorphism tests
      (test-case "Removing polymorphism"
-       (let ([new-ops (remove-polymorphism operator-info info)])
-         (check-equal? (for/set ([op new-ops] #:unless (special-form? op))
+       (let ([new-ops (remove-polymorphism default-operators info)])
+         (check-equal? (for/set ([op new-ops] #:when (variable? op))
                          (variable-symbol op))
                        (set 'equal? 'void 'vector-ref 'vector-set!
                             'vector-increment! 'vector-decrement!
@@ -176,7 +176,8 @@
           (match-define (list grammar-version choice-version test-medium?) config)
           (printf "Testing the ~a grammar with choice version ~a~%"
                   grammar-version choice-version)
-          (define simple-grmr (grammar info operator-info 2 2
+          (clear-state!)
+          (define simple-grmr (grammar info 2 2
                                        #:version grammar-version
                                        #:choice-version choice-version))
 
@@ -192,7 +193,8 @@
           (check-not-in-grammar simple-grmr (prog->sexp medium-prog5 2))
 
           (when test-medium?
-            (define medium-grmr (grammar info operator-info 3 4
+            (clear-state!)
+            (define medium-grmr (grammar info 3 4
                                          #:version grammar-version
                                          #:choice-version choice-version))
             (check-in-grammar medium-grmr (prog->sexp medium-prog5 3))))))

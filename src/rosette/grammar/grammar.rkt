@@ -2,7 +2,7 @@
 
 (require racket/syntax racket/generator)
 
-(require "choice.rkt" "grammar-synthax-deep.rkt"
+(require "choice.rkt" "grammar-operators.rkt"
          "lifted-operators.rkt" "language.rkt"
          "../types.rkt" "../variable.rkt")
 
@@ -16,22 +16,24 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; terminal-info: A Terminal-Info object
-;; operator-info: A list of operators to use
 ;; num-stmts:     Number of statements to allow
 ;; depth:         Expression depth to allow
 ;; #:num-temps:   Number of temporary variables to add to the sketch
 ;; #:guard-depth: Depth of the guard expression. If this is #f, no
 ;;                guard is inserted.
 ;; #:type:        The output type of the expression to be generated.
+;; #:operators:   A list of operators to use. Each operator is either
+;;                a grammar-operator? or a symbol (like 'set!)
 ;; #:version and #:choice-version are settings determining which
 ;; grammar to use and how to use it.
 ;; Note that the num-stmts and depth do not have exact meanings, they
 ;; are simply used as costs. (For example, despite an if having
 ;; multiple statements inside it, it counts as only one statement.)
-(define (grammar terminal-info operator-info num-stmts depth
+(define (grammar terminal-info num-stmts depth
                  #:num-temps [num-temps 0]
                  #:guard-depth [guard-depth 0]
                  #:type [type (Void-type)]
+                 #:operators [operator-info default-operators]
                  #:version [version 'basic]
                  #:choice-version [choice-version 'basic])
   (define operators (remove-polymorphism operator-info terminal-info))
@@ -57,7 +59,7 @@
                             #:guard-depth guard-depth
                             #:type type
                             #:cache? #f)]
-          ['synthax-deep
+          #;['synthax-deep
            (match (list num-stmts depth)
              ['(2 2) (grammar-synthax-deep22 terminal-info)]
              ['(3 3) (grammar-synthax-deep33 terminal-info)]
@@ -77,7 +79,17 @@
                          #:guard-depth [guard-depth 0]
                          #:type [start-type (Void-type)]
                          #:cache? cache?)
-  
+  (define orig-params
+    (hash 'terminal-info terminal-info
+          'operators operators
+          'num-stmts num-stmts
+          'expr-depth expr-depth
+          'chooser chooser
+          'num-temps num-temps
+          'guard-depth guard-depth
+          'type start-type
+          'cache? cache?))
+
   (define (my-choose* . args)
     (send chooser choose* args #f))
 
@@ -116,19 +128,6 @@
                (when (and remove? result)
                  (hash-set! lookup-cache key (cdr cache-val-list)))
                result))))))
-
-  ;; We only want if to be used for statements, not expressions
-  (define if-type
-    (Procedure-type (list (Boolean-type) (Void-type) (Void-type))
-                    (Void-type)))
-  
-  (define (make-subexp-if cache desired-type mutable? depth)
-    (and (not mutable?)
-         ;; Forces us to only use if at the top level
-         (= depth expr-depth)
-         (let ([result (make-subexp-helper if-type cache
-                                           desired-type mutable? depth)])
-           (and result (apply if^ result)))))
   
   (define (make-subexp-set! cache desired-type mutable? depth)
     (and (unify-types (Void-type) desired-type)
@@ -151,16 +150,11 @@
                        [subexp (cached-grammar type #:mutable? #f (- depth 1)
                                                cache cache #f)])
                   (and subexp (set!^ variable subexp)))))))
-
-  (define (make-subexp-proc proc cache desired-type mutable? depth)
-    (define result
-      (make-subexp-helper (variable-type proc) cache
-                          desired-type mutable? depth))
-    (and result (apply proc result)))
   
-  (define (make-subexp-helper operator-type cache desired-type mutable? depth)
-    (let ([domain-pairs (get-domain-given-range-with-mutability
-                         operator-type desired-type mutable?)]
+  (define (make-subexp-operator operator cache desired-type mutable? depth)
+    (let ([domain-pairs
+           (and (can-use-operator? operator orig-params depth desired-type)
+                (operator-domain-with-mutability operator desired-type mutable?))]
           [cache-copy (and cache? (hash-copy cache))]
           [mapping (make-type-map)])
       
@@ -184,7 +178,9 @@
                    [rest (and first (special-andmap fn (cdr lst)))])
               (and rest (cons first rest)))))
 
-      (and domain-pairs (special-andmap get-or-make-subexp domain-pairs))))
+      (let* ([result (and domain-pairs
+                          (special-andmap get-or-make-subexp domain-pairs))])
+        (and result (operator-make-lifted operator result)))))
 
   ;; special-andmap above creates weird symbolic terms because of
   ;; the complicated recursion. An alternative below.
@@ -193,14 +189,15 @@
   ;; (define result
   ;;   (and domain-pairs (map get-or-make-subexp domain-pairs)))
   ;; (and result (not (member #f result)) result)))
+  (define special-form->proc
+    (hash 'set! make-subexp-set!))
   
   (define (make-subexp operator cache desired-type mutable? depth)
-    (cond [(not (special-form? operator))
-           (make-subexp-proc operator cache desired-type mutable? depth)]
-          [(equal? (special-form-name operator) 'if)
-           (make-subexp-if cache desired-type mutable? depth)]
-          [(equal? (special-form-name operator) 'set!)
-           (make-subexp-set! cache desired-type mutable? depth)]
+    (cond [(grammar-operator? operator)
+           (make-subexp-operator operator cache desired-type mutable? depth)]
+          [(hash-has-key? special-form->proc operator)
+           (define proc (hash-ref special-form->proc operator))
+           (proc cache desired-type mutable? depth)]
           [else
            (error (format "Unknown special form: ~a" operator))]))
 
@@ -423,6 +420,11 @@
 ;; Remove polymorphism ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; TODO: Would not notice bound variables in a procedure type.
+(define (check-no-polymorphism type msg)
+  (unless (null? (get-free-type-vars type))
+    (error (format "Type ~a should not have type variables! ~a" type msg))))
+
 ;; Polymorphism during grammar generation is really annoying because
 ;; it means you need to have a symbolic unification algorithm. Rather
 ;; than doing that, we infer all possible concrete types that could
@@ -443,8 +445,10 @@
   ;; Split into two phases -- first, construct all types that could
   ;; possibly arise, and second, specialize procedure types in all
   ;; the ways possible.
-  (define-values (specials operators)
-    (partition special-form? operator-info))
+  ;; Note that specials includes grammar-operators that are not
+  ;; vanilla lifted procedures, such as if.
+  (define-values (operators specials)
+    (partition variable? operator-info))
 
   (define init-types
     ;; set! can create a void type if necessary
@@ -453,6 +457,11 @@
     (cons (Void-type)
           (map variable-type
                (send terminal-info all-terminals))))
+
+  ;; Assumption: All of the types in init-types do not have any type
+  ;; variables in them.
+  (for ([type init-types])
+    (check-no-polymorphism type "Terminal types should not be polymorphic."))
 
   (define all-types-set (get-all-types operators init-types))
   (define new-operators (specialize-operators operators all-types-set))
@@ -499,21 +508,49 @@
                   [elem seq])
              (yield (cons elem sublst)))))))
 
-  (let* ([proc-type (variable-type op)]
-         [domain (Procedure-domain-types proc-type)]
-         [range (Procedure-range-type proc-type)]
-         [ridx (Procedure-read-index proc-type)]
-         [widx (Procedure-write-index proc-type)])
+  (define (try-apply-proc op types)
+    (let* ([proc-type (variable-type op)]
+           [domain (Procedure-domain-types proc-type)]
+           [range (Procedure-range-type proc-type)]
+           [ridx (Procedure-read-index proc-type)]
+           [widx (Procedure-write-index proc-type)])
+      (in-generator
+       (for ([possible-domain (n-product types (length domain))])
+         (define mapping (make-type-map))
+         (define compatible?
+           (for/and ([t1 domain] [t2 possible-domain])
+             (unify t1 t2 mapping)))
+         (when compatible?
+           (let* ([new-range (replace-type-vars range mapping)]
+                  [result
+                   (Procedure-type possible-domain new-range
+                                   #:read-index ridx #:write-index widx)])
+             ;; How do we know at this point that polymorphism is gone?
+             ;; The types in types do not have polymorphism, and we
+             ;; assume that applying a procedure to non-polymorphic
+             ;; types results in a non-polymorphic type (it wouldn't
+             ;; make sense to introduce a type variable in the range).
+             (check-no-polymorphism result "Procedures should not introduce polymorphism in the range.")
+             (yield result)))))))
+
+  (define (try-apply-get-field types)
     (in-generator
-     (for ([possible-domain (n-product types (length domain))])
-       (define mapping (make-type-map))
-       (define compatible?
-         (for/and ([t1 domain] [t2 possible-domain])
-           (unify t1 t2 mapping)))
-       (when compatible?
-         (define new-range (replace-type-vars range mapping))
-         (yield (Procedure-type possible-domain new-range
-                                #:read-index ridx #:write-index widx)))))))
+     (for ([record-type types] #:when (Record-type? record-type))
+       (for ([field-type (Record-field-types record-type)])
+         (check-no-polymorphism record-type "Internal error: Should be impossible.")
+         (check-no-polymorphism field-type "Internal error: Should be impossible.")
+         (yield (Procedure-type (list record-type) field-type))))))
+
+  (define (try-apply-set-field! types)
+    (in-generator
+     (for ([record-type types] #:when (Record-type? record-type))
+       (for ([field-type (Record-field-types record-type)])
+         (check-no-polymorphism record-type "Internal error: Should be impossible.")
+         (check-no-polymorphism field-type "Internal error: Should be impossible.")
+         (yield (Procedure-type (list record-type field-type) (Void-type)))))))
+
+  (define proc try-apply-proc)
+  (proc op types))
 
 ;;;;;;;;;;;;;;;
 ;; Terminals ;;

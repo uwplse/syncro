@@ -1,7 +1,7 @@
 #lang rosette
 
 (require racket/generator)
-(require "grammar.rkt" "language.rkt" "lifted-operators.rkt" "../util.rkt"
+(require "grammar.rkt" "language.rkt" "../util.rkt"
          "../../../../synapse/opsyn/engine/search.rkt"
          "../../../../synapse/opsyn/engine/metasketch.rkt")
 
@@ -96,7 +96,7 @@
        ;; Generate the symbolic program, collecting any generated assertions
        (define-values (sym-prog assertions)
          (with-asserts
-            (grammar terminal-info operator-info num-stmts expr-depth
+            (grammar terminal-info num-stmts expr-depth
                      #:num-temps 0 #:guard-depth guard-depth
                      #:version (hash-ref options 'grammar-version)
                      #:choice-version (hash-ref options 'grammar-choice))))

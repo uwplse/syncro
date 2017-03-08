@@ -1,6 +1,6 @@
 #lang rosette
 
-(require "language.rkt" "lifted-operators.rkt"
+(require "language.rkt"
          "../types.rkt" "../variable.rkt" "../util.rkt"
          racket/serialize)
 
@@ -88,12 +88,12 @@
 ;; Note: The documentation suggests that map does process its arguments in
 ;; order, so I rely on it here. This is important for define.
 ;; TODO: Need to handle mutability
-(define (make-lifted terminal-info operator-info code)
+(define (make-lifted terminal-info operators code)
   (define id->operator
-    (for/hash ([op (filter (negate special-form?) operator-info)])
+    (for/hash ([op operators] #:when (and (lifted? op) (variable? op)))
       (values (variable-symbol op) op)))
 
-  (define recurse (curry make-lifted terminal-info operator-info))
+  (define recurse (curry make-lifted terminal-info operators))
   
   (match code
     ;; Special forms

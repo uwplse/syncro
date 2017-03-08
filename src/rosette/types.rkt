@@ -23,6 +23,8 @@
              [Vector-Type-output-type Vector-output-type]
              [Set-Type-content-type Set-content-type]
              [DAG-Type-vertex-type DAG-vertex-type]
+             [Record-Type-fields Record-fields]
+             [Record-Type-field-types Record-field-types]
              [Procedure-Type-domain-types Procedure-domain-types]
              [Procedure-Type-range-type Procedure-range-type]
              [Procedure-Type-read-index Procedure-read-index]
@@ -39,7 +41,7 @@
  ;; Higher level functions
  unify-types apply-type get-domain-given-range union-types
  ;; Lower level functions (for constraint generation)
- make-type-map unify make-fresh replace-type-vars
+ make-type-map unify make-fresh replace-type-vars get-free-type-vars
  has-binding? get-binding add-type-binding!
 
  ;; Useful functions for mutability analysis
