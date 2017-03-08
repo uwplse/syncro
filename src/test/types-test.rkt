@@ -26,6 +26,7 @@
           [idx (Index-type)]
           [bool (Boolean-type)]
           [int (Integer-type)]
+          [bv5 (Bitvector-type 5)]
           [vec (Vector-type 10 (Boolean-type))]
           [sett (Set-type (Any-type))]
           [dag (DAG-type (Any-type))]
@@ -35,7 +36,7 @@
           [wproc (Procedure-type (list (Vector-type 3 int)) int #:write-index 0)]
           [err (Error-type)]
           [void (Void-type)]
-          [all-no-enum-var (list any bot idx bool int vec sett dag rec
+          [all-no-enum-var (list any bot idx bool int bv5 vec sett dag rec
                                  proc rproc wproc err void)]
           [enum (Enum-type 'Word 12)]
           [set-enum (Set-type enum)]
@@ -58,6 +59,7 @@
        (check-equal? idx (Index-type))
        (check-equal? bool (Vector-output-type vec))
        (check-equal? int (Vector-index-type vec))
+       (check-equal? bv5 (Bitvector-type 5))
        (check-equal? vec (Vector-type 10 bool))
        (check-equal? sett (Set-type (Any-type)))
        (check-equal? dag (DAG-type (Any-type)))
@@ -89,6 +91,7 @@
        (check-equal? (get-parent idx) any)
        (check-equal? (get-parent bool) any)
        (check-equal? (get-parent int) idx)
+       (check-equal? (get-parent bv5) int)
        (check-equal? (get-parent vec) any)
        (check-equal? (get-parent sett) any)
        (check-equal? (get-parent dag) any)
@@ -116,6 +119,7 @@
                Boolean-type? bool
                Index-type? idx
                Integer-type? int
+               Bitvector-type? bv5
                Enum-type? enum
                Vector-type? vec
                Set-type? sett
@@ -128,8 +132,9 @@
        (define expected-true-cases
          (hash Bottom-type? (set bot)
                Boolean-type? (set bot bool)
-               Index-type? (set bot idx int enum)
-               Integer-type? (set bot int)
+               Index-type? (set bot idx int bv5 enum)
+               Integer-type? (set bot int bv5)
+               Bitvector-type? (set bot bv5)
                Enum-type? (set bot enum)
                Vector-type? (set bot vec vec-var)
                Set-type? (set bot sett set-enum)
@@ -159,6 +164,9 @@
        
        (check-true (is-supertype? rproc wproc))
        (check-true (is-supertype? wproc rproc))
+
+       (check-false (is-supertype? bv5 (Bitvector-type 10)))
+       (check-false (is-supertype? (Bitvector-type 10) bv5))
 
        (check-true (symbolic? int))
        (check-false (has-setters? int))

@@ -5,14 +5,16 @@
 
 (provide
  ;; Constructors
- Any-type Bottom-type Index-type Boolean-type Integer-type Enum-type
+ Any-type Bottom-type Boolean-type
+ Index-type Integer-type Bitvector-type Enum-type
  Vector-type Set-type DAG-type Record-type define-record Procedure-type
  Error-type Void-type Type-var
  ;; The repr method for type variables must use Type-Var
  Type-Var
 
  ;; Predicates on types
- Any-type? Bottom-type? Boolean-type? Index-type? Integer-type? Enum-type?
+ Any-type? Bottom-type? Boolean-type?
+ Index-type? Integer-type? Bitvector-type? Enum-type?
  Vector-type? Set-type? DAG-type? Record-type? Procedure-type?
  Error-type? Void-type? (rename-out [Type-Var? Type-var?])
 
@@ -23,7 +25,9 @@
              [Set-Type-content-type Set-content-type]
              [DAG-Type-vertex-type DAG-vertex-type]
              [Procedure-Type-domain-types Procedure-domain-types]
-             [Procedure-Type-range-type Procedure-range-type])
+             [Procedure-Type-range-type Procedure-range-type]
+             [Procedure-Type-read-index Procedure-read-index]
+             [Procedure-Type-write-index Procedure-write-index])
  get-record-field-type
 
  ;; Generic function stuff
@@ -58,7 +62,8 @@
 (make-type-predicates
  [Any-Type? Any-type?] [Bottom-Type? Bottom-type?]
  [Boolean-Type? Boolean-type?] [Index-Type? Index-type?]
- [Integer-Type? Integer-type?] [Enum-Type? Enum-type?]
+ [Integer-Type? Integer-type?] [Bitvector-Type? Bitvector-type?]
+ [Enum-Type? Enum-type?]
  [Vector-Type? Vector-type?] [Set-Type? Set-type?] [DAG-Type? DAG-type?]
  [Record-Type? Record-type?] [Procedure-Type? Procedure-type?]
  [Error-Type? Error-type?] [Void-Type? Void-type?] )
@@ -437,6 +442,101 @@
                            update-type))]))])
 
 (define (Integer-type) (Integer-Type))
+
+(struct Bitvector-Type Integer-Type (bits) #:transparent
+  #:methods gen:Type
+  [(define (get-parent self)
+     (struct-copy Integer-Type self))
+
+   (define (typeof-predicate self) Bitvector-Type?)
+
+   (define (is-supertype? self other-type)
+     (or (Bottom-Type? other-type)
+         (and (Bitvector-Type? other-type)
+              (= (Bitvector-Type-bits self)
+                 (Bitvector-Type-bits other-type)))))
+
+   (define (repr self)
+     (list 'Bitvector-type (Bitvector-Type-bits self)))
+
+   (define (unify-helper self other-type mapping)
+      (unless (and (not (term? other-type)) (Bitvector-Type? other-type))
+        (internal-error "unify-helper requirement not satisfied"))
+      (and (= (Bitvector-Type-bits self) (Bitvector-Type-bits other-type))
+           other-type))]
+
+  #:methods gen:symbolic
+  [(define (has-setters? self) #f)
+
+   (define (symbolic-code self var varset-name)
+     (add-var-code var #`(bitvector #,(Bitvector-Type-bits self)) varset-name))
+
+   (define (generate-update-arg-names self update-type)
+     (cond [(equal? update-type 'assign)
+            (list (gensym 'bv-val))]
+
+           [(member update-type '(increment decrement))
+            (list)]
+
+           [else
+            (error (format "Unknown Bitvector update type: ~a~%"
+                           update-type))]))
+
+   (define (update-code self update-type)
+     (define bits (Bitvector-Type-bits self))
+     (cond [(equal? update-type 'assign)
+            (lambda (var val)
+              #`(set! #,var #,val))]
+
+           [(equal? update-type 'increment)
+            (lambda (var)
+              #`(set! #,var (bvadd #,var (bv 1 #,bits))))]
+
+           [(equal? update-type 'decrement)
+            (lambda (var)
+              #`(set! #,var (bvsub #,var (bv 1 #,bits))))]
+
+           [else
+            (error (format "Unknown Bitvector update type: ~a~%"
+                           update-type))]))
+
+   (define (old-values-code self update-type var . update-args)
+     (define old-val-tmp (gensym 'old-bv-value))
+     (cond [(member update-type '(assign increment decrement))
+            (list #`(define #,old-val-tmp #,var)
+                    (list old-val-tmp)
+                    (list self))]
+
+           [else
+            (error (format "Unknown Bitvector update type: ~a~%"
+                           update-type))]))
+
+   (define (symbolic-update-code self update-type var update-args varset-name)
+     (define bits (Bitvector-Type-bits self))
+     (cond [(equal? update-type 'assign)
+            (match-define (list val-tmp) update-args)
+            (list (add-var-code val-tmp #`(bitvector #,bits) varset-name)
+                  #`(set! #,var #,val-tmp)
+                  (list self))]
+
+           [(equal? update-type 'increment)
+            (assert (null? update-args))
+            (list #'(void)
+                  #`(set! #,var (bvadd #,var (bv 1 #,bits)))
+                  (list))]
+
+           [(equal? update-type 'decrement)
+            (assert (null? update-args))
+            (list #'(void)
+                  #`(set! #,var (bvsub #,var (bv 1 #,bits)))
+                  (list))]
+
+           [else
+            (error (format "Unknown Bitvector update type: ~a~%"
+                           update-type))]))])
+
+(define (Bitvector-type [bits (current-bitwidth)])
+  (Bitvector-Type bits))
 
 (struct Enum-Type Index-Type (name num-items)
   #:methods gen:Type
