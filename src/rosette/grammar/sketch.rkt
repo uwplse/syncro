@@ -90,7 +90,7 @@
 ;; TODO: Need to handle mutability
 (define (make-lifted terminal-info operators code)
   (define id->operator
-    (for/hash ([op operators] #:when (and (lifted? op) (variable? op)))
+    (for/hash ([op operators] #:when (lifted-variable? op))
       (values (variable-symbol op) op)))
 
   (define recurse (curry make-lifted terminal-info operators))

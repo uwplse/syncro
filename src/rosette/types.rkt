@@ -734,10 +734,7 @@
    (define (generate-update-arg-names self update-type)
      (define output-type (Vector-Type-output-type self))
      (cond [(equal? update-type 'assign)
-            (if (gen-has-setters? output-type)
-                (cons (gensym 'index)
-                      (gen-generate-update-arg-names output-type update-type))
-                (list (gensym 'index) (gensym 'val)))]
+            (list (gensym 'index) (gensym 'val))]
 
            [else
             (error (format "Unknown Vector update type: ~a~%"
@@ -746,15 +743,8 @@
    (define (update-code self update-type)
      (define output-type (Vector-Type-output-type self))
      (cond [(equal? update-type 'assign)
-            (if (gen-has-setters? output-type)
-
-                (lambda (vect index . args)
-                  (apply (gen-update-code output-type update-type)
-                         #`(vector-ref #,vect #,index)
-                         args))
-
-                (lambda (vect index value)
-                  #`(vector-set! #,vect #,index #,value)))]
+            (lambda (vect index value)
+              #`(vector-set! #,vect #,index #,value))]
 
            [else
             (error (format "Unknown Vector update type: ~a~%"
@@ -763,18 +753,11 @@
    (define (old-values-code self update-type var . update-args)
      (define output-type (Vector-Type-output-type self))
      (cond [(equal? update-type 'assign)
-            (if (gen-has-setters? output-type)
-                (apply gen-old-values-code
-                       output-type
-                       update-type
-                       #`(vector-ref #,var #,(car update-args))
-                       (cdr update-args))
-
-                (let ([old-val-tmp (gensym 'old-value)])
-                  (list
-                   #`(define #,old-val-tmp (vector-ref #,var #,(car update-args)))
-                   (list old-val-tmp)
-                   (list output-type))))]
+            (let ([old-val-tmp (gensym 'old-value)])
+              (list
+               #`(define #,old-val-tmp (vector-ref #,var #,(car update-args)))
+               (list old-val-tmp)
+               (list output-type)))]
            
            [else
             (error (format "Unknown Vector update type: ~a~%"
@@ -786,27 +769,7 @@
        (error "Need integer length for vector -- symbolic-update-code"))
      
      (define output-type (Vector-Type-output-type self))
-     (cond [(and (equal? update-type 'assign)
-                 (gen-has-setters? output-type))
-            (define tmp-index (car update-args))
-            (match-let ([(list output-defns output-update output-update-symbolic-vars-types)
-                          (gen-symbolic-update-code
-                           output-type
-                           update-type
-                           #`(vector-ref #,var #,tmp-index)
-                           (cdr update-args)
-                           varset-name)])
-              (list
-               ;; Create the symbolic index into the vector
-               #`(begin (define #,tmp-index
-                          (make-symbolic (Enum-type 'vec-index #,len)
-                                         #,varset-name))
-                        #,output-defns)
-               ;; Update the mutable structure at the specified symbolic index
-               output-update
-               (cons (Vector-Type-index-type self) output-update-symbolic-vars-types)))]
-
-           [(equal? update-type 'assign)
+     (cond [(equal? update-type 'assign)
             (match-define (list tmp-index tmp-val) update-args)
             (list
              ;; Create the symbolic index into the vector
@@ -1179,10 +1142,10 @@
    (define (has-setters? self) #t)
    
    (define (make-symbolic self varset)
-     ((Record-Type-constructor self)
+     (make-record
       (for/list ([field-name (Record-Type-fields self)]
                  [field-type (Record-Type-field-types self)])
-        (gen-make-symbolic field-type varset))))
+        (cons field-name (gen-make-symbolic field-type varset)))))
 
    ;; TODO: We assume that the updates are of the form
    ;; record.field = value  // value is symbolically generated
@@ -1251,7 +1214,7 @@
          (syntax/loc stx
            (begin
              (define (name . args)
-               (unless (= (length args) num-args)
+               (unless (= (length args) num-stx)
                  (error (format "Incorrect number of arguments to ~a: ~a expected, got ~a~%  Given arguments: ~a"
                                 'name num-stx (length args) args)))
                (make-record (for/list ([f '(field-name ...)] [arg args])

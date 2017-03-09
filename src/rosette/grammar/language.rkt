@@ -13,7 +13,9 @@
  define-expr^ set!^
  for-enum-set^
  lifted-error lifted-error?
- make-lifted-variable update-lifted-variable
+
+ ;; Functions for lifted variables in particular
+ lifted-variable? make-lifted-variable update-lifted-variable
 
  ;; Operations on lifted programs
  eval-lifted lifted-code fold-lifted infer-type mutable? force-type-helper
@@ -404,7 +406,7 @@
 
    (define (force-type-helper self type mapping)
      (when (union? self)
-       (internal-error (format "set-field!: Should not be a union: ~a" self)))
+       (internal-error (format "get-field: Should not be a union: ~a" self)))
      (match self
        [(lifted-get-field record fname)
         (gen-force-type-helper record (Record-type (list fname) (list type))
@@ -499,7 +501,7 @@
              field-name)))
   (if (lifted-error? record)
       (lifted-error)
-      (lifted-set-field! record field-name)))
+      (lifted-set-field! record field-name value)))
 
 
 

@@ -15,7 +15,7 @@
     (if (null? assocs)
         result
         (loop (cdr assocs)
-              (rhash-set result (caar assocs) (cdar assoc))))))
+              (rhash-set result (caar assocs) (cdar assocs))))))
 
 (define (rhash-has-key? rhash key)
   (for*/all ([rhash rhash]

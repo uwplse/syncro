@@ -1,19 +1,24 @@
 #lang racket
 
 (require (for-syntax syntax/parse)
+         ;; Program parsing and synthesis framework
          "cmd-parse.rkt"
          "dependency-graph.rkt"
          "program.rkt"
          "synthesis.rkt"
+         "../rosette/variable.rkt"
+
+         ;; New data structures, operators, and types for the user
          "../rosette/enum-set.rkt"
          "../rosette/graph.rkt"
          "../rosette/operators.rkt"
-         "../rosette/types.rkt"
-         "../rosette/variable.rkt")
+         "../rosette/record.rkt"
+         "../rosette/types.rkt")
 
 (provide (all-from-out "../rosette/enum-set.rkt") ;; TODO: Remove the "enum-"
          (all-from-out "../rosette/graph.rkt")
          (all-from-out "../rosette/operators.rkt")
+         (all-from-out "../rosette/record.rkt")
          (except-out (all-from-out "../rosette/types.rkt") Enum-type)
          incremental algorithm my-for/sum my-for/or)
 

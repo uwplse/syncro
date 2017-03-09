@@ -441,22 +441,13 @@
 ;; enum-set functions.)
 ;; TODO: Also look at mutability, for additional filtering. Not needed
 ;; for correctness but would help performance.
-(define (remove-polymorphism operator-info terminal-info)
+(define (remove-polymorphism operators terminal-info)
   ;; Split into two phases -- first, construct all types that could
   ;; possibly arise, and second, specialize procedure types in all
   ;; the ways possible.
-  ;; Note that specials includes grammar-operators that are not
-  ;; vanilla lifted procedures, such as if.
-  (define-values (operators specials)
-    (partition variable? operator-info))
 
   (define init-types
-    ;; set! can create a void type if necessary
-    ;; if can only create void types
-    ;; TODO: get-field and set-field! can create new types
-    (cons (Void-type)
-          (map variable-type
-               (send terminal-info all-terminals))))
+    (map variable-type (send terminal-info all-terminals)))
 
   ;; Assumption: All of the types in init-types do not have any type
   ;; variables in them.
@@ -464,15 +455,14 @@
     (check-no-polymorphism type "Terminal types should not be polymorphic."))
 
   (define all-types-set (get-all-types operators init-types))
-  (define new-operators (specialize-operators operators all-types-set))
-  (append specials new-operators))
+  (specialize-operators operators all-types-set))
 
 (define (get-all-types operators types)
   (let loop ([types-set (for/set ([t types]) t)])
     (define new-types-set
       (for*/set ([op operators]
-                 [proc-type (try-apply-op op types-set)])
-        (Procedure-range-type proc-type)))
+                 [(_ range-type) (try-apply-op op types-set)])
+        range-type))
 
     (if (subset? new-types-set types-set)
         types-set
@@ -481,16 +471,18 @@
 (define (specialize-operators operators types)
   (set->list
    (for*/set ([op operators]
-              [proc-type (try-apply-op op types)])
-     (update-lifted-variable op #:type proc-type))))
+              [(new-op _) (try-apply-op op types)])
+     new-op)))
 
 ;; op: Lifted operator whose type is a Procedure-type.
 ;; types: A sequence of non-polymorphic types.
 ;; Returns a sequence (that wraps a generator).
-;; Each element of the sequence is an instantiation of the type of op
-;; that corresponds to a possible application of op to values whose
-;; types are in types. (That is, each element is a Procedure-Type with
-;; no type varables in it.)
+;; Each element of the sequence is a new operator that corresponds to
+;; a possible application of op to values whose types are in types. In
+;; particular, the new operator must *not* use unification with type
+;; variables in its operator-domain-with-mutability implementation.
+;; For procedures, this means that the type is a Procedure-Type that
+;; does not contain any type variables (free or bound).
 ;; This sequence could contain duplicates.
 ;; Stupid algorithm: Try all combinations of types. Can definitely
 ;; improve this if necessary -- if we use functional type maps, then
@@ -515,6 +507,7 @@
            [ridx (Procedure-read-index proc-type)]
            [widx (Procedure-write-index proc-type)])
       (in-generator
+       #:arity 2
        (for ([possible-domain (n-product types (length domain))])
          (define mapping (make-type-map))
          (define compatible?
@@ -531,26 +524,47 @@
              ;; types results in a non-polymorphic type (it wouldn't
              ;; make sense to introduce a type variable in the range).
              (check-no-polymorphism result "Procedures should not introduce polymorphism in the range.")
-             (yield result)))))))
+             (yield (update-lifted-variable op #:type result) new-range)))))))
 
   (define (try-apply-get-field types)
     (in-generator
+     #:arity 2
      (for ([record-type types] #:when (Record-type? record-type))
-       (for ([field-type (Record-field-types record-type)])
+       (for ([field-name (Record-fields record-type)]
+             [field-type (Record-field-types record-type)])
          (check-no-polymorphism record-type "Internal error: Should be impossible.")
          (check-no-polymorphism field-type "Internal error: Should be impossible.")
-         (yield (Procedure-type (list record-type) field-type))))))
+         (yield
+          (make-operator
+           'get-field
+           (Procedure-type (list record-type) field-type #:read-index 0)
+           (lambda (rec) (get-field^ rec field-name)))
+          field-type)))))
 
   (define (try-apply-set-field! types)
     (in-generator
+     #:arity 2
      (for ([record-type types] #:when (Record-type? record-type))
-       (for ([field-type (Record-field-types record-type)])
+       (for ([field-name (Record-fields record-type)]
+             [field-type (Record-field-types record-type)])
          (check-no-polymorphism record-type "Internal error: Should be impossible.")
          (check-no-polymorphism field-type "Internal error: Should be impossible.")
-         (yield (Procedure-type (list record-type field-type) (Void-type)))))))
+         (yield
+          (make-operator
+           'set-field!
+           (Procedure-type (list record-type field-type) (Void-type)
+                           #:write-index 0)
+           (lambda (rec val) (set-field!^ rec field-name val)))
+          (Void-type))))))
 
-  (define proc try-apply-proc)
-  (proc op types))
+  (if (lifted-variable? op)
+      (try-apply-proc op types)
+      (match (if (grammar-operator? op) (operator-id op) op)
+        ['get-field (try-apply-get-field types)]
+        ['set-field! (try-apply-set-field! types)]
+        ['if (in-generator #:arity 2 (yield op (Void-type)))]
+        ['set! (in-generator #:arity 2 (yield op (Void-type)))]
+        [_ (error (format "try-apply-op: Unknown operator -- ~a" op))])))
 
 ;;;;;;;;;;;;;;;
 ;; Terminals ;;
