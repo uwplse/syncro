@@ -25,18 +25,12 @@
        (when (< (get-field (vector-ref info student) 'grade) 7)
          (enum-set-add! result student)))
      result)
-   #:depends (info)
-   #:sketches
-   [(assign-info!
-     (lambda (student new-info)
-       (if (??)
-           (enum-set-add! failing-students student)
-           (enum-set-remove! failing-students student))))])
+   #:depends (info))
 
  ;; Expected result:
  ;; (if (< (get-field new-value 'grade) 7)
  ;;     (enum-set-add! failing-students index)
- ;;     (enum-set-remove! failing-students index)
+ ;;     (enum-set-remove! failing-students index))
 
  (algorithm
   (displayln (enum-set-size passing-students)) ;; expect 0
