@@ -7,7 +7,7 @@
 
 (provide
  ;; Constructors
- Any-type Bottom-type Sum-type define-alias-type define-base-type
+ Any-type Bottom-type Sum-type define-type-alias define-base-type
  Boolean-type Index-type Integer-type Bitvector-type Enum-type
  Vector-type Set-type Map-type DAG-type Record-type define-record
  Procedure-type Error-type Void-type Type-var
@@ -363,7 +363,9 @@
            other-type))]
 
   #:methods gen:symbolic
-  [(define (make-symbolic self varset)
+  [(define/generic gen-make-symbolic make-symbolic)
+
+   (define (make-symbolic self varset)
      (gen-make-symbolic (Alias-Type-base-type self) varset))])
 
 (define (Alias-type id base-type)
@@ -1438,7 +1440,7 @@
       attribute)))
   
 
-(define (Record-type constructor-name fields types const?)
+(define (Record-type constructor-name fields types [const? #f])
   ;; No matter what symbolic stuff we do, it should always be the
   ;; case that the fields are (possibly symbolic) Racket symbols.
   ;; Use internal-error instead of maybe-internal-error.
@@ -1448,7 +1450,8 @@
   (unless (equal? fields (remove-duplicates fields))
     (maybe-internal-error
      (format "Records cannot have duplicate fields, given ~a" fields)))
-  (Record-Type constructor-name fields types const?))
+  (Record-Type constructor-name fields types
+               (or const? (build-list (length fields) (const #f)))))
 
 (define-syntax (define-record stx)
   (define-splicing-syntax-class maybe-const
