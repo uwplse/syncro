@@ -1154,9 +1154,9 @@
    (define (make-symbolic self varset)
      (match self
        [(Map-Type capacity input-type output-type)
-        (define (sym-input) (gen-make-symbolic input-type varset))
-        (define (sym-output) (gen-make-symbolic output-type varset))
-        (make-symbolic-map capacity sym-input sym-output varset)]))])
+        (define (sym-input x) (gen-make-symbolic input-type varset))
+        (define (sym-output x) (gen-make-symbolic output-type varset))
+        (build-map capacity sym-input sym-output varset)]))])
 
 (define (Map-type capacity input-type output-type)
   (unless (or (equal? capacity 'unknown)

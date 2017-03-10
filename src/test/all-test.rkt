@@ -5,6 +5,7 @@
          "variable-test.rkt"
          "enum-set-test.rkt"
          "map-test.rkt"
+         "transactional-map-test.rkt"
          "language-test.rkt"
          "grammar-test.rkt")
 
@@ -14,6 +15,7 @@
      (run-variable-tests)
      (run-enum-set-tests)
      (run-map-tests)
+     (run-transactional-map-tests)
      (run-language-tests)
      (run-grammar-tests)))
 

@@ -447,7 +447,10 @@
   ;; the ways possible.
 
   (define init-types
-    (map variable-type (send terminal-info all-terminals)))
+    ;; Integer holes can always create integers
+    (remove-duplicates
+     (cons (Integer-type)
+           (map variable-type (send terminal-info all-terminals)))))
 
   ;; Assumption: All of the types in init-types do not have any type
   ;; variables in them.
