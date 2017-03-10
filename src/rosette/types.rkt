@@ -1,14 +1,15 @@
 #lang rosette
 
 (require (for-syntax syntax/parse (only-in racket/syntax format-id))
-         "enum-set.rkt" "graph.rkt" "record.rkt" "symhash.rkt" "util.rkt")
+         "enum-set.rkt" "graph.rkt" "map.rkt" "record.rkt" "symhash.rkt"
+         "util.rkt")
 
 (provide
  ;; Constructors
- Any-type Bottom-type Boolean-type
+ Any-type Bottom-type define-base-type Boolean-type
  Index-type Integer-type Bitvector-type Enum-type
- Vector-type Set-type DAG-type Record-type define-record Procedure-type
- Error-type Void-type Type-var
+ Vector-type Set-type Map-type DAG-type Record-type define-record
+ Procedure-type Error-type Void-type Type-var
  ;; The repr method for type variables must use Type-Var
  Type-Var
 
@@ -65,8 +66,9 @@
  [Boolean-Type? Boolean-type?] [Index-Type? Index-type?]
  [Integer-Type? Integer-type?] [Bitvector-Type? Bitvector-type?]
  [Enum-Type? Enum-type?]
- [Vector-Type? Vector-type?] [Set-Type? Set-type?] [DAG-Type? DAG-type?]
- [Record-Type? Record-type?] [Procedure-Type? Procedure-type?]
+ [Vector-Type? Vector-type?] [Set-Type? Set-type?] [Map-Type? Map-type?]
+ [DAG-Type? DAG-type?] [Record-Type? Record-type?]
+ [Procedure-Type? Procedure-type?]
  [Error-Type? Error-type?] [Void-Type? Void-type?])
 
 
@@ -267,6 +269,39 @@
       other-type)])
 
 (define (Bottom-type) (Bottom-Type))
+
+(struct Base-Type Any-Type (id) #:transparent
+  #:methods gen:Type
+  [(define (get-parent self)
+     (struct-copy Any-Type self))
+
+   (define (typeof-predicate self) Base-Type?)
+   
+   (define (is-supertype? self other-type)
+     (or (Bottom-Type? other-type)
+         (and (Base-Type? other-type)
+              (= (Base-Type-id self) (Base-Type-id other-type)))))
+
+   (define (repr self)
+     (list 'Base-type (Base-Type-id self)))
+
+   (define (unify-helper self other-type mapping)
+      (unless (and (not (term? other-type)) (Base-Type? other-type))
+        (internal-error "unify-helper requirement not satisfied"))
+      (and (= (Base-Type-id self) (Base-Type-id other-type))
+           other-type))]
+
+  #:methods gen:symbolic
+  [(define (make-symbolic self varset) #f)])
+
+(define Base-type
+  (let ([num-types 0])
+    (lambda ()
+      (begin0 (Base-Type num-types)
+        (set! num-types (+ 1 num-types))))))
+
+(define-syntax-rule (define-base-type name)
+  (define name (Base-type)))
 
 (struct Boolean-Type Any-Type () #:transparent
   #:methods gen:Type
@@ -861,8 +896,7 @@
          (default-union-types self other-type)))]
   
   #:methods gen:symbolic
-  [(define/generic gen-has-setters? has-setters?)
-   (define/generic gen-make-symbolic make-symbolic)
+  [(define/generic gen-make-symbolic make-symbolic)
    (define/generic gen-generate-update-arg-names generate-update-arg-names)
    (define/generic gen-update-code update-code)
    (define/generic gen-old-values-code old-values-code)
@@ -925,6 +959,103 @@
               (Type-Var? content-type))
     (error (format "Cannot make a Set-type containing ~a~%" content-type)))
   (Set-Type content-type))
+
+(struct Map-Type Any-Type (capacity input-type output-type) #:transparent
+  #:methods gen:Type
+  [(define/generic gen-is-supertype? is-supertype?)
+   (define/generic gen-repr repr)
+   (define/generic gen-get-free-type-vars get-free-type-vars)
+   (define/generic gen-replace-type-vars replace-type-vars)
+   (define/generic gen-union-types union-types)
+   
+   (define (get-parent self)
+     (struct-copy Any-Type self))
+
+   (define (typeof-predicate self) Map-Type?)
+
+   ;; TODO: The output type has to be both co- and contra-variant
+   (define (is-supertype? self other-type)
+     (or (Bottom-Type? other-type)
+         (and (Map-Type? other-type)
+              (gen-is-supertype? (Map-Type-input-type other-type)
+                                 (Map-Type-input-type self))
+              (gen-is-supertype? (Map-Type-output-type self)
+                                 (Map-Type-output-type other-type)))))
+
+   (define (repr self)
+     (list 'Map-type
+           (Map-Type-capacity self)
+           (gen-repr (Map-Type-input-type self))
+           (gen-repr (Map-Type-output-type self))))
+
+   (define (apply-on-symbolic-type-helper self fn)
+     (for/all ([capacity (Map-Type-capacity self)])
+       (apply-on-symbolic-type
+        (Map-Type-input-type self)
+        (lambda (c-input-type)
+          (apply-on-symbolic-type
+           (Map-Type-output-type self)
+           (lambda (c-output-type)
+             (fn (Map-Type capacity c-input-type c-output-type))))))))
+   
+   (define (unify-helper self other-type mapping)
+     (unless (and (not (term? other-type)) (Map-Type? other-type))
+       (internal-error "unify-helper requirement not satisfied"))
+
+     (define my-capacity (Map-Type-capacity self))
+     (define other-capacity (Map-Type-capacity other-type))
+     (define new-capacity
+       (if (integer? my-capacity) my-capacity other-capacity))
+
+     (define new-input
+       (unify (Map-Type-input-type self)
+              (Map-Type-input-type other-type)
+              mapping))
+     (define new-output
+       (and new-input
+            (unify (Map-Type-output-type self)
+                   (Map-Type-output-type other-type)
+                   mapping)))
+     
+     (and new-output (Map-Type new-capacity new-input new-output)))
+
+   (define (get-free-type-vars self)
+     (append (gen-get-free-type-vars (Map-Type-input-type self))
+             (gen-get-free-type-vars (Map-Type-output-type self))))
+
+   (define (replace-type-vars self mapping [default #f])
+     (Map-Type (Map-Type-capacity self)
+               (gen-replace-type-vars (Map-Type-input-type self)
+                                      mapping default)
+               (gen-replace-type-vars (Map-Type-output-type self)
+                                      mapping default)))
+
+   (define (union-types self other-type)
+     (if (Map-Type? other-type)
+         (match-let ([(Map-Type self-cap self-input self-output) self]
+                     [(Map-Type other-cap other-input other-output) other-type])
+           (Map-Type (if (equal? self-cap other-cap) self-cap 'unknown)
+                     (gen-union-types self-input other-input)
+                     (gen-union-types self-output other-output)))
+         (default-union-types self other-type)))]
+
+  #:methods gen:symbolic
+  [(define/generic gen-make-symbolic make-symbolic)
+   
+   (define (has-setters? self) #t)
+   
+   (define (make-symbolic self varset)
+     (match self
+       [(Map-Type capacity input-type output-type)
+        (define (sym-input) (gen-make-symbolic input-type varset))
+        (define (sym-output) (gen-make-symbolic output-type varset))
+        (make-symbolic-map capacity sym-input sym-output varset)]))])
+
+(define (Map-type capacity input-type output-type)
+  (unless (or (equal? capacity 'unknown)
+              (and (integer? capacity) (not (term? capacity))))
+    (error (format "Cannot make a Map-type with capacity ~a~%" capacity)))
+  (Map-Type capacity input-type output-type))
 
 ;; vertex-type must be an Enum type, Any-type, or a type variable
 (struct DAG-Type Any-Type (vertex-type) #:transparent

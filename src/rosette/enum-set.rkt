@@ -4,7 +4,7 @@
 
 (provide enum-make-set build-enum-set enum-make-symbolic-set
          enum-set-add! enum-set-remove! enum-set-contains?
-         #;enum-set-empty? enum-set-size
+         enum-set-empty? enum-set-size
          enum-set-union enum-set->list for-enum-set)
 
 (define (enum-make-set num-things)
@@ -15,8 +15,12 @@
 
 (define (build-enum-set num-things fn)
   (for/all ([num-things num-things])
-    (for/vector #:length num-things ([i num-things])
-      (fn i))))
+    (begin
+      (when (term? num-things)
+        (internal-error
+         (format "enum-make-set: num-things is not concrete: ~a" num-things)))
+      (for/vector #:length num-things ([i num-things])
+        (fn i)))))
 
 (define (enum-make-symbolic-set num-things [varset #f])
   (when (term? num-things)
@@ -39,7 +43,7 @@
 
 ;; TODO: Will for/and work, even if set is concrete?
 (define (enum-set-empty? set)
-  (for/and ([x set]) x))
+  (for/and ([x set]) (not x)))
 
 (define (enum-set-size set)
   (define result 0)

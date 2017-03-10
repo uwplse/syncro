@@ -114,7 +114,7 @@
          [sketches s.sketches]))]))
 
 (define-syntax (define-incremental-base stx)
-  (syntax-case stx (initialize depends updates sketches)
+  (syntax-case stx (initialize depends updates sketches lambda)
     [(_ prog name type-exp
         [initialize init-exp] [value val-exp] [depends [parent ...]]
         [updates [(update-name update-type) ...]]

@@ -3,6 +3,8 @@
 (require "operators-test.rkt"
          "types-test.rkt"
          "variable-test.rkt"
+         "enum-set-test.rkt"
+         "map-test.rkt"
          "language-test.rkt"
          "grammar-test.rkt")
 
@@ -10,6 +12,8 @@
   (+ (run-operators-tests)
      (run-types-tests)
      (run-variable-tests)
+     (run-enum-set-tests)
+     (run-map-tests)
      (run-language-tests)
      (run-grammar-tests)))
 
