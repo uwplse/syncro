@@ -36,7 +36,8 @@
                  #:operators [operator-info default-operators]
                  #:version [version 'basic]
                  #:choice-version [choice-version 'basic])
-  (define operators (remove-polymorphism operator-info terminal-info))
+  (define-values (all-types-set operators)
+    (remove-polymorphism operator-info terminal-info))
   (define chooser (make-chooser choice-version))
   (define result
     (if (or (= num-stmts 0) (= depth 0))
@@ -51,14 +52,24 @@
            (grammar-general terminal-info operators num-stmts depth chooser
                             #:num-temps num-temps
                             #:guard-depth guard-depth
+                            #:use-constants? #t
                             #:type type
                             #:cache? #t)]
           ['general
            (grammar-general terminal-info operators num-stmts depth chooser
                             #:num-temps num-temps
                             #:guard-depth guard-depth
+                            #:use-constants? #t
                             #:type type
                             #:cache? #f)]
+          ['ssa
+           (grammar-ssa terminal-info operators num-stmts depth chooser
+                        #:num-temps num-temps
+                        #:guard-depth guard-depth
+                        #:num-constants 2
+                        #:type type
+                        #:types-set all-types-set
+                        #:cache? #t)]
           #;['synthax-deep
            (match (list num-stmts depth)
              ['(2 2) (grammar-synthax-deep22 terminal-info)]
@@ -73,10 +84,54 @@
   (unless (member version '(synthax-deep))
     (send chooser print-num-vars))
   result)
-            
+
+
+(define (grammar-ssa terminal-info operators num-stmts expr-depth chooser
+                     #:num-temps [num-temps 0]
+                     #:guard-depth [guard-depth 0]
+                     #:num-constants [num-constants #f]
+                     #:type [start-type (Void-type)]
+                     #:types-set types-set
+                     #:cache? cache?)
+  (define (generate type stmts depth)
+    (grammar-general terminal-info operators stmts depth chooser
+                     #:num-temps 0 #:guard-depth 0
+                     #:use-constants? (not num-constants)
+                     #:type type #:cache? cache?))
+
+  (define (make-temporary tmp-type)
+    (let* ([sym (gensym 'tmp)]
+           [subexp (generate tmp-type 1 1)]
+           [result (define-expr^ sym subexp)])
+      (send terminal-info make-and-add-terminal sym #f tmp-type
+            #:mutable? #f)
+      result))
+
+  (define holes
+    (for/list ([i (or num-constants 0)])
+      (define-symbolic* hole integer?)
+      (let* ([sym (gensym 'constant)]
+             [result (define-expr^ sym hole)])
+        (send terminal-info make-and-add-terminal sym hole
+              (Integer-type) #:mutable? #f)
+        result)))
+
+    ;; Choose definitions for each variable
+  (define definitions
+    ;; Loop order is important here
+    (for*/list ([i expr-depth]
+                [tmp-type (set-remove types-set (Void-type))])
+      (make-temporary tmp-type)))
+
+  ;; Build the program
+  (apply begin^
+         (append holes definitions
+                 (list (generate (Void-type) num-stmts 2)))))
+
 (define (grammar-general terminal-info operators num-stmts expr-depth chooser
                          #:num-temps [num-temps 0]
                          #:guard-depth [guard-depth 0]
+                         #:use-constants? [use-constants? #t]
                          #:type [start-type (Void-type)]
                          #:cache? cache?)
   (define orig-params
@@ -216,7 +271,7 @@
 
     ;; Special case: Integer hole
     (define integer-hole
-      (if (unify-types (Integer-type) desired-type)
+      (if (and use-constants? (unify-types (Integer-type) desired-type))
           (list (let () (define-symbolic* hole integer?) hole))
           '()))
 
@@ -387,7 +442,7 @@
   ;; Choose guard
   (define guard-expr
     (and (> guard-depth 0) (expr-grammar (Boolean-type) guard-depth)))
-  
+
   ;; Add temporary variables for common subexpression reuse.
   ;; Generate temporary variable names
   (define temps
@@ -458,7 +513,7 @@
     (check-no-polymorphism type "Terminal types should not be polymorphic."))
 
   (define all-types-set (get-all-types operators init-types))
-  (specialize-operators operators all-types-set))
+  (values all-types-set (specialize-operators operators all-types-set)))
 
 (define (get-all-types operators types)
   (let loop ([types-set (for/set ([t types]) t)])

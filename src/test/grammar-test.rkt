@@ -78,7 +78,7 @@
 
      ;; TODO: More removing polymorphism tests
      (test-case "Removing polymorphism"
-       (let ([new-ops (remove-polymorphism default-operators info)])
+       (let-values ([(_ new-ops) (remove-polymorphism default-operators info)])
          (check-equal? (for/set ([op new-ops] #:when (variable? op))
                          (variable-symbol op))
                        (set 'equal? 'void 'vector-ref 'vector-set!

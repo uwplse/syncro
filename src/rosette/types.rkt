@@ -588,10 +588,10 @@
 
 (define (Integer-type) (Integer-Type))
 
-(struct Bitvector-Type Integer-Type (bits) #:transparent
+(struct Bitvector-Type Index-Type (bits) #:transparent
   #:methods gen:Type
   [(define (get-parent self)
-     (struct-copy Integer-Type self))
+     (struct-copy Index-Type self))
 
    (define (typeof-predicate self) Bitvector-Type?)
 

@@ -525,7 +525,7 @@
 
    (define (eval-lifted self)
      (set-variable-value! (lifted-define-var self)
-                          (eval-lifted (lifted-define-val self))))
+                          (gen-eval-lifted (lifted-define-val self))))
 
    (define (lifted-code self)
      (list 'define
@@ -551,7 +551,7 @@
   (if (lifted-error? lifted-val)
       (lifted-error)
       (lifted-define
-       (make-lifted-variable 'var (infer-type lifted-val))
+       (make-lifted-variable var (infer-type lifted-val))
        lifted-val)))
 
 ;; var is syntax containing a symbol

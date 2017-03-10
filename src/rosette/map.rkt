@@ -1,6 +1,6 @@
 #lang rosette
 
-(require "util.rkt")
+(require "operations.rkt" "util.rkt")
 
 (provide build-map
          map-has-key? map-ref map-set!
