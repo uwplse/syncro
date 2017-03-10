@@ -235,7 +235,10 @@
                                    ,@(verbose-code `(displayln "Completed symbolic generation! Running the solver:"))))))
              (and (sat? synth)
                   ,@(verbose-code '(displayln "Solution found! Generating code:"))
-                  (time (coerce-evaluate (lifted-code program) synth)))))
+                  (let ([code
+                         (time (coerce-evaluate (lifted-code program) synth))])
+                    (pretty-print code)
+                    code))))
 
         (when (hash-ref options 'debug?) (pretty-print rosette-code))
         (run-in-rosette rosette-code))

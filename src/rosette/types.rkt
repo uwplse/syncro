@@ -28,11 +28,12 @@
              [DAG-Type-vertex-type DAG-vertex-type]
              [Record-Type-fields Record-fields]
              [Record-Type-field-types Record-field-types]
+             [Record-Type-field-constant? Record-field-constant?]
              [Procedure-Type-domain-types Procedure-domain-types]
              [Procedure-Type-range-type Procedure-range-type]
              [Procedure-Type-read-index Procedure-read-index]
              [Procedure-Type-write-index Procedure-write-index])
- get-record-field-type
+ get-record-field-type can-mutate-record-field?
 
  ;; Generic function stuff
  gen:Type Type? gen:symbolic symbolic?
@@ -1249,7 +1250,7 @@
 ;; Fields must be known at compile time and cannot change.
 ;; So, a Record type should know all of the fields, and the types of
 ;; values that each field can contain.
-(struct Record-Type Any-Type (constructor fields field-types) #:transparent
+(struct Record-Type Any-Type (constructor fields field-types field-constant?) #:transparent
   #:methods gen:Type
   [(define/generic gen-is-supertype? is-supertype?)
    (define/generic gen-repr repr)
@@ -1274,18 +1275,21 @@
      (list 'Record-type
            (list 'quote (Record-Type-constructor self))
            (cons 'list (map (curry list 'quote) (Record-Type-fields self)))
-           (cons 'list (map gen-repr (Record-Type-field-types self)))))
+           (cons 'list (map gen-repr (Record-Type-field-types self)))
+           (cons 'list (Record-Type-field-constant? self))))
 
    (define (apply-on-symbolic-type-helper self fn)
-     (for/all ([constructor (Record-Type-constructor self)])
-       (for/all ([fields (Record-Type-fields self)])
-         (apply-on-symbolic-type-list
-          (Record-Type-field-types self)
-          (lambda (concrete-types)
-            (fn (Record-Type constructor fields concrete-types)))))))
+     ;; TODO(correctness): for/all does not make fields and constant? concrete
+     (for*/all ([constructor (Record-Type-constructor self)]
+                [fields (Record-Type-fields self)]
+                [constant? (Record-Type-field-constant? self)])
+       (apply-on-symbolic-type-list
+        (Record-Type-field-types self)
+        (lambda (concrete-types)
+          (fn (Record-Type constructor fields concrete-types constant?))))))
 
    ;; This unification is not commutative. It takes the name from
-   ;; self and ignores the name of other-type.
+   ;; self and ignores the name of other-type. Same with constant?
    (define (unify-helper self other-type mapping)
      (when (union? self) (internal-error "Should not get a union here"))
      (unless (and (not (term? other-type)) (Record-Type? other-type))
@@ -1293,8 +1297,8 @@
 
      (for/all ([other-type other-type])
        (match* (self other-type)
-         [((Record-Type self-name self-fields self-types)
-           (Record-Type other-name other-fields other-types))
+         [((Record-Type self-name self-fields self-types self-constant?)
+           (Record-Type other-name other-fields other-types other-constant?))
           (for/all ([self-fields self-fields])
             (begin
               (define common-fields
@@ -1302,15 +1306,15 @@
                            #:when (member id other-fields))
                   id))
               (define self-common-types
-                (map (curry lookup-field-type self-fields self-types)
+                (map (curry lookup-field self-fields self-types)
                      common-fields))
               (define other-common-types
-                (map (curry lookup-field-type other-fields other-types)
+                (map (curry lookup-field other-fields other-types)
                      common-fields))
               (define common-types
                 (for/list ([t1 self-common-types] [t2 other-common-types])
                   (unify t1 t2 mapping)))
-              (Record-type self-name common-fields common-types)))])))
+              (Record-type self-name common-fields common-types self-constant?)))])))
 
    (define (get-free-type-vars self)
      (apply append
@@ -1320,10 +1324,11 @@
    (define (replace-type-vars self mapping [default #f])
      (when (union? self) (internal-error "Should not get a union here"))
      (match self
-       [(Record-Type constructor fields field-types)
+       [(Record-Type constructor fields field-types field-constant?)
         (Record-type constructor fields
                      (for/list ([type field-types])
-                       (gen-replace-type-vars type mapping default)))]))
+                       (gen-replace-type-vars type mapping default))
+                     field-constant?)]))
 
    (define (union-types self other-type)
      (error "Not implemented"))]
@@ -1378,18 +1383,23 @@
          (error (format "Unknown Record update type: ~a~%" update-type))))])
 
 (define (get-record-field-type record field-name)
-  (lookup-field-type (Record-Type-fields record)
-                     (Record-Type-field-types record)
-                     field-name))
+  (lookup-field (Record-Type-fields record)
+                (Record-Type-field-types record)
+                field-name))
 
-(define (lookup-field-type fields field-types field-name)
-  (for*/all ([fields fields] [field-types field-types])
-    (for/first ([name fields] [type field-types]
+(define (can-mutate-record-field? record field-name)
+  (lookup-field (Record-Type-fields record)
+                (Record-Type-field-constant? record)
+                field-name))
+
+(define (lookup-field fields attributes field-name)
+  (for*/all ([fields fields] [attributes attributes])
+    (for/first ([name fields] [attribute attributes]
                 #:when (equal? name field-name))
-      type)))
+      attribute)))
   
 
-(define (Record-type constructor-name fields types)
+(define (Record-type constructor-name fields types const?)
   ;; No matter what symbolic stuff we do, it should always be the
   ;; case that the fields are (possibly symbolic) Racket symbols.
   ;; Use internal-error instead of maybe-internal-error.
@@ -1399,11 +1409,16 @@
   (unless (equal? fields (remove-duplicates fields))
     (maybe-internal-error
      (format "Records cannot have duplicate fields, given ~a" fields)))
-  (Record-Type constructor-name fields types))
+  (Record-Type constructor-name fields types const?))
 
 (define-syntax (define-record stx)
+  (define-splicing-syntax-class maybe-const
+    ;; TODO: Better error messages (see above)
+    (pattern (~seq #:const) #:with const? #'#t)
+    (pattern (~seq) #:with const? #'#f))
+  
   (syntax-parse stx
-    [(_ name:id (field-name:id type:expr) ...)
+    [(_ name:id (field-name:id type:expr c:maybe-const) ...)
      (let ([num-fields (length (syntax-e #'(field-name ...)))])
        (with-syntax ([type-name (format-id #'name "~a-type" (syntax-e #'name))]
                      [num-stx (datum->syntax stx num-fields)])
@@ -1417,7 +1432,9 @@
                               (cons f arg))))
 
              (define type-name
-               (Record-type 'name '(field-name ...) (list type ...)))))))]))
+               (Record-type 'name '(field-name ...)
+                            (list type ...)
+                            (list c.const? ...)))))))]))
 
 ;; Procedure types are complicated primarily because of how they
 ;; interact with type variables.

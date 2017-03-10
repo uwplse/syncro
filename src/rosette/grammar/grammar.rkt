@@ -553,16 +553,18 @@
      #:arity 2
      (for ([record-type types] #:when (Record-type? record-type))
        (for ([field-name (Record-fields record-type)]
-             [field-type (Record-field-types record-type)])
+             [field-type (Record-field-types record-type)]
+             [constant-field? (Record-field-constant? record-type)])
          (check-no-polymorphism record-type "Internal error: Should be impossible.")
          (check-no-polymorphism field-type "Internal error: Should be impossible.")
-         (yield
-          (make-operator
-           'set-field!
-           (Procedure-type (list record-type field-type) (Void-type)
-                           #:write-index 0)
-           (lambda (rec val) (set-field!^ rec field-name val)))
-          (Void-type))))))
+         (unless constant-field?
+           (yield
+            (make-operator
+             'set-field!
+             (Procedure-type (list record-type field-type) (Void-type)
+                             #:write-index 0)
+             (lambda (rec val) (set-field!^ rec field-name val)))
+            (Void-type)))))))
 
   (if (lifted-variable? op)
       (try-apply-proc op types)
