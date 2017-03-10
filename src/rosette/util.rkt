@@ -3,7 +3,7 @@
 (provide display-errors? maybe-internal-error internal-error
          input-val input-preconditions input?
          (rename-out [input make-input])
-         my-for/sum my-for/or coerce-evaluate clone)
+         my-for/sum my-for/or my-for/and coerce-evaluate clone)
 
 (define display-errors? (make-parameter #f))
 (define (maybe-internal-error str)
@@ -43,6 +43,21 @@
            (let ([val #f])
              (for ([i itr-var] ...)
                (set! val (or val (begin expr ...))))
+             val))))]))
+
+;; TODO: Not exactly semantically correct -- this will iterate through
+;; the entire sequence, even if we could break somewhere in the
+;; middle. Should be reimplemented with break. Also change in
+;; constructs.rkt.
+(define-syntax (my-for/and stx)
+  (syntax-case stx ()
+    [(_ ([i itr] ...) expr ...)
+     (with-syntax ([(itr-var ...) (generate-temporaries #'(i ...))])
+       (syntax/loc stx
+         (for*/all ([itr-var itr] ...)
+           (let ([val #t])
+             (for ([i itr-var] ...)
+               (set! val (and val (begin expr ...))))
              val))))]))
 
 (define (coerce-evaluate thing model)

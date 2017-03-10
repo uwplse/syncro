@@ -1,12 +1,13 @@
 #lang rosette
 
 (require (for-syntax syntax/parse (only-in racket/syntax format-id))
+         rosette/lib/angelic
          "enum-set.rkt" "graph.rkt" "map.rkt" "record.rkt" "symhash.rkt"
          "util.rkt")
 
 (provide
  ;; Constructors
- Any-type Bottom-type define-base-type Boolean-type
+ Any-type Bottom-type Sum-type define-base-type Boolean-type
  Index-type Integer-type Bitvector-type Enum-type
  Vector-type Set-type Map-type DAG-type Record-type define-record
  Procedure-type Error-type Void-type Type-var
@@ -14,13 +15,14 @@
  Type-Var
 
  ;; Predicates on types
- Any-type? Bottom-type? Boolean-type?
+ Any-type? Bottom-type? Sum-type? Boolean-type?
  Index-type? Integer-type? Bitvector-type? Enum-type?
  Vector-type? Set-type? DAG-type? Record-type? Procedure-type?
  Error-type? Void-type? (rename-out [Type-Var? Type-var?])
 
  ;; Selectors (for some types)
- (rename-out [Vector-Type-index-type Vector-index-type]
+ (rename-out [Sum-Type-types Sum-type-types]
+             [Vector-Type-index-type Vector-index-type]
              [Vector-Type-output-type Vector-output-type]
              [Set-Type-content-type Set-content-type]
              [DAG-Type-vertex-type DAG-vertex-type]
@@ -62,7 +64,7 @@
               ...))]))
 
 (make-type-predicates
- [Any-Type? Any-type?] [Bottom-Type? Bottom-type?]
+ [Any-Type? Any-type?] [Bottom-Type? Bottom-type?] [Sum-Type? Sum-type?]
  [Boolean-Type? Boolean-type?] [Index-Type? Index-type?]
  [Integer-Type? Integer-type?] [Bitvector-Type? Bitvector-type?]
  [Enum-Type? Enum-type?]
@@ -155,6 +157,10 @@
            (unify-helper t2 t1 mapping)]
           [(Bottom-Type? t1) t1]
           [(Bottom-Type? t2) t2]
+          [(Sum-Type? t1)
+           (unify-helper t1 t2 mapping)]
+          [(Sum-Type? t2)
+           (unify-helper t2 t1 mapping)]
           [((typeof-predicate t1) t2)
            (unify-helper t1 t2 mapping)]
           [((typeof-predicate t2) t1)
@@ -269,6 +275,65 @@
       other-type)])
 
 (define (Bottom-type) (Bottom-Type))
+
+(struct Sum-Type Any-Type (types) #:transparent
+  #:methods gen:Type
+  [(define/generic gen-is-supertype? is-supertype?)
+   (define/generic gen-repr repr)
+   (define/generic gen-get-free-type-vars get-free-type-vars)
+   (define/generic gen-replace-type-vars replace-type-vars)
+   
+   (define (get-parent self)
+     (struct-copy Any-Type self))
+
+   (define (typeof-predicate self) Sum-Type?)
+   
+   (define (is-supertype? self other-type)
+     (or (Bottom-Type? other-type)
+         (if (Sum-Type? other-type)
+             (for/and ([small-type (Sum-Type-types other-type)])
+               (gen-is-supertype? self small-type))
+             (for/or ([small-type (Sum-Type-types self)])
+               (gen-is-supertype? small-type other-type)))))
+
+   (define (repr self)
+     (cons 'Sum-type (map gen-repr (Sum-Type-types self))))
+
+   (define (unify-helper self other-type mapping)
+      (unless (not (term? other-type))
+        (internal-error "unify-helper requirement not satisfied"))
+      ;; TODO: Implement. The following is a hack for file synthesis.
+      (and (equal? self other-type) other-type))
+
+   (define (apply-on-symbolic-type-helper self fn)
+     (apply-on-symbolic-type-list
+      (Sum-Type-types self)
+      (lambda (concrete-list) (fn (Sum-Type concrete-list)))))
+
+   ;; Most types can never have type variables inside themselves
+   (define (get-free-type-vars self)
+     (foldl append '() (map gen-get-free-type-vars (Sum-Type-types self))))
+
+   (define (replace-type-vars self mapping [default #f])
+     (Sum-Type
+      (map (lambda (x) (gen-replace-type-vars x mapping default))
+           (Sum-Type-types self))))
+
+   (define (union-types self other-type)
+     (internal-error "Not implemented"))]
+
+  #:methods gen:symbolic
+  [(define/generic gen-make-symbolic make-symbolic)
+
+   (define (make-symbolic self varset)
+     (apply choose*
+            (map (lambda (x) (gen-make-symbolic x varset))
+                 (Sum-Type-types self))))])
+
+(define (Sum-type . types)
+  (unless (andmap Type? types)
+    (error "Sum-type -- arguments must be types" types))
+  (Sum-Type types))
 
 (struct Base-Type Any-Type (id) #:transparent
   #:methods gen:Type

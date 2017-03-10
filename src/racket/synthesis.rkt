@@ -21,7 +21,7 @@
   (let ([id (send node get-id)]
         [expr (send node get-fn-code)])
     (list node id (send node get-type) expr
-          `(define ,id ,expr))))
+          `(define ,id ,expr) (send node get-assumes-code))))
 
 (define (get-symbolic-info node update-type set-id)
   (let ([update-args (send node get-update-arg-names update-type)])
@@ -64,7 +64,7 @@
     (get-node-info (get-node graph id)))
   
   ;; Relevant information about the input relation
-  (match-define (list input-relation input-id input-type _ _)
+  (match-define (list input-relation input-id input-type _ _ input-assumes)
     (get-id-info (car (get-ids graph))))
 
   (for/list ([update-name (send input-relation get-update-names)])
@@ -83,12 +83,12 @@
       
       ;; Relevant information about intermediate relations
       ;; Does a lot of recomputation, but not a bottleneck
-      (match-define (list intermediate-relations _ intermediate-types _ define-intermediates)
-        (transpose (map get-id-info intermediate-ids) 5))
+      (match-define (list intermediate-relations _ intermediate-types _ define-intermediates _)
+        (transpose (map get-id-info intermediate-ids) 6))
 
       ;; Relevant information about the output relation
       (define output-node (get-node graph output-id))
-      (match-define (list output-relation _ output-type output-expr define-output)
+      (match-define (list output-relation _ output-type output-expr define-output _)
         (get-node-info output-node))
 
       (define (add-terminal-code var type #:mutable? [mutable? #f])
@@ -114,6 +114,7 @@
           ;; Example: (define word->topic (build-vector 12 ...))
           ;; The resulting data structure contains symbolic variables.
           ,define-input
+          (define input-assertions ,input-assumes)
           ;; Example: (define num2helper (build-vector ...))
           ;; Taken straight from the user program, but operates on
           ;; symbolic variables.
@@ -218,8 +219,11 @@
              (time (eval-lifted program))
 
              ;; Assert all preconditions
+             (define (assert-fn x) (assert x))
+             (for-each assert-fn input-assertions)
+
              (define (assert-pre input)
-               (map (lambda (x) (assert x)) (input-preconditions input)))
+               (for-each assert-fn (input-preconditions input)))
              (define inputs-list (set->list inputs-set))
              (for-each assert-pre inputs-list)
              

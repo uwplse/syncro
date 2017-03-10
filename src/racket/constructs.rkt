@@ -20,7 +20,7 @@
          (all-from-out "../rosette/operators.rkt")
          (all-from-out "../rosette/record.rkt")
          (except-out (all-from-out "../rosette/types.rkt") Enum-type)
-         incremental algorithm my-for/sum my-for/or)
+         incremental algorithm my-for/sum my-for/or my-for/and)
 
 (define-syntax-rule (incremental expr ...)
   (begin
@@ -82,6 +82,10 @@
 ;; Adds metadata to the dependency graph, and defines the data
 ;; structure in Racket.
 (define-syntax (define-incremental-prog stx)
+  (define-splicing-syntax-class maybe-assumes
+    (pattern (~seq #:assume assumes:expr))
+    (pattern (~seq) #:with assumes #'(list)))
+
   (define-splicing-syntax-class init-or-value
     (pattern (~seq #:initialize init:expr) #:with value #'#f)
     (pattern (~seq #:value value:expr) #:with init #'#f))
@@ -103,10 +107,11 @@
 
   (syntax-parse stx
     #:context 'define-incremental
-    [(_ prog name type-exp iv:init-or-value d:maybe-depends
+    [(_ prog name type-exp a:maybe-assumes iv:init-or-value d:maybe-depends
         u:maybe-updates s:maybe-sketches)
      (syntax/loc stx
        (define-incremental-base prog name type-exp
+         [assumes a.assumes]
          [initialize iv.init]
          [value iv.value]
          [depends d.parents]
@@ -114,8 +119,8 @@
          [sketches s.sketches]))]))
 
 (define-syntax (define-incremental-base stx)
-  (syntax-case stx (initialize depends updates sketches lambda)
-    [(_ prog name type-exp
+  (syntax-case stx (assumes initialize depends updates sketches lambda)
+    [(_ prog name type-exp [assumes assumption-expr]
         [initialize init-exp] [value val-exp] [depends [parent ...]]
         [updates [(update-name update-type) ...]]
         [sketches [(sketch-name (lambda (sketch-arg ...) sketch-expr ...))
@@ -124,7 +129,7 @@
        (begin
          ;; Create the node
          (define node
-           (new node% [id 'name] [type type-exp]
+           (new node% [id 'name] [type type-exp] [assumes 'assumption-expr]
                 [update-names '(update-name ...)]
                 ;; Currently, update-type is a symbol that
                 ;; the language recognizes, but in the future
@@ -168,3 +173,9 @@
     [(_ ([i itr] ...) expr ...)
      (syntax/loc stx
        (for/or ([i itr] ...) expr ...))]))
+
+(define-syntax (my-for/and stx)
+  (syntax-case stx ()
+    [(_ ([i itr] ...) expr ...)
+     (syntax/loc stx
+       (for/and ([i itr] ...) expr ...))]))

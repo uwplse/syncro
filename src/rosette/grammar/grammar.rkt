@@ -515,16 +515,23 @@
              (unify t1 t2 mapping)))
          (when compatible?
            (let* ([new-range (replace-type-vars range mapping)]
-                  [result
-                   (Procedure-type possible-domain new-range
-                                   #:read-index ridx #:write-index widx)])
-             ;; How do we know at this point that polymorphism is gone?
-             ;; The types in types do not have polymorphism, and we
-             ;; assume that applying a procedure to non-polymorphic
-             ;; types results in a non-polymorphic type (it wouldn't
-             ;; make sense to introduce a type variable in the range).
-             (check-no-polymorphism result "Procedures should not introduce polymorphism in the range.")
-             (yield (update-lifted-variable op #:type result) new-range)))))))
+                  ;; TODO(correctness): Sum types need to be handled
+                  ;; for special forms too
+                  [all-ranges (if (Sum-type? new-range)
+                                  (Sum-type-types new-range)
+                                  (list new-range))])
+             (for ([final-range all-ranges])
+               (let ([result
+                      (Procedure-type possible-domain final-range
+                                      #:read-index ridx #:write-index widx)])
+                 ;; How do we know at this point that polymorphism is gone?
+                 ;; The types in types do not have polymorphism, and we
+                 ;; assume that applying a procedure to non-polymorphic
+                 ;; types results in a non-polymorphic type (it wouldn't
+                 ;; make sense to introduce a type variable in the range).
+                 (check-no-polymorphism result "Procedures should not introduce polymorphism in the range.")
+                 (yield (update-lifted-variable op #:type result)
+                        final-range)))))))))
 
   (define (try-apply-get-field types)
     (in-generator

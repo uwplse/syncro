@@ -68,11 +68,12 @@
 
     ;; id:                Name of the variable
     ;; type:              Type of the variable
+    ;; assumes:           Expression to get assumptions about the node
     ;; update-names:      The names of allowed updates
     ;; update-name->info: Required information for each update
     ;; init-code:         Code to initialize the value of the data structure
     ;; fn-code:           Expression to recompute the value of the node
-    (init-field id type update-names update-name->info init-code fn-code)
+    (init-field id type assumes update-names update-name->info init-code fn-code)
 
     (for ([update-name update-names])
       (when (hash-has-key? update-name->node update-name)
@@ -100,6 +101,7 @@
 
     (define/public (get-id) id)
     (define/public (get-type) type)
+    (define/public (get-assumes-code) assumes)
     (define/public (get-update-names) update-names)
     (define/public (get-fn-code) fn-code)
 
