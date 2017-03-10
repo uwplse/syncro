@@ -7,16 +7,16 @@
 
 (provide
  ;; Constructors
- Any-type Bottom-type Sum-type define-base-type Boolean-type
- Index-type Integer-type Bitvector-type Enum-type
+ Any-type Bottom-type Sum-type define-alias-type define-base-type
+ Boolean-type Index-type Integer-type Bitvector-type Enum-type
  Vector-type Set-type Map-type DAG-type Record-type define-record
  Procedure-type Error-type Void-type Type-var
  ;; The repr method for type variables must use Type-Var
  Type-Var
 
  ;; Predicates on types
- Any-type? Bottom-type? Sum-type? Boolean-type?
- Index-type? Integer-type? Bitvector-type? Enum-type?
+ Any-type? Bottom-type? Sum-type? Alias-type? Base-type?
+ Boolean-type? Index-type? Integer-type? Bitvector-type? Enum-type?
  Vector-type? Set-type? DAG-type? Record-type? Procedure-type?
  Error-type? Void-type? (rename-out [Type-Var? Type-var?])
 
@@ -66,6 +66,7 @@
 
 (make-type-predicates
  [Any-Type? Any-type?] [Bottom-Type? Bottom-type?] [Sum-Type? Sum-type?]
+ [Alias-Type? Alias-type?] [Base-Type? Base-type?]
  [Boolean-Type? Boolean-type?] [Index-Type? Index-type?]
  [Integer-Type? Integer-type?] [Bitvector-Type? Bitvector-type?]
  [Enum-Type? Enum-type?]
@@ -335,6 +336,44 @@
   (unless (andmap Type? types)
     (error "Sum-type -- arguments must be types" types))
   (Sum-Type types))
+
+(struct Alias-Type Any-Type (id base-type) #:transparent
+  #:methods gen:Type
+  [(define/generic gen-repr repr)
+
+   (define (get-parent self)
+     (struct-copy Any-Type self))
+
+   (define (typeof-predicate self) Alias-Type?)
+
+   (define (is-supertype? self other-type)
+     (or (Bottom-Type? other-type)
+         (and (Alias-Type? other-type)
+              (equal? (Alias-Type-id self) (Alias-Type-id other-type)))))
+
+   (define (repr self)
+     (list 'Alias-type
+           (Alias-Type-id self)
+           (gen-repr (Alias-Type-base-type self))))
+
+   (define (unify-helper self other-type mapping)
+      (unless (and (not (term? other-type)) (Alias-Type? other-type))
+        (internal-error "unify-helper requirement not satisfied"))
+      (and (equal? (Alias-Type-id self) (Alias-Type-id other-type))
+           other-type))]
+
+  #:methods gen:symbolic
+  [(define (make-symbolic self varset)
+     (gen-make-symbolic (Alias-Type-base-type self) varset))])
+
+(define (Alias-type id base-type)
+  (unless (and (symbol? id) (Type? base-type))
+    (internal-error
+     (format "Alias-type -- Invalid arguments ~a ~a" id base-type)))
+  (Alias-Type id base-type))
+
+(define-syntax-rule (define-type-alias name type)
+  (define name (Alias-type 'name type)))
 
 (struct Base-Type Any-Type (id) #:transparent
   #:methods gen:Type
