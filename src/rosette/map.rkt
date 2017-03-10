@@ -13,10 +13,16 @@
     (internal-error
      (format "make-symbolic-map: capacity is not concrete: ~a" capacity)))
 
-  (vec-map (for/vector #:length capacity ([i capacity])
-             (input-fn i))
-           (for/vector #:length capacity ([i capacity])
-             (output-fn i))))
+  (define keys
+    (for/vector #:length capacity ([i capacity])
+      (input-fn i)))
+  (define vals
+    (for/vector #:length capacity ([i capacity])
+      (output-fn i)))
+
+  ;; TODO(metasketch): Don't use an assert directly
+  (assert (apply distinct? (vector->list keys)))
+  (vec-map keys vals))
 
 (define (map-has-key? map key)
   (for*/all ([keys (vec-map-keys map)]
