@@ -1,6 +1,6 @@
 #lang rosette
 
-(require "symhash.rkt")
+(require "map.rkt")
 
 (provide make-record get-field set-field!)
 
@@ -11,11 +11,11 @@
 ;; TODO: Reimplement by using for/all on keys, and using hash-set! to
 ;; add a guarded version of the value to the hash map. Alternatively
 ;; use Racket's built-in struct somehow.
-(define (make-record assocs)
-  (box (rhash assocs)))
+(define (make-record fields values)
+  (build-map (length fields) (curry list-ref fields) (curry list-ref values) #f))
 
 (define (get-field record field-name)
-  (rhash-ref (unbox record) field-name))
+  (map-ref record field-name))
 
 (define (set-field! record field-name value)
-  (set-box! record (rhash-set (unbox record) field-name value)))
+  (map-set! record field-name value))

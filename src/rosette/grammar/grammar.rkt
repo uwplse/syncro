@@ -120,7 +120,7 @@
   (define definitions
     ;; Loop order is important here
     (for*/list ([i expr-depth]
-                [tmp-type (set-remove types-set (Void-type))])
+                [tmp-type types-set])
       (make-temporary tmp-type)))
 
   ;; Build the program
@@ -222,7 +222,7 @@
           ;; The value of this unify can be seen in equal?^, where if
           ;; the first expression chosen is of type Int, this will
           ;; force the second expression to also have type Int
-          (when subexp
+          #;(when subexp
             (unify (car type-pair) (infer-type subexp) mapping))
           subexp))
 
@@ -275,6 +275,11 @@
           (list (let () (define-symbolic* hole integer?) hole))
           '()))
 
+    (define boolean-constants
+      (if (unify-types (Boolean-type) desired-type)
+          (list #t #f)
+          '()))
+
     ;; Recursive case
     (send chooser start-options)
     (define recurse
@@ -287,7 +292,7 @@
              (make-subexp op cache desired-type mutable? depth)))))
     (send chooser end-options)
     
-    (define all-args (append terminals integer-hole recurse))
+    (define all-args (append terminals integer-hole boolean-constants recurse))
     (apply my-choose* all-args))
 
   (if (equal? start-type (Void-type))

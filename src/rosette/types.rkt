@@ -26,6 +26,7 @@
              [Vector-Type-output-type Vector-output-type]
              [Set-Type-content-type Set-content-type]
              [DAG-Type-vertex-type DAG-vertex-type]
+             [Record-Type-constructor Record-constructor]
              [Record-Type-fields Record-fields]
              [Record-Type-field-types Record-field-types]
              [Record-Type-field-constant? Record-field-constant?]
@@ -1336,7 +1337,8 @@
      (unless (and (not (term? other-type)) (Record-Type? other-type))
        (internal-error "unify-helper requirement not satisfied"))
 
-     (for/all ([other-type other-type])
+     (and (equal? self other-type) other-type)
+     #;(for/all ([other-type other-type])
        (match* (self other-type)
          [((Record-Type self-name self-fields self-types self-constant?)
            (Record-Type other-name other-fields other-types other-constant?))
@@ -1367,8 +1369,9 @@
      (match self
        [(Record-Type constructor fields field-types field-constant?)
         (Record-type constructor fields
-                     (for/list ([type field-types])
-                       (gen-replace-type-vars type mapping default))
+                     (for/all ([field-types field-types])
+                       (for/list ([type field-types])
+                         (gen-replace-type-vars type mapping default)))
                      field-constant?)]))
 
    (define (union-types self other-type)
@@ -1384,10 +1387,9 @@
    (define (has-setters? self) #t)
    
    (define (make-symbolic self varset)
-     (make-record
-      (for/list ([field-name (Record-Type-fields self)]
-                 [field-type (Record-Type-field-types self)])
-        (cons field-name (gen-make-symbolic field-type varset)))))
+     (make-record (Record-Type-fields self)
+                  (map (lambda (x) (gen-make-symbolic x varset))
+                       (Record-Type-field-types self))))
 
    ;; TODO: We assume that the updates are of the form
    ;; record.field = value  // value is symbolically generated
@@ -1470,8 +1472,7 @@
                (unless (= (length args) num-stx)
                  (error (format "Incorrect number of arguments to ~a: ~a expected, got ~a~%  Given arguments: ~a"
                                 'name num-stx (length args) args)))
-               (make-record (for/list ([f '(field-name ...)] [arg args])
-                              (cons f arg))))
+               (make-record '(field-name ...) args))
 
              (define type-name
                (Record-type 'name '(field-name ...)

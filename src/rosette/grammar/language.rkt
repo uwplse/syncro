@@ -50,7 +50,11 @@
   (fold-lifted lifted mapper reducer)
 
   #:defaults
-  ([number?
+  ([integer?
+    (define (eval-lifted x) x)
+    (define (lifted-code x) x)
+    (define (fold-lifted x mapper reducer) (mapper x))]
+   [boolean?
     (define (eval-lifted x) x)
     (define (lifted-code x) x)
     (define (fold-lifted x mapper reducer) (mapper x))]))
@@ -511,7 +515,7 @@
    (const #f)))
 ;; var is a lifted-variable
 ;; val is a lifted expression
-(struct lifted-define lifted-writer (var val) #:transparent
+(struct lifted-define lifted-writer (var [val #:mutable]) #:transparent
   #:property prop:serializable
   (make-serialize-info
    (lambda (s) (vector (lifted-define-var s) (lifted-define-val s)))
@@ -524,8 +528,10 @@
    (define/generic gen-fold-lifted fold-lifted)
 
    (define (eval-lifted self)
-     (set-variable-value! (lifted-define-var self)
-                          (gen-eval-lifted (lifted-define-val self))))
+     ;; TODO(ugliness): This is really hacky.
+     (with-handlers ([exn:fail? (lambda (e) (set-lifted-define-val! self 0))])
+       (set-variable-value! (lifted-define-var self)
+                            (gen-eval-lifted (lifted-define-val self)))))
 
    (define (lifted-code self)
      (list 'define
