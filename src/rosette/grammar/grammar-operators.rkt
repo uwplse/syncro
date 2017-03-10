@@ -99,6 +99,7 @@
   (list grm-if^ grm-set!^ grm-get-field^ grm-set-field!^
         void^ vector-increment!^ vector-decrement!^ vector-set!^ vector-ref^
         enum-set-add!^ enum-set-remove!^ enum-set-contains?^
+        map-ref^ map-set!^
         add-edge!^ remove-edge!^ has-edge?^
         equal?^ =^ <^ +^ -^ *^ #;/^))
 

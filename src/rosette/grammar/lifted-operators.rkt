@@ -1,12 +1,13 @@
 #lang rosette
 
-(require "../enum-set.rkt" "../graph.rkt" "../operators.rkt" "../types.rkt"
-          "language.rkt")
+(require "../enum-set.rkt" "../graph.rkt" "../map.rkt"
+         "../operators.rkt" "../types.rkt" "language.rkt")
 
 (provide
  ;; Operators that construct lifted AST nodes
  void^ vector-increment!^ vector-decrement!^ vector-set!^ vector-ref^
  enum-set-add!^ enum-set-remove!^ enum-set-contains?^
+ map-ref^ map-set!^
  add-edge!^ remove-edge!^ has-edge?^ vertex-parents^ vertex-children^
  equal?^ =^ <^ +^ -^ *^ #;/^)
 
@@ -17,6 +18,7 @@
 ;; TODO: Add and, or, not
 
 (define alpha-any (Type-var))
+(define alpha2-any (Type-var))
 (define alpha-idx (Type-var (Index-type)))
 
 (define cmp-type
@@ -32,6 +34,14 @@
 (define enum-set-contains?-type
   (Procedure-type (list (Set-type alpha-any) alpha-any)
                   (Boolean-type) #:read-index 0))
+(define map-ref-type
+  (Procedure-type (list (Map-type 'unknown alpha-any alpha2-any)
+                        alpha-any)
+                  alpha2-any #:read-index 0))
+(define map-set!-type
+  (Procedure-type (list (Map-type 'unknown alpha-any alpha2-any)
+                        alpha-any alpha2-any)
+                  (Void-type) #:write-index 0))
 (define graph-modify-type
   (Procedure-type (list (DAG-type alpha-any) alpha-any alpha-any)
                   (Void-type) #:write-index 0))
@@ -59,6 +69,8 @@
   [enum-set-add! enum-set-add!^ enum-set-modify-type]
   [enum-set-remove! enum-set-remove!^ enum-set-modify-type]
   [enum-set-contains? enum-set-contains?^ enum-set-contains?-type]
+  [map-ref map-ref^ map-ref-type]
+  [map-set! map-set!^ map-set!-type]
   [add-edge! add-edge!^ graph-modify-type]
   [remove-edge! remove-edge!^ graph-modify-type]
   [has-edge? has-edge?^ graph-has-edge?-type]
