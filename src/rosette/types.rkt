@@ -46,7 +46,7 @@
 
  ;; Useful functions for type analysis
  ;; Higher level functions
- unify-types apply-type get-domain-given-range union-types
+ unify-types apply-type get-domain-given-range
  ;; Lower level functions (for constraint generation)
  make-type-map unify make-fresh replace-type-vars get-free-type-vars
  has-binding? get-binding add-type-binding!
@@ -110,11 +110,6 @@
   ;; Replaces type variables in this type with their values as given
   ;; by the type mapping.
   (replace-type-vars Type mapping [default])
-  ;; Returns the lowest common supertype, that is, the most specific
-  ;; type such that both arguments are subtypes of that type.
-  ;; The types cannot contain type variables.
-  ;; TODO(dead code): Remove all code using union-types
-  (union-types Type other-type)
 
   #:fallbacks
   [(define (apply-on-symbolic-type-helper self fn)
@@ -123,10 +118,7 @@
 
    ;; Most types can never have type variables inside themselves
    (define (get-free-type-vars self) '())
-   (define (replace-type-vars self mapping [default #f]) self)
-
-   (define (union-types self other-type)
-     (default-union-types self other-type))])
+   (define (replace-type-vars self mapping [default #f]) self)])
 
 ;; Like apply-on-symbolic-type-helper, but can take symbolic unions as inputs
 ;; as well.
@@ -169,18 +161,6 @@
           [((typeof-predicate t2) t1)
            (unify-helper t2 t1 mapping)]
           [else #f])))
-
-;; Unifies types that don't have parameters. Types with parameters
-;; (eg. Vectors) will have to do something extra.
-(define (default-union-types self other-type)
-  (cond [(is-supertype? self other-type)
-         self]
-        [(is-supertype? other-type self)
-         other-type]
-        [else
-         ;; Neither self nor other-type can be Any-type (since that is
-         ;; a supertype of everything], so they must have a parent.
-         (union-types (get-parent self) (get-parent other-type))]))
 
 (define-generics symbolic
   ;; Returns #t if it is possible to modify elements in a value of
@@ -711,7 +691,6 @@
    (define/generic gen-repr repr)
    (define/generic gen-get-free-type-vars get-free-type-vars)
    (define/generic gen-replace-type-vars replace-type-vars)
-   (define/generic gen-union-types union-types)
    
    (define (get-parent self)
      (struct-copy Any-Type self))
@@ -785,17 +764,8 @@
                   (gen-replace-type-vars (Vector-Type-index-type self)
                                          mapping default)
                   (gen-replace-type-vars (Vector-Type-output-type self)
-                                         mapping default)))
+                                         mapping default)))]
 
-   (define (union-types self other-type)
-     (if (Vector-Type? other-type)
-         (match-let ([(Vector-Type self-len self-index self-output) self]
-                     [(Vector-Type other-len other-index other-output) other-type])
-           (Vector-Type (if (equal? self-len other-len) self-len 'unknown)
-                        (gen-union-types self-index other-index)
-                        (gen-union-types self-output other-output)))
-         (default-union-types self other-type)))]
-  
   #:methods gen:symbolic
   [(define/generic gen-has-setters? has-setters?)
    (define/generic gen-make-symbolic make-symbolic)
@@ -900,7 +870,6 @@
    (define/generic gen-repr repr)
    (define/generic gen-get-free-type-vars get-free-type-vars)
    (define/generic gen-replace-type-vars replace-type-vars)
-   (define/generic gen-union-types union-types)
    
    (define (get-parent self)
      (struct-copy Any-Type self))
@@ -936,13 +905,7 @@
    
    (define (replace-type-vars self mapping [default #f])
      (Set-Type (gen-replace-type-vars (Set-Type-content-type self)
-                                      mapping default)))
-
-   (define (union-types self other-type)
-     (if (Set-Type? other-type)
-         (Set-Type (gen-union-types (Set-Type-content-type self)
-                                    (Set-Type-content-type other-type)))
-         (default-union-types self other-type)))]
+                                      mapping default)))]
   
   #:methods gen:symbolic
   [(define/generic gen-make-symbolic make-symbolic)
@@ -1015,7 +978,6 @@
    (define/generic gen-repr repr)
    (define/generic gen-get-free-type-vars get-free-type-vars)
    (define/generic gen-replace-type-vars replace-type-vars)
-   (define/generic gen-union-types union-types)
    
    (define (get-parent self)
      (struct-copy Any-Type self))
@@ -1077,16 +1039,7 @@
                (gen-replace-type-vars (Map-Type-input-type self)
                                       mapping default)
                (gen-replace-type-vars (Map-Type-output-type self)
-                                      mapping default)))
-
-   (define (union-types self other-type)
-     (if (Map-Type? other-type)
-         (match-let ([(Map-Type self-cap self-input self-output) self]
-                     [(Map-Type other-cap other-input other-output) other-type])
-           (Map-Type (if (equal? self-cap other-cap) self-cap 'unknown)
-                     (gen-union-types self-input other-input)
-                     (gen-union-types self-output other-output)))
-         (default-union-types self other-type)))]
+                                      mapping default)))]
 
   #:methods gen:symbolic
   [(define/generic gen-make-symbolic make-symbolic)
@@ -1113,7 +1066,6 @@
    (define/generic gen-repr repr)
    (define/generic gen-get-free-type-vars get-free-type-vars)
    (define/generic gen-replace-type-vars replace-type-vars)
-   (define/generic gen-union-types union-types)
    
    (define (get-parent self)
      (struct-copy Any-Type self))
@@ -1149,13 +1101,7 @@
    
    (define (replace-type-vars self mapping [default #f])
      (DAG-Type (gen-replace-type-vars (DAG-Type-vertex-type self)
-                                      mapping default)))
-
-   (define (union-types self other-type)
-     (if (DAG-Type? other-type)
-         (DAG-Type (gen-union-types (DAG-Type-vertex-type self)
-                                    (DAG-Type-vertex-type other-type)))
-         (default-union-types self other-type)))]
+                                      mapping default)))]
   
   #:methods gen:symbolic
   [(define/generic gen-has-setters? has-setters?)
@@ -1239,7 +1185,6 @@
    (define/generic gen-repr repr)
    (define/generic gen-get-free-type-vars get-free-type-vars)
    (define/generic gen-replace-type-vars replace-type-vars)
-   (define/generic gen-union-types union-types)
    
    (define (get-parent self)
      (struct-copy Any-Type self))
@@ -1312,10 +1257,7 @@
                      (for/all ([field-types field-types])
                        (for/list ([type field-types])
                          (gen-replace-type-vars type mapping default)))
-                     field-constant?)]))
-
-   (define (union-types self other-type)
-     (error "Not implemented"))]
+                     field-constant?)]))]
   
   #:methods gen:symbolic
   [(define/generic gen-make-symbolic make-symbolic)
@@ -1455,7 +1397,6 @@
    (define/generic gen-apply-on-symbolic-type-helper apply-on-symbolic-type-helper)
    (define/generic gen-get-free-type-vars get-free-type-vars)
    (define/generic gen-replace-type-vars replace-type-vars)
-   (define/generic gen-union-types union-types)
 
    (define (get-parent self)
      (struct-copy Any-Type self))
@@ -1547,28 +1488,7 @@
          (map (lambda (x) (gen-replace-type-vars x mapping default)) domain)
          (gen-replace-type-vars range mapping default)
          #:read-index ridx
-         #:write-index widx)]))
-
-   ;; Assumes that there are no type variables
-   (define (union-types self other-type)
-     (for/all ([other-type other-type])
-       (if (Procedure-Type? other-type)
-           (match* (self other-type)
-             [((Procedure-Type self-domain self-range self-bound
-                               self-ridx self-widx)
-               (Procedure-Type other-domain other-range other-bound
-                               other-ridx other-widx))
-              
-              (unless (= (length self-domain) (length other-domain))
-                (error "Union: Procedures have different arities"))
-              (unless (and (equal? self-ridx other-ridx)
-                           (equal? self-widx other-widx))
-                (error "Union: Procedures have different read/write indexes"))
-              
-              (Procedure-Type (map gen-union-types self-domain other-domain)
-                              (gen-union-types self-range other-range)
-                              '() self-ridx self-widx)])
-           (default-union-types self other-type))))])
+         #:write-index widx)]))])
 
 (define (Procedure-type domain-types range-type
                         #:read-index [ridx #f]

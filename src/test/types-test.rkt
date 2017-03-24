@@ -373,41 +373,6 @@
        (check-false (unify-types
                      (Procedure-type (list (Vector-type a1 a2) a1) a2)
                      (Procedure-type (list (Vector-type int a1) a1) enum))))
-     
-
-     (test-case "union-types"
-       (for ([t (remove* (list rec rec-var) all-no-var)])
-         (check-equal? (union-types t t) t
-                       (format "Type ~a should obey (union-types x x) = x" t))
-         (commutative (check-equal? (union-types t any) any))
-         (commutative (check-equal? (union-types t bot) t)))
-
-       (commutative (check-equal? (union-types vec proc) any))
-       (commutative (check-equal? (union-types int enum) idx))
-       (commutative (check-equal? (union-types int bool) any))
-       (commutative (check-equal? (union-types int idx) idx))
-       
-       (commutative (check-equal? (union-types vec (Vector-type int int))
-                                  (Vector-type int any)))
-       (commutative (check-equal? (union-types vec (Vector-type enum bool))
-                                  (Vector-type idx bool)))
-       (commutative (check-equal? (union-types vec (Vector-type enum int))
-                                  (Vector-type idx any)))
-
-       ;; For now, we disallow unions of procedures with different
-       ;; numbers of arguments:
-       (check-exn exn:fail?
-                  (thunk
-                   (union-types proc (Procedure-type (list int int) int))))
-       (commutative
-        (check-equal? (union-types (Procedure-type (list int int) int)
-                                   (Procedure-type (list enum int) bool))
-                      (Procedure-type (list idx int) any)))
-       (commutative
-        (check-equal? (union-types
-                       (Procedure-type (list int) (Vector-type int enum))
-                       (Procedure-type (list int) (Vector-type idx bool)))
-                      (Procedure-type (list int) (Vector-type idx any)))))
 
      (test-case "apply-type"
        (match-define (list a1 a2)
