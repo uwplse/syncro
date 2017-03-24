@@ -47,8 +47,8 @@
     (define (can-use-operator? self . args) #t)
 
     (define (operator-domain-with-mutability var range-type mutable?)
-      (get-domain-given-range-with-mutability (variable-type var)
-                                              range-type mutable?))
+      (get-domain-given-range-with-mutability
+       (variable-type var) (tm-pair range-type mutable?)))
 
     (define (operator-make-lifted var inputs)
       (apply var inputs))]))
@@ -71,7 +71,7 @@
 
    (define (operator-domain-with-mutability self range-type mutable?)
      (get-domain-given-range-with-mutability
-      (basic-operator-type self) range-type mutable?))
+      (basic-operator-type self) (tm-pair range-type mutable?)))
 
    (define (operator-make-lifted self inputs)
      (apply (basic-operator-constructor self) inputs))])

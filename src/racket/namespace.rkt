@@ -1,6 +1,7 @@
 #lang racket
 
-(require "../../../synapse/opsyn/engine/search.rkt")
+;; Commented out to avoid the dependency on Synapse for now
+;; (require "../../../synapse/opsyn/engine/search.rkt")
 
 (provide run-in-racket) ; racket-ns)
 

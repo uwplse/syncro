@@ -110,7 +110,7 @@
      (let* ([value (recurse val)]
             [type (infer-type value)])
        (send terminal-info make-and-add-terminal var (unknown-value) type)
-       (define-expr^ (recurse var) value))]
+       (define^ (recurse var) value))]
     [`(for-enum-set ((,var ,set-expr)) . ,body)
      (let* ([set (recurse set-expr)]
             [set-type (infer-type set)])

@@ -1,6 +1,7 @@
 #lang rosette
 
 (provide display-errors? maybe-internal-error internal-error
+         display-return
          input-val input-preconditions input?
          (rename-out [input make-input])
          my-for/sum my-for/or my-for/and coerce-evaluate clone)
@@ -15,6 +16,10 @@
   (display "INTERNAL ERROR: ")
   (displayln str)
   (error str))
+
+(define (display-return x)
+  (displayln x)
+  x)
 
 (struct input (val preconditions) #:transparent)
 

@@ -12,7 +12,14 @@
                      (cons 'bitwidth 10)
                      (cons 'timeout 3600)
                      (cons 'module-file "metasketch-module-file.rkt")
-                     (cons 'grammar-version 'ssa)
+                     ;; grammar-version can be 'basic, 'general,
+                     ;; 'caching, or '(ssa n), where n is a
+                     ;; non-negative integer (use '(ssa 2) by
+                     ;; default).
+                     (cons 'grammar-version 'caching)
+                     ;; grammar-choice can be 'basic or 'sharing.
+                     ;; 'sharing only works with 'basic and 'general
+                     ;; grammars.
                      (cons 'grammar-choice 'basic))))
   (command-line
    #:argv args
@@ -36,7 +43,7 @@
    
    [("-b" "--bitwidth")
     bits
-    "The bitwidth to use in Rosette"
+    "The bitwidth to use in Rosette. Must be an integer between 1 and 32."
     (hash-set! options 'bitwidth (string->number bits))]
    
    [("-t" "--timeout")
@@ -47,7 +54,7 @@
    
    [("-g" "--grammar")
     grammar
-    "Which type of grammar to use"
+    "Which type of grammar to use -- either basic, general or caching."
     (hash-set! options 'grammar-version (string->symbol grammar))]
    
    [("-c" "--grammar-choice")

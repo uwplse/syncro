@@ -7,7 +7,7 @@
 
 (provide
  ;; Constructors
- Any-type Bottom-type Sum-type define-type-alias define-base-type
+ Any-type Bottom-type define-type-alias define-base-type
  Boolean-type Index-type Integer-type Bitvector-type Enum-type
  Vector-type Set-type Map-type DAG-type Record-type define-record
  Procedure-type Error-type Void-type Type-var
@@ -15,14 +15,13 @@
  Type-Var
 
  ;; Predicates on types
- Any-type? Bottom-type? Sum-type? Alias-type? Base-type?
+ Any-type? Bottom-type? Alias-type? Base-type?
  Boolean-type? Index-type? Integer-type? Bitvector-type? Enum-type?
  Vector-type? Set-type? DAG-type? Record-type? Procedure-type?
  Error-type? Void-type? (rename-out [Type-Var? Type-var?])
 
  ;; Selectors (for some types)
- (rename-out [Sum-Type-types Sum-type-types]
-             [Vector-Type-index-type Vector-index-type]
+ (rename-out [Vector-Type-index-type Vector-index-type]
              [Vector-Type-output-type Vector-output-type]
              [Set-Type-content-type Set-content-type]
              [DAG-Type-vertex-type DAG-vertex-type]
@@ -35,6 +34,9 @@
              [Procedure-Type-read-index Procedure-read-index]
              [Procedure-Type-write-index Procedure-write-index])
  get-record-field-type can-mutate-record-field?
+
+ ;; Type mutability pairs
+ (struct-out tm-pair)
 
  ;; Generic function stuff
  gen:Type Type? gen:symbolic symbolic?
@@ -50,7 +52,8 @@
  has-binding? get-binding add-type-binding!
 
  ;; Useful functions for mutability analysis
- has-setters? get-domain-given-range-with-mutability is-application-mutable?
+ has-setters? apply-type-with-mutability
+ get-domain-given-range-with-mutability is-application-mutable?
 
  ;; Operations used for symbolic code generation
  make-symbolic symbolic-code generate-update-arg-names
@@ -66,7 +69,7 @@
               ...))]))
 
 (make-type-predicates
- [Any-Type? Any-type?] [Bottom-Type? Bottom-type?] [Sum-Type? Sum-type?]
+ [Any-Type? Any-type?] [Bottom-Type? Bottom-type?]
  [Alias-Type? Alias-type?] [Base-Type? Base-type?]
  [Boolean-Type? Boolean-type?] [Index-Type? Index-type?]
  [Integer-Type? Integer-type?] [Bitvector-Type? Bitvector-type?]
@@ -110,6 +113,7 @@
   ;; Returns the lowest common supertype, that is, the most specific
   ;; type such that both arguments are subtypes of that type.
   ;; The types cannot contain type variables.
+  ;; TODO(dead code): Remove all code using union-types
   (union-types Type other-type)
 
   #:fallbacks
@@ -160,10 +164,6 @@
            (unify-helper t2 t1 mapping)]
           [(Bottom-Type? t1) t1]
           [(Bottom-Type? t2) t2]
-          [(Sum-Type? t1)
-           (unify-helper t1 t2 mapping)]
-          [(Sum-Type? t2)
-           (unify-helper t2 t1 mapping)]
           [((typeof-predicate t1) t2)
            (unify-helper t1 t2 mapping)]
           [((typeof-predicate t2) t1)
@@ -278,65 +278,6 @@
       other-type)])
 
 (define (Bottom-type) (Bottom-Type))
-
-(struct Sum-Type Any-Type (types) #:transparent
-  #:methods gen:Type
-  [(define/generic gen-is-supertype? is-supertype?)
-   (define/generic gen-repr repr)
-   (define/generic gen-get-free-type-vars get-free-type-vars)
-   (define/generic gen-replace-type-vars replace-type-vars)
-   
-   (define (get-parent self)
-     (struct-copy Any-Type self))
-
-   (define (typeof-predicate self) Sum-Type?)
-   
-   (define (is-supertype? self other-type)
-     (or (Bottom-Type? other-type)
-         (if (Sum-Type? other-type)
-             (for/and ([small-type (Sum-Type-types other-type)])
-               (gen-is-supertype? self small-type))
-             (for/or ([small-type (Sum-Type-types self)])
-               (gen-is-supertype? small-type other-type)))))
-
-   (define (repr self)
-     (cons 'Sum-type (map gen-repr (Sum-Type-types self))))
-
-   (define (unify-helper self other-type mapping)
-      (unless (not (term? other-type))
-        (internal-error "unify-helper requirement not satisfied"))
-      ;; TODO: Implement. The following is a hack for file synthesis.
-      (and (equal? self other-type) other-type))
-
-   (define (apply-on-symbolic-type-helper self fn)
-     (apply-on-symbolic-type-list
-      (Sum-Type-types self)
-      (lambda (concrete-list) (fn (Sum-Type concrete-list)))))
-
-   ;; Most types can never have type variables inside themselves
-   (define (get-free-type-vars self)
-     (foldl append '() (map gen-get-free-type-vars (Sum-Type-types self))))
-
-   (define (replace-type-vars self mapping [default #f])
-     (Sum-Type
-      (map (lambda (x) (gen-replace-type-vars x mapping default))
-           (Sum-Type-types self))))
-
-   (define (union-types self other-type)
-     (internal-error "Not implemented"))]
-
-  #:methods gen:symbolic
-  [(define/generic gen-make-symbolic make-symbolic)
-
-   (define (make-symbolic self varset)
-     (apply choose*
-            (map (lambda (x) (gen-make-symbolic x varset))
-                 (Sum-Type-types self))))])
-
-(define (Sum-type . types)
-  (unless (andmap Type? types)
-    (error "Sum-type -- arguments must be types" types))
-  (Sum-Type types))
 
 (struct Alias-Type Any-Type (id base-type) #:transparent
   #:methods gen:Type
@@ -1337,8 +1278,7 @@
      (unless (and (not (term? other-type)) (Record-Type? other-type))
        (internal-error "unify-helper requirement not satisfied"))
 
-     (and (equal? self other-type) other-type)
-     #;(for/all ([other-type other-type])
+     (for/all ([other-type other-type])
        (match* (self other-type)
          [((Record-Type self-name self-fields self-types self-constant?)
            (Record-Type other-name other-fields other-types other-constant?))
@@ -1668,20 +1608,16 @@
     (let ([domain (Procedure-Type-domain-types copy)]
           [range (Procedure-Type-range-type copy)])
       (for/all ([domain domain])
-        (begin
-          (unless (= (length domain) (length arg-types))
-            (error "Incorrect number of arguments -- apply-type"))
-        
-          (define mapping (make-type-map))
-          (for ([expected-type domain]
-                [actual-type arg-types])
-            (unless (unify expected-type actual-type mapping)
-              (error (format "Cannot apply type ~a to arguments ~a"
-                             copy arg-types))))
-        ;; TODO: The result of replace-type-vars should not have any
-        ;; of the introduced fresh type variables. However it can have
-        ;; other type variables (such as ones in the arg-types).
-          (replace-type-vars range mapping))))))
+        (and (= (length domain) (length arg-types))
+             (let ([mapping (make-type-map)])
+               (and (my-for/and ([expected-type domain]
+                                 [actual-type arg-types])
+                      (unify expected-type actual-type mapping))
+                    ;; TODO: The result of replace-type-vars should
+                    ;; not have any of the introduced fresh type
+                    ;; variables. However it can have other type
+                    ;; variables (such as ones in the arg-types).
+                    (replace-type-vars range mapping))))))))
 
 ;; This can return types that contain free type variables.
 (define (get-domain-given-range proc-type range-type [default #f])
@@ -1844,6 +1780,27 @@
 ;; Mutability analysis ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(struct tm-pair (type mutable?) #:transparent)
+
+;; It only makes sense for data structure types to be mutable
+(define (make-tm-pair type mutable?)
+  (tm-pair type (and mutable? (has-setters? type))))
+
+(define (apply-type-with-mutability proc-type arg-pairs)
+  (define new-range-type
+    (apply-type proc-type (map tm-pair-type arg-pairs)))
+  (define is-mutable?
+    (compose tm-pair-mutable? (curry list-ref arg-pairs)))
+
+  (let ([ridx (Procedure-Type-read-index proc-type)]
+        [widx (Procedure-Type-write-index proc-type)])
+    (and new-range-type
+         ;; If this is a write procedure, it needs a mutable argument
+         (or (not widx) (is-mutable? widx))
+         ;; The range is mutable if this is a read procedure and the
+         ;; read index argument is mutable
+         (make-tm-pair new-range-type (and ridx (is-mutable? ridx))))))
+
 ;; The result of a procedure application can only be mutable if it
 ;; reads from a mutable data structure.
 (define (is-application-mutable? proc-type args-mutable?)
@@ -1852,38 +1809,42 @@
 
 ;; Like get-domain-given-range, but includes constraints on
 ;; mutability.
-;; range-pair is a pair of the range type and range mutability.
-(define (get-domain-given-range-with-mutability proc-type range-type range-mutable? [default #f])
+;; range-pair is a tm-pair of the range type and range mutability.
+(define (get-domain-given-range-with-mutability proc-type range-pair [default #f])
   (let ([domain-types
-         (get-domain-given-range proc-type range-type default)])
+         (get-domain-given-range proc-type (tm-pair-type range-pair) default)])
     ;; Get domain types as before
     (and domain-types
          ;; By default, none of the arguments need to be mutable
          ;; handle-read-write will fix the result to account for Read
          ;; and Write procedures
          (handle-read-write
-          proc-type range-mutable?
-          (map (lambda (x) (cons x #f)) domain-types)))))
+          proc-type (tm-pair-mutable? range-pair)
+          (map (lambda (x) (make-tm-pair x #f)) domain-types)))))
 
 ;; Fixes results to account for Read and Write procedures.
 (define (handle-read-write proc-type range-mutable? domain-pairs)
   (let ([ridx (Procedure-Type-read-index proc-type)]
         [widx (Procedure-Type-write-index proc-type)])
     (cond [widx
-           ;; A Write procedure forces one of its arguments to be mutable.
+           ;; A Write procedure forces one of its arguments to be
+           ;; mutable. It returns void which is never mutable.
            (and (not range-mutable?)
                 (make-mutable domain-pairs widx))]
           ;; A Read procedure forces one of its arguments to be mutable
           ;; if it needs to produce a mutable result.
           [(and ridx range-mutable?)
            (make-mutable domain-pairs ridx)]
-          [else domain-pairs])))
+          [else
+           ;; Since we aren't a read procedure, our return value is
+           ;; not mutable.
+           (and (not range-mutable?) domain-pairs)])))
 
 ;; Replaces the pair at the specified index with a new pair containing
 ;; the same type and the mutability flag set (i.e. #t)
 (define (make-mutable type-mutable-pairs index)
   (if (= index 0)
-      (cons (cons (caar type-mutable-pairs) #t)
+      (cons (make-tm-pair (tm-pair-type (car type-mutable-pairs)) #t)
             (cdr type-mutable-pairs))
       (cons (car type-mutable-pairs)
             (make-mutable (cdr type-mutable-pairs) (- index 1)))))

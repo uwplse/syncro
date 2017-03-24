@@ -235,8 +235,8 @@
                                    ,@(verbose-code `(displayln "Completed symbolic generation! Running the solver:"))))))
              (and (sat? synth)
                   ,@(verbose-code '(displayln "Solution found! Generating code:"))
-                  (let ([code
-                         (time (coerce-evaluate (lifted-code program) synth))])
+                  (let* ([result (time (coerce-evaluate program synth))]
+                         [code (lifted-code (eliminate-dead-code result))])
                     (pretty-print code)
                     code))))
 

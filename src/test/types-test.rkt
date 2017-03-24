@@ -410,20 +410,17 @@
                       (Procedure-type (list int) (Vector-type idx any)))))
 
      (test-case "apply-type"
-       (match-define (list a1 a2 a3)
-         (build-list 3 (lambda (i) (Type-var))))
+       (match-define (list a1 a2)
+         (build-list 2 (lambda (i) (Type-var))))
+       (define a1-idx (Type-var idx))
 
        ;; Simple examples solvable with direct equality
        (check-equal? (apply-type (Procedure-type '() int) '()) int)
        (check-equal? (apply-type (Procedure-type (list int) bool)
                                  (list int))
                      bool)
-       (check-exn exn:fail? (thunk
-                             (apply-type (Procedure-type (list int) bool)
-                                         (list int int))))
-       (check-exn exn:fail? (thunk
-                             (apply-type (Procedure-type (list int) bool)
-                                         (list bool))))
+       (check-false (apply-type (Procedure-type (list int) bool) (list int int)))
+       (check-false (apply-type (Procedure-type (list int) bool) (list bool)))
 
        ;; Examples that require subtyping reasoning
        (check-equal? (apply-type (Procedure-type (list idx) bool)
@@ -439,11 +436,9 @@
                       (list vec (Vector-index-type vec)))
                      (Vector-output-type vec))
        
-       (check-exn exn:fail?
-                  (thunk
-                   (apply-type
-                    (Procedure-type (list (Vector-type a1 a2) a1) a2)
-                    (list vec bool)))))
+       (check-false (apply-type
+                     (Procedure-type (list (Vector-type a1-idx a2) a1-idx) a2)
+                     (list vec bool))))
 
      (test-case "get-domain-given-range"
        (check-equal? (get-domain-given-range proc int)

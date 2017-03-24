@@ -10,15 +10,19 @@
  ;; Various constructs in the language
  define-lifted lifted? if^ begin^
  get-field^ set-field!^
- define-expr^ set!^
+ define^ set!^
  for-enum-set^
  lifted-error lifted-error?
 
  ;; Functions for lifted variables in particular
  lifted-variable? make-lifted-variable update-lifted-variable
 
+ ;; Various selectors and predicates
+ lifted-begin? lifted-begin-args lifted-define? lifted-define-var
+
  ;; Operations on lifted programs
- eval-lifted lifted-code fold-lifted infer-type mutable? force-type-helper
+ eval-lifted lifted-code fold-lifted infer-type mutable?
+ force-type-helper eliminate-dead-code
 
  ;; Generic interfaces to extend the language
  lifted-writer gen:lifted gen:inferable
@@ -221,8 +225,11 @@
    (define/generic gen-mutable? mutable?)
 
    (define (infer-type self)
-     (apply-type (gen-infer-type (lifted-apply-proc self))
-                 (map gen-infer-type (lifted-apply-args self))))
+     (let ([proc-type (gen-infer-type (lifted-apply-proc self))]
+           [arg-types (map gen-infer-type (lifted-apply-args self))])
+       (or (apply-type proc-type arg-types)
+           (error (format "Cannot apply ~a to arguments ~a"
+                          proc-type arg-types)))))
 
    ;; TODO: Don't assume that we can call infer-type on the procedure
    ;; TODO: Maybe we should memoize calls to infer-type?
@@ -528,10 +535,10 @@
    (define/generic gen-fold-lifted fold-lifted)
 
    (define (eval-lifted self)
-     ;; TODO(ugliness): This is really hacky.
-     (with-handlers ([exn:fail? (lambda (e) (set-lifted-define-val! self 0))])
-       (set-variable-value! (lifted-define-var self)
-                            (gen-eval-lifted (lifted-define-val self)))))
+     (match self
+       [(lifted-define var val)
+        (let ([result (gen-eval-lifted val)])
+          (set-variable-value! var result))]))
 
    (define (lifted-code self)
      (list 'define
@@ -551,14 +558,14 @@
 
    (define (mutable? self) #f)])
 
-;; var is a symbol
+;; var is a lifted variable
 ;; expr is a lifted expression
-(define (define-expr^ var lifted-val)
-  (if (lifted-error? lifted-val)
+(define (define^ var val)
+  (unless (and (lifted-variable? var) (lifted? val))
+    (internal-error "define^: Expected lifted stuff"))
+  (if (or (lifted-error? var) (lifted-error? val))
       (lifted-error)
-      (lifted-define
-       (make-lifted-variable var (infer-type lifted-val))
-       lifted-val)))
+      (lifted-define var val)))
 
 ;; var is syntax containing a symbol
 ;; expr is syntax containing an expression that evaluates to a lifted
@@ -749,3 +756,43 @@
      (syntax/loc stx
        (begin (define new-name (lift thing 'thing type))
               ...))]))
+
+;; Removes any temporary variable definitions that are never used.
+;; Does not work on symbolic values.
+;; A version that does work on symbolic values can be found in
+;; grammar-test.rkt.
+(define (eliminate-dead-code code)
+  ;; Hard coded for the grammars we have for now
+  (define begin-code
+    (cond [(lifted-begin? code) code]
+          [(and (lifted-if? code)
+                (lifted-begin? (lifted-if-else-branch code)))
+           (lifted-if-else-branch code)]
+          [else #f]))
+  (if begin-code (eliminate-dead-code-from-begin begin-code) code))
+
+;; code must be a lifted-begin
+;; Does not work on symbolic values.
+;; A version that does work on symbolic values can be found in
+;; grammar-test.rkt.
+(define (eliminate-dead-code-from-begin code)
+  (let ([sym-table (mutable-set)])
+    (define (add-sym x)
+      (when (lifted-variable? x)
+        (set-add! sym-table (variable-symbol x))))
+
+    ;; Ignore an item if it defines a temporary variable that is never used.
+    (define (ignore? item)
+      (and (lifted-define? item)
+           (not (set-member? sym-table
+                             (variable-symbol (lifted-define-var item))))))
+
+    (define (build-symbol-table item)
+      (fold-lifted item add-sym (const #t)))
+
+    (lifted-begin
+     (reverse
+      (for/list ([item (reverse (lifted-begin-args code))]
+                 #:when (and (not (ignore? item))
+                             (build-symbol-table item)))
+        item)))))
