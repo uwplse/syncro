@@ -47,7 +47,9 @@
          (for*/all ([itr-var itr] ...)
            (let ([val #f])
              (for ([i itr-var] ...)
-               (set! val (or val (begin expr ...))))
+               (let ([v (begin expr ...)])
+                 (when v
+                   (set! val (or val v)))))
              val))))]))
 
 ;; TODO: Not exactly semantically correct -- this will iterate through
@@ -62,7 +64,8 @@
          (for*/all ([itr-var itr] ...)
            (let ([val #t])
              (for ([i itr-var] ...)
-               (set! val (and val (begin expr ...))))
+               (when val
+                 (set! val (and val (begin expr ...)))))
              val))))]))
 
 (define (coerce-evaluate thing model)
