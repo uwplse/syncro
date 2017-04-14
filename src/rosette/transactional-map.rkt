@@ -91,7 +91,7 @@
           ;; but would only work if after a for/all the vector is
           ;; guaranteed to have a concrete length.
           (for/all ([len (vector-length vec)])
-            (my-for/or ([concrete-size len])
+            (my-for/or ([concrete-size (add1 len)])
               (and (= size concrete-size)
                    (concrete-map-keys map concrete-size))))
 

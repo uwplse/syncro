@@ -78,8 +78,20 @@
                                  3)))
 
      (check-all-pcs (map-ref test-map 'a) '(1 #f 2 3))
-     (check-all-pcs (map-ref test-map 'b) '(2 2 2 #f))
-   )))
+     (check-all-pcs (map-ref test-map 'b) '(2 2 2 #f)))
+
+   (test-case "check-max"
+     (define test-map (make-map 5))
+     (define-symbolic b boolean?)
+     (when b
+       (map-set! test-map 'a 1)
+       (map-set! test-map 'b 2)
+       (map-set! test-map 'c 3)
+       (map-set! test-map 'd 4)
+       (map-set! test-map 'e 5))
+     ;; list of keys should not be concretely empty
+     (check-equal? (equal? (map-keys test-map) '()) (not b)))
+   ))
 
 (define (run-transactional-map-tests)
   (displayln "Running tests for transactional-map.rkt")
