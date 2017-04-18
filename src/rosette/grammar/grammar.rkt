@@ -283,7 +283,6 @@
   ;; TODO: Is this sound? There may be some programs that we should
   ;; generate but don't, specifically when the desired-type is
   ;; symbolic and so we have too much sharing.
-  ;; TODO: Use for/all to guarantee that desired-type will be concrete.
   (define (general-grammar desired-type depth #:mutable? [mutable? #f])
     (define cache (and cache? (make-hash)))
 

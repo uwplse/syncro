@@ -14,18 +14,16 @@
   (make-vector num-things #f))
 
 (define (build-enum-set num-things fn)
-  (for/all ([num-things num-things])
-    (begin
-      (when (term? num-things)
-        (internal-error
-         (format "enum-make-set: num-things is not concrete: ~a" num-things)))
-      (for/vector #:length num-things ([i num-things])
-        (fn i)))))
+  (when (term? num-things)
+    (internal-error
+     (format "build-enum-set: num-things is not concrete: ~a" num-things)))
+  (for/vector #:length num-things ([i num-things])
+    (fn i)))
 
 (define (enum-make-symbolic-set num-things [varset #f])
   (when (term? num-things)
     (internal-error
-     (format "enum-make-set: num-things is not concrete: ~a" num-things)))
+     (format "enum-make-symbolic-set: num-things is not concrete: ~a" num-things)))
   (for/vector #:length num-things ([i num-things])
     (define-symbolic* choice boolean?)
     (when varset (set-add! varset (make-input choice '())))
@@ -52,6 +50,8 @@
   result)
 
 (define (enum-set-union set1 . others)
+  ;; Need to use for/all here so that (vector-length set1) will be
+  ;; concrete, which allows us to do (for ([elem num-items]) ...)
   (for/all ([set1 set1])
     (let* ([num-items (vector-length set1)]
            [result (enum-make-set num-items)]

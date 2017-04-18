@@ -717,7 +717,11 @@
            (gen-repr (Vector-Type-output-type self))))
 
    (define (apply-on-symbolic-type-helper self fn)
-     (for/all ([len (Vector-Type-len self)])
+     (let ([len (Vector-Type-len self)])
+       (when (term? len)
+         (internal-error
+          (format "Vector length should not be symbolic: ~a" len)))
+
        (apply-on-symbolic-type
         (Vector-Type-index-type self)
         (lambda (c-index-type)
@@ -1000,7 +1004,11 @@
            (gen-repr (Map-Type-output-type self))))
 
    (define (apply-on-symbolic-type-helper self fn)
-     (for/all ([capacity (Map-Type-capacity self)])
+     (let ([capacity (Map-Type-capacity self)])
+       (when (term? capacity)
+         (internal-error
+          (format "Map capacity should not be symbolic: ~a" capacity)))
+
        (apply-on-symbolic-type
         (Map-Type-input-type self)
         (lambda (c-input-type)
@@ -1429,22 +1437,26 @@
               '#:write-index widx)]))
 
    (define (apply-on-symbolic-type-helper self fn)
-     ;; TODO: Simplify using a macro
-     (for/all ([domain-types (Procedure-Type-domain-types self)])
-       (for/all ([range-type (Procedure-Type-range-type self)])
-         (for/all ([bound-vars (Procedure-Type-bound-type-vars self)])
-           (for/all ([ridx (Procedure-Type-read-index self)])
-             (for/all ([widx (Procedure-Type-write-index self)])
-                (apply-on-symbolic-type-list
-                 domain-types
-                 (lambda (cdts)
-                   (gen-apply-on-symbolic-type-helper
-                    range-type
-                    (lambda (crt)
-                      (apply-on-symbolic-type-list
-                       bound-vars
-                       (lambda (cbvs)
-                         (fn (Procedure-Type cdts crt cbvs ridx widx))))))))))))))
+     (let* ([ridx (Procedure-Type-read-index self)]
+            [widx (Procedure-Type-write-index self)])
+       (when (or (term? ridx) (term? widx))
+         (internal-error
+          (format "Procedure indexes should not be symbolic: ~a ~a" ridx widx)))
+
+       ;; TODO: Simplify using a macro
+       (for*/all ([domain-types (Procedure-Type-domain-types self)]
+                  [range-type (Procedure-Type-range-type self)]
+                  [bound-vars (Procedure-Type-bound-type-vars self)])
+         (apply-on-symbolic-type-list
+          domain-types
+          (lambda (cdts)
+            (gen-apply-on-symbolic-type-helper
+             range-type
+             (lambda (crt)
+               (apply-on-symbolic-type-list
+                bound-vars
+                (lambda (cbvs)
+                  (fn (Procedure-Type cdts crt cbvs ridx widx)))))))))))
 
    ;; TODO: What to do about read and write indexes?
    (define (unify-helper self other-type mapping)
@@ -1617,7 +1629,11 @@
      `(Type-Var ',(Type-Var-id self) ,(gen-repr (Type-Var-default self))))
 
    (define (apply-on-symbolic-type-helper self fn)
-     (for/all ([id (Type-Var-id self)])
+     (let ([id (Type-Var-id self)])
+       (when (term? id)
+         (internal-error
+          (format "Type var id should not be symbolic: ~a" id)))
+
        (for/all ([default (Type-Var-default self)])
          (gen-apply-on-symbolic-type-helper
           default

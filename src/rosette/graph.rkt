@@ -45,8 +45,11 @@
   (enum-set-remove! (vector-ref graph parent) child))
 
 (define (vertex-parents graph v)
-  (build-enum-set (vector-length graph)
-                  (lambda (parent) (has-edge? graph parent v))))
+  ;; Need to use for/all here so that (vector-length graph) will be
+  ;; concrete, which allows us to use build-enum-set.
+  (for/all ([graph graph])
+    (build-enum-set (vector-length graph)
+                    (lambda (parent) (has-edge? graph parent v)))))
   ;; (filter (lambda (parent) (has-edge? graph parent v))
   ;;         (build-list (vector-length graph) identity)))
 

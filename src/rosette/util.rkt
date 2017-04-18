@@ -29,7 +29,7 @@
     [(_ ([i itr] ...) expr ...)
      (with-syntax ([(itr-var ...) (generate-temporaries #'(i ...))])
        (syntax/loc stx
-         (for*/all ([itr-var itr] ...)
+         (let* ([itr-var itr] ...)
            (let ([sum 0])
              (for ([i itr-var] ...)
                (set! sum (+ sum (begin expr ...))))
@@ -44,7 +44,7 @@
     [(_ ([i itr] ...) expr ...)
      (with-syntax ([(itr-var ...) (generate-temporaries #'(i ...))])
        (syntax/loc stx
-         (for*/all ([itr-var itr] ...)
+         (let* ([itr-var itr] ...)
            (let ([val #f])
              (for ([i itr-var] ...)
                (let ([v (begin expr ...)])
@@ -61,7 +61,7 @@
     [(_ ([i itr] ...) expr ...)
      (with-syntax ([(itr-var ...) (generate-temporaries #'(i ...))])
        (syntax/loc stx
-         (for*/all ([itr-var itr] ...)
+         (let* ([itr-var itr] ...)
            (let ([val #t])
              (for ([i itr-var] ...)
                (when val

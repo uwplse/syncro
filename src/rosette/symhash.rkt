@@ -5,8 +5,8 @@
 (provide rhash rhash-has-key? rhash-ref rhash-set)
 
 ;; Implementation of hash maps that can handle symbolic keys and values.
-;; Requires that keys do not *contain* symbolic values (however they
-;; themselves can be symbolic).
+;; Requires that keys do not *contain* symbolic values, and that keys
+;; are not terms (however they can be symbolic unions).
 ;; Pretty stupid implementation. Would not work well if there's a lot
 ;; of symbolic keys or path conditions.
 (define (rhash [assocs '()])

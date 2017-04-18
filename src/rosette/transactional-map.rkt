@@ -6,7 +6,10 @@
          map-has-key? map-ref map-set!
          map-keys map-values)
 
-(struct vec-map ([size #:mutable] keys values) #:transparent)
+;; The keys and values in a vec-map may contain garbage.
+;; Any time you use a key or a value from keys/values, you *must* make
+;; sure it is valid by comparing the index against num-operations.
+(struct vec-map ([num-operations #:mutable] keys values) #:transparent)
 
 ;; Capacity is a limit on the number of map-sets that can be performed
 ;; on the map. It is *not* a limit on how many elements can be in the
@@ -23,81 +26,93 @@
     (internal-error
      (format "make-symbolic-map: capacity is not concrete: ~a" capacity)))
 
-  (define-symbolic* size integer?)
+  (define-symbolic* num-ops integer?)
   (when varset
-    (define assertions (list (>= size 0) (<= size capacity)))
-    (set-add! varset (make-input size assertions)))
+    (define assertions (list (>= num-ops 0) (<= num-ops capacity)))
+    (set-add! varset (make-input num-ops assertions)))
 
-  ;; TODO: Would it be bad if we eliminate the (< i size) guard? It
-  ;; might make the generated formulas simpler.
-  (vec-map size
-           (for/vector #:length capacity ([i capacity])
-             (and (< i size) (input-fn)))
-           (for/vector #:length capacity ([i capacity])
-             (and (< i size) (output-fn)))))
+  (vec-map num-ops
+           (for/vector #:length capacity ([i capacity]) (input-fn))
+           (for/vector #:length capacity ([i capacity]) (output-fn))))
 
+;; Depends on the fact that there is no delete-key.
 (define (map-has-key? map key)
-  (for*/all ([keys (vec-map-keys map)]
-             [capacity (vector-length keys)])
-    (my-for/or ([i capacity])
-      (and (< i (vec-map-size map))
+  ;; Use for/all to guarantee that (vector-length keys) will be concrete.
+  (for/all ([keys (vec-map-keys map)])
+    (my-for/or ([i (vector-length keys)])
+      (and (< i (vec-map-num-operations map))
            (equal? key (vector-ref keys i))))))
 
 (define (map-ref map key)
-  (for*/all ([keys (vec-map-keys map)]
-             [capacity (vector-length keys)])
-    (let* ([vals (vec-map-values map)])
+  ;; Use for/all to guarantee that capacity will be concrete.
+  (for/all ([keys (vec-map-keys map)])
+    (let* ([capacity (vector-length keys)]
+           [vals (vec-map-values map)]
+           [num-ops (vec-map-num-operations map)])
       (my-for/or ([i capacity])
         ;; Iterate backwards so you hit later transactions first
         (let ([index (- capacity i 1)])
-          (and (< index (vec-map-size map))
+          (and (< index num-ops)
                (equal? key (vector-ref keys index))
                (vector-ref vals index)))))))
 
 (define (map-set! map key val)
   ;; This is tricky. You are not supposed to use for/all to do
-  ;; imperative stuff. Need to think carefully about how this should
-  ;; be implemented.
-  ;; Make sure that when modifying the vector you add a guard that
-  ;; ensures that it retains the original value in cases where the
-  ;; guard is not true.
-  (for/all ([size (vec-map-size map)])
-    (let* ([keys (vec-map-keys map)]
-           [vals (vec-map-values map)]
-           [condition (= size (vec-map-size map))])
-      (unless (< size (vector-length keys))
-        (maybe-internal-error "Map is full!"))
-      
-      (vector-set! keys size (if condition key (vector-ref keys size)))
-      (vector-set! vals size (if condition val (vector-ref vals size)))))
+  ;; imperative stuff.
+  ;; Potential method: Figure out (an overapproximation of) all
+  ;; possible values that num-operations could be, and for each such
+  ;; value v add (when (= num-operations v) (vector-set! keys v key))
+  ;; and so on.
+  ;; Here, num-operations can be between 0 and max capacity - 1. (If
+  ;; it's equal to the capacity, then map-set! should error.)
+  (let* ([num-ops (vec-map-num-operations map)]
+         [keys (vec-map-keys map)]
+         [vals (vec-map-values map)]
+         [capacity (vector-length keys)]
+         [max-capacity
+          (if (union? capacity)
+              (apply max (map second (union-contents capacity)))
+              capacity)])
 
-  ;; This is within safe Rosette so works fine
-  (set-vec-map-size! map (+ 1 (vec-map-size map))))
+    (define (set-at-location! index)
+      (when (= index capacity)
+        (maybe-internal-error "Map is full!"))
+
+      (vector-set! keys index key)
+      (vector-set! vals index val))
+
+    (if (term? num-ops)
+        (for ([possible-num-ops (+ 1 max-capacity)])
+          (when (= possible-num-ops num-ops)
+            (set-at-location! possible-num-ops)))
+        (set-at-location! num-ops))
+
+    ;; This is within safe Rosette so works fine
+    (set-vec-map-num-operations! map (+ num-ops 1))))
 
 (define (map-keys map)
-  (define vec (vec-map-keys map))
+  ;; Use the same trick as in map-set!
+  (let* ([num-ops (vec-map-num-operations map)]
+         [keys (vec-map-keys map)]
+         [capacity (vector-length keys)]
+         [max-capacity
+          (if (union? capacity)
+              (apply max (map second (union-contents capacity)))
+              capacity)])
 
-  (define (concrete-map-keys map size)
-    (for/list ([i size])
-      (vector-ref vec i)))
+    ;; We deal with duplicates at the end
+    (define (concrete-map-keys keys size)
+      (for/list ([i size])
+        (vector-ref keys i)))
 
-  (define result
-    (for/all ([size (vec-map-size map)])
-      (if (term? size)
-          ;; Symbolic constant, need to finitize ourselves
-          ;; TODO: Can we do a for/all on the vector itself instead?
-          ;; This could improve symbolic evaluation, since
-          ;; concrete-map-keys could work on the concrete vector,
-          ;; but would only work if after a for/all the vector is
-          ;; guaranteed to have a concrete length.
-          (for/all ([len (vector-length vec)])
-            (my-for/or ([concrete-size (add1 len)])
-              (and (= size concrete-size)
-                   (concrete-map-keys map concrete-size))))
+    (define result
+      (if (term? num-ops)
+          (my-for/or ([possible-num-ops (+ max-capacity 1)])
+            (and (= num-ops possible-num-ops)
+                 (concrete-map-keys keys possible-num-ops)))
+          (concrete-map-keys keys num-ops)))
 
-          (concrete-map-keys map size))))
-
-  (remove-duplicates result))
+    (remove-duplicates result)))
 
 (define (map-values map)
   (for/all ([keys (map-keys map)])

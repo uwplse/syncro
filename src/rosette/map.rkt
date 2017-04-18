@@ -6,6 +6,9 @@
          map-has-key? map-ref map-set!
          map-keys map-values map-on-map)
 
+;; A vec map must have a specific set of keys that it maps to
+;; values. The value associated with a key can change, but the set of
+;; keys itself must be specified initially and can never be changed.
 (struct vec-map (keys values) #:transparent)
 
 (define (build-map capacity input-fn output-fn varset)
@@ -41,23 +44,26 @@
 ;; Requires that the key is already in the map.
 (define (map-set! map key val)
   ;; This is tricky. You are not supposed to use for/all to do
-  ;; imperative stuff. Need to think carefully about how this should
-  ;; be implemented.
-  ;; Make sure that when modifying the vector you add a guard that
-  ;; ensures that it retains the original value in cases where the
-  ;; guard is not true.
-  ;; TODO: Think about whether this makes sense taking path conditions
-  ;; into account.
-  (for*/all ([keys (vec-map-keys map)]
-             [capacity (vector-length keys)])
-    (for ([i capacity])
-      (let* ([vals (vec-map-values map)]
-             ;; TODO: Is this condition necessary?
-             [condition (= capacity (vector-length (vec-map-keys map)))])
-        (vector-set! vals i
-                     (if (and condition (equal? (vector-ref keys i) key))
-                         val
-                         (vector-ref vals i)))))))
+  ;; imperative stuff.
+  ;; Since this is a vector, we can simply walk through the indices in
+  ;; the vector and mutate it if the key matches. Rosette lifts
+  ;; vectors so this works fine.
+  ;; The only catch is how to walk through all the indices. A simple
+  ;; solution is to figure out the maximum possible capacity over all
+  ;; the potential maps, and then do all the indices up to that. This
+  ;; may include some invalid indices for some maps, so we would have
+  ;; to add a check to make sure the index is valid.
+  (define keys (vec-map-keys map))
+  (define vals (vec-map-values map))
+  (define capacity (vector-length keys))
+  (define max-capacity
+    (if (union? keys)
+        (apply max (map second (union-contents capacity)))
+        capacity))
+
+  (for ([i max-capacity])
+    (when (and (< i capacity) (equal? (vector-ref keys i) key))
+      (vector-set! vals i val))))
 
 (define (map-keys map)
   (vector->list (vec-map-keys map)))
@@ -67,4 +73,4 @@
 
 ;; Actually want builtin map here
 (define (map-on-map f vecmap)
-  (map f (map-keys vecmap) (map-values map)))
+  (map f (map-keys vecmap) (map-values vecmap)))
