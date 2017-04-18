@@ -47,9 +47,8 @@
          (let* ([itr-var itr] ...)
            (let ([val #f])
              (for ([i itr-var] ...)
-               (let ([v (begin expr ...)])
-                 (when v
-                   (set! val (or val v)))))
+               (unless val
+                 (set! val (or val (begin expr ...)))))
              val))))]))
 
 ;; TODO: Not exactly semantically correct -- this will iterate through
