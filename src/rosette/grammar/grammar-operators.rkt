@@ -97,11 +97,11 @@
 
 (define default-operators
   (list grm-if^ grm-set!^ grm-get-field^ grm-set-field!^
-        void^ vector-increment!^ vector-decrement!^ vector-set!^ vector-ref^
+        void^ not^ and^ or^ =^ <^ equal?^ +^ -^ *^ #;/^
+        vector-increment!^ vector-decrement!^ vector-set!^ vector-ref^
         enum-set-add!^ enum-set-remove!^ enum-set-contains?^
         map-ref^ map-set!^
-        add-edge!^ remove-edge!^ has-edge?^
-        equal?^ =^ <^ +^ -^ *^ #;/^))
+        add-edge!^ remove-edge!^ has-edge?^))
 
 ;; Non constant time operators that we normally don't use in grammars
 ;; but could in principle be used. These operators can also be used in

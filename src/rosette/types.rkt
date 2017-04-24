@@ -718,7 +718,8 @@
 
    (define (apply-on-symbolic-type-helper self fn)
      (let ([len (Vector-Type-len self)])
-       (when (term? len)
+       ;; TODO(correctness): What do we do when the length is symbolic?
+       #;(when (term? len)
          (internal-error
           (format "Vector length should not be symbolic: ~a" len)))
 

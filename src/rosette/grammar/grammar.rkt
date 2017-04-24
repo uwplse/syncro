@@ -82,7 +82,7 @@
            (error (format "Unknown grammar type: ~a" version))])))
   
   (unless (member version '(synthax-deep))
-    (send chooser print-num-vars))
+    (send chooser print-stats))
   result)
 
 
@@ -110,10 +110,10 @@
        ;; if it may not be #f
        (define lifted-sym
          (if (and (not (term? subexp)) (false? subexp))
-             (send terminal-info make-and-add-terminal sym #f type
-                   #:mutable? mutable?)
              (make-lifted-variable sym (Void-type) #:value (void^)
-                                   #:mutable? #f)))
+                                   #:mutable? #f)
+             (send terminal-info make-and-add-terminal sym #f type
+                   #:mutable? mutable?)))
        (define^ lifted-sym subexp)]))
 
   (define holes

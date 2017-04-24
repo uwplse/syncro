@@ -28,3 +28,6 @@
 (define (run-variable-tests)
   (displayln "Running tests for variable.rkt")
   (run-tests tests))
+
+(module+ main
+  (run-variable-tests))

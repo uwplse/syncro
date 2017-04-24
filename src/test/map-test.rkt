@@ -49,3 +49,6 @@
 (define (run-map-tests)
   (displayln "Running tests for map.rkt")
   (run-tests tests))
+
+(module+ main
+  (run-map-tests))

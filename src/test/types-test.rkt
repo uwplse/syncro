@@ -446,3 +446,6 @@
 (define (run-types-tests)
   (displayln "Running tests for types.rkt")
   (run-tests tests))
+
+(module+ main
+  (run-types-tests))

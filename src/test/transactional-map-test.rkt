@@ -96,3 +96,6 @@
 (define (run-transactional-map-tests)
   (displayln "Running tests for transactional-map.rkt")
   (run-tests tests))
+
+(module+ main
+  (run-transactional-map-tests))

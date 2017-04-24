@@ -36,3 +36,6 @@
 (define (run-operators-tests)
   (displayln "Running tests for operators.rkt")
   (run-tests tests))
+
+(module+ main
+  (run-operators-tests))

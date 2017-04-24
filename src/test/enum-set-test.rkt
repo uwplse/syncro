@@ -67,3 +67,6 @@
 (define (run-enum-set-tests)
   (displayln "Running tests for enum-set.rkt")
   (run-tests tests))
+
+(module+ main
+  (run-enum-set-tests))

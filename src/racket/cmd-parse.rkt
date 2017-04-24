@@ -16,7 +16,7 @@
                      ;; 'caching, or '(ssa n), where n is a
                      ;; non-negative integer (use '(ssa 2) by
                      ;; default).
-                     (cons 'grammar-version 'caching)
+                     (cons 'grammar-version '(ssa 2))
                      ;; grammar-choice can be 'basic or 'sharing.
                      ;; 'sharing only works with 'basic and 'general
                      ;; grammars.

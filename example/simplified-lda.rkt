@@ -40,6 +40,10 @@
                    (if (equal? (vector-ref word->topic w) t) 1 0)))))
   ;(size (set (Word w) | (equal? (vector-ref word->topic w) t)))))
   #:depends (word->topic))
+;; Expect
+;; (let ()
+;;   (vector-decrement! num1 old-value)
+;;   (vector-increment! num1 new-value))
 
 (define-incremental num2helper (Vector-type Document (Vector-type Topic (Integer-type)))
   #:value
@@ -58,6 +62,12 @@
   ;; (size (set (Word w) | (and (equal? (vector-ref word->topic w) t)
   ;;                            (equal? (vector-ref word->document w) d)))
   #:depends (word->topic))
+;; Expect
+;; (let ()
+;;   (define doc (vector-ref word->document index))
+;;   (define subvec (vector-ref num2helper doc))
+;;   (vector-decrement! subvec old-value)
+;;   (vector-increment! subvec new-value))
 
 (define-incremental num2 (Vector-type Document (Integer-type))
   #:value
@@ -92,14 +102,35 @@
                    (??))
                 (??)
                 (??))))))])
+;; Expect
+;; (unless (equal? old-value new-value)
+;;   (let ()
+;;     (define doc (vector-ref word->document index))
+;;     (define subvec (vector-ref num2helper doc))
+;;     (when (= (vector-ref subvec new-value) 1)
+;;       (vector-increment! num2 doc))
+;;     (when (= (vector-ref subvec old-value) 0)
+;;       (vector-decrement! num2 doc))))
 
 (define-incremental num1sum (Integer-type)
   #:value (my-for/sum ([x num1]) x)
   #:depends (num1))
+;; Expect
+;; (let () (void))
+;; (Turns out that num1 is guaranteed to be constant)
 
 (define-incremental num2sum (Integer-type)
   #:value (my-for/sum ([x num2]) x)
   #:depends (num2))
+;; Expect
+;; (unless (equal? old-value new-value)
+;;   (let ()
+;;     (define doc (vector-ref word->document index))
+;;     (define subvec (vector-ref num2helper doc))
+;;     (when (= (vector-ref subvec new-value) 1)
+;;       (set! num2sum (+ num2sum 1)))
+;;     (when (= (vector-ref subvec old-value) 0)
+;;       (set! num2sum (- num2sum 1)))))
 
 (algorithm
  ;; TODO: Here we assume that the programmer only uses our update

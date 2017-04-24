@@ -8,7 +8,8 @@
 
 (provide
  ;; Various constructs in the language
- define-lifted lifted? if^ begin^
+ define-lifted define-lifted-using-proc lifted?
+ if^ begin^
  get-field^ set-field!^
  define^ set!^
  for-enum-set^
@@ -752,9 +753,15 @@
 ;; See grammar.rkt for an example.
 (define-syntax (define-lifted stx)
   (syntax-case stx ()
-    [(define-lifted [thing new-name type] ...)
+    [(_ [thing new-name type] ...)
      (syntax/loc stx
-       (begin (define new-name (lift thing 'thing type))
+       (define-lifted-using-proc [thing thing new-name type] ...))]))
+
+(define-syntax (define-lifted-using-proc stx)
+  (syntax-case stx ()
+    [(_ [thing name-in-code new-name type] ...)
+     (syntax/loc stx
+       (begin (define new-name (lift thing 'name-in-code type))
               ...))]))
 
 ;; Removes any temporary variable definitions that are never used.

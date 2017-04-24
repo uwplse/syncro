@@ -30,3 +30,6 @@
 (define (run-language-tests)
   (displayln "Running tests for language.rkt")
   (run-tests tests))
+
+(module+ main
+  (run-language-tests))
