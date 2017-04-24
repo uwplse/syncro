@@ -93,7 +93,8 @@
                          (variable-symbol op))
                        (set 'equal? 'void 'vector-ref 'vector-set!
                             'vector-increment! 'vector-decrement!
-                            '+ '- '* '< '=))))
+                            '+ '- '* '< '=
+                            'and 'or 'not))))
 
      ;; If in-grammar? is #f, checks that prog *cannot* be specialized to code
      ;; If it is #t, checks that prog *can* be specialized to code
