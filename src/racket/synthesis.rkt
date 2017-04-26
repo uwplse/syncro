@@ -10,7 +10,14 @@
 
 (provide perform-synthesis)
 
-;; Various helpers that simply get information out of data structures.
+;; Returns code that creates a symbolic value of the given node. If
+;; varset-name is a symbol, the generated code will add all symbolic
+;; variables to varset-name, which at runtime will be a set. If
+;; varset-name is #f, that does not happen.
+(define (symbolic-code node [varset-name #f])
+  (let ([type (send node get-type)]
+        [var (send node get-id)])
+    `(define ,var (make-symbolic ,(repr type) ,varset-name))))
 
 (define (symbolic-update-code node update-name set-id)
   (let* ([update-args (send node get-update-args update-name)]
@@ -26,6 +33,7 @@
           `(begin ,@update-body)
           arg-types)))
 
+;; Various helpers that simply get information out of data structures.
 (define (get-constant-info vars)
   (let ([typed-vars (filter variable-has-type? vars)])
     (list (map variable-symbol typed-vars)
@@ -38,7 +46,7 @@
           `(define ,id ,expr) (send node get-assumes-code))))
 
 (define (get-symbolic-info node update-name set-id)
-  (append (list (send node get-symbolic-code set-id))
+  (append (list (symbolic-code node set-id))
           (symbolic-update-code node update-name set-id)))
 
 ;; Transposes a list of lists.

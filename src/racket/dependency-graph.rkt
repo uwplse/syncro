@@ -142,12 +142,7 @@
       (if (hash-has-key? update-fns update-name)
           (hash-set! update-fns update-name
                      (append (hash-ref update-fns update-name) (list code)))
-          (hash-set! update-fns update-name (list 'begin code))))
-
-    ;; Wrappers around various functions on types
-    
-    (define/public (get-symbolic-code varset-name)
-      (symbolic-code type (get-id) varset-name))))
+          (hash-set! update-fns update-name (list 'begin code))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;
 ;; Update functions ;;

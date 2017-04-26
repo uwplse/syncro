@@ -56,7 +56,7 @@
  get-domain-given-range-with-mutability is-application-mutable?
 
  ;; Operations used for symbolic code generation
- make-symbolic symbolic-code generate-update-arg-names)
+ make-symbolic generate-update-arg-names)
 
 ;; Creates type predicates that properly handle Bottom types.
 (define-syntax (make-type-predicates stx)
@@ -187,14 +187,6 @@
     (define assertions (list (>= bounded-val low) (< bounded-val high)))
     (set-add! varset (make-input bounded-val assertions)))
   bounded-val)
-
-;; Returns syntax that creates a symbolic value of this type
-;; assigned to the variable var. The generated code also adds all
-;; symbolic variables to varset-name, which is a symbol that at
-;; runtime will have a set as a value. If varset-name is #f, that
-;; code is not generated.
-(define (symbolic-code type var [varset-name #f])
-  #`(define #,var (make-symbolic #,(repr type) #,varset-name)))
 
 (struct Any-Type () #:transparent
   #:methods gen:Type
