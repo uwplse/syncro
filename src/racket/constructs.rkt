@@ -119,25 +119,31 @@
          [sketches s.sketches]))]))
 
 (define-syntax (define-incremental-base stx)
-  (syntax-case stx (assumes initialize depends updates sketches lambda)
+  (syntax-case stx (assumes initialize depends updates sketches lambda define)
     [(_ prog name type-exp [assumes assumption-expr]
         [initialize init-exp] [value val-exp] [depends [parent ...]]
-        [updates [(update-name update-type) ...]]
+        [updates [(define (update-name [update-arg update-arg-type] ...)
+                    update-body ...) ...]]
         [sketches [(sketch-name (lambda (sketch-arg ...) sketch-expr ...))
                    ...]])
      (syntax/loc stx
        (begin
+         ;; Check the validity of the input
+         (unless (= (length '(update-name ...))
+                    (length (remove-duplicates '(update-name ...))))
+           (error "Cannot have duplicate updates!"))
+
          ;; Create the node
          (define node
            (new node% [id 'name] [type type-exp] [assumes 'assumption-expr]
-                [update-names '(update-name ...)]
-                ;; Currently, update-type is a symbol that
-                ;; the language recognizes, but in the future
-                ;; it could be arbitrary code that defines
-                ;; the update. TODO: Do that.
-                [update-name->info (make-hash '((update-name . update-type) ...))]
-                [init-code 'init-exp]
-                [fn-code 'val-exp]))
+                [init-code 'init-exp] [fn-code 'val-exp]
+                [update-name->info
+                 (make-hash
+                  (list
+                   (cons 'update-name
+                         (make-update-info '(update-arg ...)
+                                           (list update-arg-type ...)
+                                           '(update-body ...))) ...))]))
 
          ;; Add any sketches to the node
          (let ([ancestor (get-node-for-update 'sketch-name)])

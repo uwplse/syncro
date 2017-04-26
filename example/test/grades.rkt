@@ -4,7 +4,9 @@
 
 (define-incremental grades (Vector-type Student (Integer-type))
   #:initialize (make-vector 3 0)
-  #:updates [(assign-grades! assign)])
+  #:updates
+  [(define (assign-grade! [student Student] [new-grade (Integer-type)])
+     (vector-set! grades student new-grade))])
 
 (define-incremental passing-students (Set-type Student)
   #:value
@@ -22,12 +24,12 @@
 
 (algorithm
  (displayln (enum-set-size passing-students)) ;; expect 0
- (assign-grades! 0 8)
- (assign-grades! 1 8)
- (assign-grades! 2 5)
+ (assign-grade! 0 8)
+ (assign-grade! 1 8)
+ (assign-grade! 2 5)
  (displayln (enum-set-size passing-students)) ;; expect 2
- (assign-grades! 0 5)
- (assign-grades! 1 5)
+ (assign-grade! 0 5)
+ (assign-grade! 1 5)
  (displayln (enum-set-size passing-students)) ;; expect 0
- (assign-grades! 2 8)
+ (assign-grade! 2 8)
  (displayln (enum-set-size passing-students))) ;; expect 1

@@ -13,7 +13,9 @@
 
 (define-incremental info (Vector-type Student Student-info-type)
   #:initialize (make-vector 3 (Student-info 0))
-  #:updates [(assign-info! assign)])
+  #:updates
+  [(define (assign-info! [student Student] [new-info Student-info-type])
+     (vector-set! info student new-info))])
 
 (define-incremental failing-students (Set-type Student)
   #:value

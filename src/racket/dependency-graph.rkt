@@ -2,11 +2,12 @@
 
 (require graph)
 
-(require "../rosette/types.rkt")
+(require "../rosette/types.rkt" "../rosette/variable.rkt")
 
 (provide make-dependency-graph node%
          add-node! add-dependency!
-         get-node get-ids get-node-for-update)
+         get-node get-ids get-node-for-update
+         make-update-info)
 
 ;;;;;;;;;;;;;;;;;;;;;;
 ;; Dependency graph ;;
@@ -73,21 +74,17 @@
     ;; update-name->info: Required information for each update
     ;; init-code:         Code to initialize the value of the data structure
     ;; fn-code:           Expression to recompute the value of the node
-    (init-field id type assumes update-names update-name->info init-code fn-code)
+    (init-field id type assumes update-name->info init-code fn-code
+                [sketches (make-hash)])
 
-    (for ([update-name update-names])
+    (for ([update-name (hash-keys update-name->info)])
+      ;; This only checks that the update has not been used by some
+      ;; other node. Since this class only takes a hash from
+      ;; update-name to info, it is guaranteed that the update names
+      ;; are unique (since a hash can't have two of the same key).
       (when (hash-has-key? update-name->node update-name)
         (error (format "Duplicate update: ~a" update-name)))
       (hash-set! update-name->node update-name this))
-
-    ;; A map that specifies, for each update name, the names of the
-    ;; arguments to the generated mutator for that update-name
-    ;; For example, for update 'assign-v to a vector v, we might
-    ;; add the mapping 'assign-v -> '(index1 val2)
-    ;; Then the update procedure should look like
-    ;; (define (assign-v! index1 val2) ...)
-    (init-field [update-arg-names (make-hash)]
-                [sketches (make-hash)])
 
     ;; Maps each update name to its incremental update function
     ;; (represented as an S-expression as a nested list).
@@ -102,7 +99,6 @@
     (define/public (get-id) id)
     (define/public (get-type) type)
     (define/public (get-assumes-code) assumes)
-    (define/public (get-update-names) update-names)
     (define/public (get-fn-code) fn-code)
 
     (define/public (has-sketch? update-name)
@@ -112,26 +108,24 @@
     (define/public (set-sketch! update-name sketch)
       (hash-set! sketches update-name sketch))
 
-    ;; Gets update arg names (see above).
-    ;; If no arg names exist yet, we generate them by consulting the type.
+    (define/public (get-update-names)
+      (hash-keys update-name->info))
+
+    (define/public (get-update-args update-name)
+      (update-info-args (hash-ref update-name->info update-name)))
     (define/public (get-update-arg-names update-name)
-      (if (hash-has-key? update-arg-names update-name)
-          (hash-ref update-arg-names update-name)
-          (let ([result (generate-update-arg-names
-                         type
-                         (hash-ref update-name->info update-name))])
-            (hash-set! update-arg-names update-name result)
-            result)))
+      (map variable-symbol (get-update-args update-name)))
+
+    (define/public (get-update-body update-name)
+      (update-info-body (hash-ref update-name->info update-name)))
 
     ;; Checks that the given names are consistent with the existing ones.
     ;; If no names exist, the given names are set as the update arg names.
     (define/public (assert-update-arg-names! update-name names)
-      (if (hash-has-key? update-arg-names update-name)
-          (let ([old-names (hash-ref update-arg-names update-name)])
-            (unless (equal? old-names names)
-              (error (format "For the ~a update to ~a, there are two different sets of names: ~a and ~a"
-                             update-name id old-names names))))
-          (hash-set! update-arg-names update-name names)))
+      (let ([old-names (get-update-arg-names update-name)])
+        (unless (equal? old-names names)
+          (error (format "For the ~a update to ~a, there are two different sets of names: ~a and ~a"
+                         update-name id old-names names)))))
     
     (define/public (get-update-code update-name)
       (if (or (equal? update-name 'recompute)
@@ -153,17 +147,17 @@
     ;; Wrappers around various functions on types
     
     (define/public (get-symbolic-code varset-name)
-      (symbolic-code type (get-id) varset-name))
-    
-    (define/public (get-symbolic-update-code update-name update-args varset-name)
-      (symbolic-update-code type (hash-ref update-name->info update-name)
-                            (get-id) update-args varset-name))
-    
-    (define/public (get-old-values-code update-name . update-args)
-      (apply old-values-code type (hash-ref update-name->info update-name)
-             (get-id) update-args))
-    
-    (define/public (get-base-update-code update-name update-args)
-      ;; TODO: Put this in the same format as get-symbolic-update-code
-      (apply (update-code type (hash-ref update-name->info update-name))
-             update-args))))
+      (symbolic-code type (get-id) varset-name))))
+
+;;;;;;;;;;;;;;;;;;;;;;
+;; Update functions ;;
+;;;;;;;;;;;;;;;;;;;;;;
+
+;; args: List of variables (from variable.rkt)
+;; body: List of S-expressions (that is, nested list)
+(struct update-info (args body) #:transparent)
+
+(define (make-update-info arg-names arg-types body)
+  (update-info (map (lambda (name type) (make-variable name #:type type))
+                    arg-names arg-types)
+               body))

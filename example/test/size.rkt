@@ -2,7 +2,9 @@
 
 (define-incremental mystery? (Vector-type 5 (Boolean-type))
   #:initialize (vector #t #f #f #t #f)
-  #:updates [(assign-mystery! assign)])
+  #:updates
+  [(define (assign-mystery! [idx (Integer-type)] [m (Boolean-type)])
+     (vector-set! mystery? idx m))])
 
 (define-incremental num-mysteries (Integer-type)
   #:value (my-for/sum ([x mystery?])

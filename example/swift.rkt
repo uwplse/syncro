@@ -31,8 +31,11 @@
 ;; automatically for the new update.)
 (define-incremental graph (DAG-type Node)
   #:initialize (make-graph NUM_NODES)
-  #:updates [(add-child! add-edge)
-             (remove-child! remove-edge)])
+  #:updates
+  [(define (add-child! [parent Node] [child Node])
+     (add-edge! graph parent child))
+   (define (remove-child! [parent Node] [child Node])
+     (remove-edge! graph parent child))])
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Incremental structures ;;
@@ -65,12 +68,12 @@
       (??)
       ;; Fix things for new aunt relations
       (for-enum-set ([other-parent (vertex-parents graph child)])
-                    (??))))
+        (??))))
    (remove-child!
     (lambda (parent child)
       (??)
       (for-enum-set ([other-parent (vertex-parents graph child)])
-                    (??))))])
+        (??))))])
 
 ;; Alternatively, a set theoretic definition:
 ;; parents + children +

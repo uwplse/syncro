@@ -14,9 +14,9 @@
                      (cons 'module-file "metasketch-module-file.rkt")
                      ;; grammar-version can be 'basic, 'general,
                      ;; 'caching, or '(ssa n), where n is a
-                     ;; non-negative integer (use '(ssa 2) by
+                     ;; non-negative integer (use '(ssa 1) by
                      ;; default).
-                     (cons 'grammar-version '(ssa 2))
+                     (cons 'grammar-version '(ssa 1))
                      ;; grammar-choice can be 'basic or 'sharing.
                      ;; 'sharing only works with 'basic and 'general
                      ;; grammars.

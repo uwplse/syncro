@@ -56,8 +56,7 @@
  get-domain-given-range-with-mutability is-application-mutable?
 
  ;; Operations used for symbolic code generation
- make-symbolic symbolic-code generate-update-arg-names
- update-code old-values-code symbolic-update-code)
+ make-symbolic symbolic-code generate-update-arg-names)
 
 ;; Creates type predicates that properly handle Bottom types.
 (define-syntax (make-type-predicates stx)
@@ -175,22 +174,7 @@
   ;; add the mapping 'assign -> '(index1 val2)
   ;; Then the update procedure should look like
   ;; (define (assign-v! index1 val2) ...)
-  (generate-update-arg-names symbolic update-type)
-  ;; Returns a function that, given the update argument names,
-  ;; produces the code that performs the update.
-  ;; For example, for update type 'assign to a vector v with update
-  ;; names '(v index1 val2), we would generate
-  ;; (vector-set! v index1 val2)
-  ;; TODO: The interface here is different from everything else. Fix.
-  (update-code symbolic update-type)
-  ;; Returns various things that are important for defining which
-  ;; values are overwritten by a particular update.
-  ;; TODO: Document better
-  (old-values-code symbolic update-type var . update-args)
-  ;; Like update code, but does things symbolically. Interface is also
-  ;; different.
-  ;; TODO: Document better
-  (symbolic-update-code symbolic update-type var update-args varset-name))
+  (generate-update-arg-names symbolic update-type))
 
 (define (make-rosette-val rosette-type varset)
   (define-symbolic* val rosette-type)
@@ -363,37 +347,6 @@
 
            [else
             (error (format "Unknown Boolean update type: ~a~%"
-                           update-type))]))
-
-   (define (update-code self update-type)
-     (cond [(equal? update-type 'assign)
-            (lambda (var val)
-              #`(set! #,var #,val))]
-
-           [else
-            (error (format "Unknown Boolean update type: ~a~%"
-                           update-type))]))
-
-   (define (old-values-code self update-type var . update-args)
-     (define old-val-tmp (gensym 'old-value))
-     (cond [(equal? update-type 'assign)
-            (list #`(define #,old-val-tmp #,var)
-                    (list old-val-tmp)
-                    (list self))]
-
-           [else
-            (error (format "Unknown Boolean update type: ~a~%"
-                           update-type))]))
-
-   (define (symbolic-update-code self update-type var update-args varset-name)
-     (cond [(equal? update-type 'assign)
-            (match-define (list val-tmp) update-args)
-            (list (symbolic-code self val-tmp varset-name)
-                  #`(set! #,var #,val-tmp)
-                  (list self))]
-
-           [else
-            (error (format "Unknown Boolean update type: ~a~%"
                            update-type))]))])
 
 (define (Boolean-type) (Boolean-Type))
@@ -455,57 +408,6 @@
 
            [else
             (error (format "Unknown Integer update type: ~a~%"
-                           update-type))]))
-
-   (define (update-code self update-type)
-     (cond [(equal? update-type 'assign)
-            (lambda (var val)
-              #`(set! #,var #,val))]
-
-           [(equal? update-type 'increment)
-            (lambda (var)
-              #`(set! #,var (+ #,var 1)))]
-
-           [(equal? update-type 'decrement)
-            (lambda (var)
-              #`(set! #,var (- #,var 1)))]
-
-           [else
-            (error (format "Unknown Integer update type: ~a~%"
-                           update-type))]))
-
-   (define (old-values-code self update-type var . update-args)
-     (define old-val-tmp (gensym 'old-value))
-     (cond [(member update-type '(assign increment decrement))
-            (list #`(define #,old-val-tmp #,var)
-                    (list old-val-tmp)
-                    (list self))]
-
-           [else
-            (error (format "Unknown Integer update type: ~a~%"
-                           update-type))]))
-
-   (define (symbolic-update-code self update-type var update-args varset-name)
-     (cond [(equal? update-type 'assign)
-            (match-define (list val-tmp) update-args)
-            (list (symbolic-code self val-tmp varset-name)
-                  #`(set! #,var #,val-tmp)
-                  (list self))]
-
-           [(equal? update-type 'increment)
-            (assert (null? update-args))
-            (list #'(void)
-                    #`(set! #,var (+ #,var 1))
-                    (list))]
-
-           [(equal? update-type 'decrement)
-            (assert (null? update-args))
-            (list #'(void)
-                    #`(set! #,var (- #,var 1))
-                    (list))]
-
-           [else
-            (error (format "Unknown Integer update type: ~a~%"
                            update-type))]))])
 
 (define (Integer-type) (Integer-Type))
@@ -544,59 +446,6 @@
 
            [(member update-type '(increment decrement))
             (list)]
-
-           [else
-            (error (format "Unknown Bitvector update type: ~a~%"
-                           update-type))]))
-
-   (define (update-code self update-type)
-     (define bits (Bitvector-Type-bits self))
-     (cond [(equal? update-type 'assign)
-            (lambda (var val)
-              #`(set! #,var #,val))]
-
-           [(equal? update-type 'increment)
-            (lambda (var)
-              #`(set! #,var (bvadd #,var (bv 1 #,bits))))]
-
-           [(equal? update-type 'decrement)
-            (lambda (var)
-              #`(set! #,var (bvsub #,var (bv 1 #,bits))))]
-
-           [else
-            (error (format "Unknown Bitvector update type: ~a~%"
-                           update-type))]))
-
-   (define (old-values-code self update-type var . update-args)
-     (define old-val-tmp (gensym 'old-bv-value))
-     (cond [(member update-type '(assign increment decrement))
-            (list #`(define #,old-val-tmp #,var)
-                    (list old-val-tmp)
-                    (list self))]
-
-           [else
-            (error (format "Unknown Bitvector update type: ~a~%"
-                           update-type))]))
-
-   (define (symbolic-update-code self update-type var update-args varset-name)
-     (define bits (Bitvector-Type-bits self))
-     (cond [(equal? update-type 'assign)
-            (match-define (list val-tmp) update-args)
-            (list (symbolic-code self val-tmp varset-name)
-                  #`(set! #,var #,val-tmp)
-                  (list self))]
-
-           [(equal? update-type 'increment)
-            (assert (null? update-args))
-            (list #'(void)
-                  #`(set! #,var (bvadd #,var (bv 1 #,bits)))
-                  (list))]
-
-           [(equal? update-type 'decrement)
-            (assert (null? update-args))
-            (list #'(void)
-                  #`(set! #,var (bvsub #,var (bv 1 #,bits)))
-                  (list))]
 
            [else
             (error (format "Unknown Bitvector update type: ~a~%"
@@ -640,38 +489,6 @@
    (define (generate-update-arg-names self update-type)
      (cond [(equal? update-type 'assign)
             (list (gensym (Enum-Type-name self)))]
-
-           [else
-            (error (format "Unknown Enum update type: ~a~%"
-                           update-type))]))
-
-   (define (update-code self update-type)
-     (cond [(equal? update-type 'assign)
-            (lambda (var val)
-              #`(set! #,var #,val))]
-
-           [else
-            (error (format "Unknown Enum update type: ~a~%"
-                           update-type))]))
-
-   (define (old-values-code self update-type var . update-args)
-     (cond [(equal? update-type 'assign)
-            (define old-val-tmp (gensym 'old-value))
-            (list #`(define #,old-val-tmp #,var)
-                    (list old-val-tmp)
-                    (list self))]
-
-           [else
-            (error (format "Unknown Enum update type: ~a~%"
-                           update-type))]))
-
-   (define (symbolic-update-code self update-type var update-args varset-name)
-     (cond [(equal? update-type 'assign)
-            (match-define (list val-tmp) update-args)
-            (define num-items (Enum-Type-num-items self))
-            (list (symbolic-code self val-tmp varset-name)
-                  #`(set! #,var #,val-tmp)
-                  (list self))]
 
            [else
             (error (format "Unknown Enum update type: ~a~%"
@@ -775,9 +592,6 @@
   [(define/generic gen-has-setters? has-setters?)
    (define/generic gen-make-symbolic make-symbolic)
    (define/generic gen-generate-update-arg-names generate-update-arg-names)
-   (define/generic gen-update-code update-code)
-   (define/generic gen-old-values-code old-values-code)
-   (define/generic gen-symbolic-update-code symbolic-update-code)
    
    (define (has-setters? self) #t)
    
@@ -794,52 +608,6 @@
      (define output-type (Vector-Type-output-type self))
      (cond [(equal? update-type 'assign)
             (list (gensym 'index) (gensym 'val))]
-
-           [else
-            (error (format "Unknown Vector update type: ~a~%"
-                           update-type))]))
-
-   (define (update-code self update-type)
-     (define output-type (Vector-Type-output-type self))
-     (cond [(equal? update-type 'assign)
-            (lambda (vect index value)
-              #`(vector-set! #,vect #,index #,value))]
-
-           [else
-            (error (format "Unknown Vector update type: ~a~%"
-                           update-type))]))
-
-   (define (old-values-code self update-type var . update-args)
-     (define output-type (Vector-Type-output-type self))
-     (cond [(equal? update-type 'assign)
-            (let ([old-val-tmp (gensym 'old-value)])
-              (list
-               #`(define #,old-val-tmp (vector-ref #,var #,(car update-args)))
-               (list old-val-tmp)
-               (list output-type)))]
-           
-           [else
-            (error (format "Unknown Vector update type: ~a~%"
-                           update-type))]))
-
-   (define (symbolic-update-code self update-type var update-args varset-name)
-     (define len (Vector-Type-len self))
-     (unless (integer? len)
-       (error "Need integer length for vector -- symbolic-update-code"))
-     
-     (define output-type (Vector-Type-output-type self))
-     (cond [(equal? update-type 'assign)
-            (match-define (list tmp-index tmp-val) update-args)
-            (list
-             ;; Create the symbolic index into the vector
-             #`(begin (define #,tmp-index
-                        (make-symbolic (Enum-type 'vec-index #,len)
-                                       #,varset-name))
-                      ;; Create the symbolic value
-                      #,(symbolic-code output-type tmp-val varset-name))
-             ;; Perform the update
-             #`(vector-set! #,var #,tmp-index #,tmp-val)
-             (list (Vector-Type-index-type self) output-type))]
 
            [else
             (error (format "Unknown Vector update type: ~a~%"
@@ -915,9 +683,6 @@
   #:methods gen:symbolic
   [(define/generic gen-make-symbolic make-symbolic)
    (define/generic gen-generate-update-arg-names generate-update-arg-names)
-   (define/generic gen-update-code update-code)
-   (define/generic gen-old-values-code old-values-code)
-   (define/generic gen-symbolic-update-code symbolic-update-code)
    
    (define (has-setters? self) #t)
    
@@ -928,44 +693,6 @@
    (define (generate-update-arg-names self update-type)
      (cond [(member update-type '(add remove))
             (list (gensym (Enum-Type-name (Set-Type-content-type self))))]
-
-           [else
-            (error (format "Unknown Set update type: ~a~%" update-type))]))
-
-   (define (update-code self update-type)
-     (cond [(member update-type '(add remove))
-            (define update-name
-              (if (equal? update-type 'add)
-                  #'enum-set-add!
-                  #'enum-set-remove!))
-            (lambda (set value)
-              #`(#,update-name #,set #,value))]
-
-           [else
-            (error (format "Unknown Set update type: ~a~%" update-type))]))
-
-   (define (old-values-code self update-type var . update-args)
-     (cond [(member update-type '(add remove))
-            (let ([old-val-tmp (gensym 'was-in-set?)])
-              (list #`(define #,old-val-tmp
-                        (enum-set-contains? #,var #,(car update-args)))
-                    (list old-val-tmp)
-                    (list (Boolean-type))))]
-           
-           [else
-            (error (format "Unknown Set update type: ~a~%" update-type))]))
-
-   (define (symbolic-update-code self update-type var update-args varset-name)
-     (cond [(member update-type '(add remove))
-            (let ([tmp-val (car update-args)]
-                  [update-name (if (equal? update-type 'add)
-                                   #'enum-set-add!
-                                   #'enum-set-remove!)]
-                  [content-type (Set-Type-content-type self)])
-              (list (symbolic-code content-type tmp-val varset-name)
-                    ;; Perform the update
-                    #`(#,update-name #,var #,tmp-val)
-                    (list content-type)))]
 
            [else
             (error (format "Unknown Set update type: ~a~%" update-type))]))])
@@ -1116,9 +843,6 @@
   [(define/generic gen-has-setters? has-setters?)
    (define/generic gen-make-symbolic make-symbolic)
    (define/generic gen-generate-update-arg-names generate-update-arg-names)
-   (define/generic gen-update-code update-code)
-   (define/generic gen-old-values-code old-values-code)
-   (define/generic gen-symbolic-update-code symbolic-update-code)
    
    (define (has-setters? self) #t)
    
@@ -1131,48 +855,6 @@
             (define name (Enum-Type-name (DAG-Type-vertex-type self)))
             (list (gensym (string->symbol (format "~a-~a" name 'parent)))
                   (gensym (string->symbol (format "~a-~a" name 'child))))]
-
-           [else
-            (error (format "Unknown DAG update type: ~a~%" update-type))]))
-
-   (define (update-code self update-type)
-     (cond [(member update-type '(add-edge remove-edge))
-            (define update-name
-              (if (equal? update-type 'add-edge)
-                  #'add-edge!
-                  #'remove-edge!))
-            (lambda (graph parent child)
-              #`(#,update-name #,graph #,parent #,child))]
-
-           [else
-            (error (format "Unknown DAG update type: ~a~%" update-type))]))
-
-   (define (old-values-code self update-type var . update-args)
-     (cond [(member update-type '(add-edge remove-edge))
-            (let ([old-val-tmp (gensym 'was-in-graph?)])
-              (list #`(define #,old-val-tmp
-                        (has-edge? #,var #,@update-args))
-                    (list old-val-tmp)
-                    (list (Boolean-type))))]
-           
-           [else
-            (error (format "Unknown DAG update type: ~a~%" update-type))]))
-
-   (define (symbolic-update-code self update-type var update-args varset-name)
-     (cond [(member update-type '(add-edge remove-edge))
-            (match update-args
-              [(list parent-var child-var)
-               (let ([update-name (if (equal? update-type 'add-edge)
-                                      #'add-edge!
-                                      #'remove-edge!)]
-                     [vertex-type (DAG-Type-vertex-type self)])
-                 (list
-                  #`(begin
-                      #,(symbolic-code vertex-type parent-var varset-name)
-                      #,(symbolic-code vertex-type child-var varset-name))
-                  ;; Perform the update
-                  #`(#,update-name #,var #,parent-var #,child-var)
-                  (list vertex-type vertex-type)))])]
 
            [else
             (error (format "Unknown DAG update type: ~a~%" update-type))]))])
@@ -1271,9 +953,6 @@
   #:methods gen:symbolic
   [(define/generic gen-make-symbolic make-symbolic)
    (define/generic gen-generate-update-arg-names generate-update-arg-names)
-   (define/generic gen-update-code update-code)
-   (define/generic gen-old-values-code old-values-code)
-   (define/generic gen-symbolic-update-code symbolic-update-code)
    
    (define (has-setters? self) #t)
    
@@ -1289,32 +968,7 @@
    (define (generate-update-arg-names self update-type)
      (if (member update-type (Record-Type-fields self))
          (list (gensym update-type))
-         (error (format "Unknown Record field: ~a~%" update-type))))
-
-   (define (update-code self update-type)
-     (if (member update-type (Record-Type-fields self))
-         (lambda (record value)
-           #`(set-field #,record #,update-type #,value))
-         (error (format "Unknown Record field: ~a~%" update-type))))
-
-   (define (old-values-code self update-type var . update-args)
-     (if (member update-type (Record-Type-fields self))
-         (let ([old-val-tmp (gensym update-type)])
-           (list #`(define #,old-val-tmp
-                     (get-field #,(car update-args) #,update-type))
-                 (list old-val-tmp)
-                 (list (get-record-field-type self update-type))))
-         (error (format "Unknown Record update type: ~a~%" update-type))))
-
-   (define (symbolic-update-code self update-type var update-args varset-name)
-     (if (member update-type (Record-Type-fields self))
-         (match update-args
-           [`(,record ,tmp-val)
-            (let ([field-type (get-record-field-type self update-type)])
-              (list (symbolic-code field-type tmp-val varset-name)
-                    #`(set-field #,record #,update-type #,tmp-val)
-                    (list field-type)))])
-         (error (format "Unknown Record update type: ~a~%" update-type))))])
+         (error (format "Unknown Record field: ~a~%" update-type))))])
 
 (define (get-record-field-type record field-name)
   (lookup-field (Record-Type-fields record)

@@ -23,12 +23,9 @@
 (define-incremental word->topic (Vector-type Word Topic)
   #:initialize (build-vector NUM_WORDS (lambda (w) (random NUM_TOPICS)))
   #:updates
-  [(change-topic! assign)
-   
-   ;; TODO: Allow programmer-defined updates, for example:
-   #;(define (change-topic! word new-topic)
-       (define old-topic (vector-ref word->topic word))
-       (vector-set! word->topic word new-topic))])
+  [(define (change-topic! [word Word] [new-topic Topic])
+     ;(define old-topic (vector-ref word->topic word))
+     (vector-set! word->topic word new-topic))])
 
 (define-incremental num1 (Vector-type Topic (Integer-type))
   #:value

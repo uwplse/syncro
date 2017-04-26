@@ -12,6 +12,20 @@
 
 ;; Various helpers that simply get information out of data structures.
 
+(define (symbolic-update-code node update-name set-id)
+  (let* ([update-args (send node get-update-args update-name)]
+         [arg-names (map variable-symbol update-args)]
+         [arg-types (map variable-type update-args)]
+         [update-body (send node get-update-body update-name)])
+    (define arg-defns
+      (map (lambda (name type)
+             `(define ,name (make-symbolic ,(repr type) ,set-id)))
+           arg-names arg-types))
+    (list arg-names
+          `(begin ,@arg-defns)
+          `(begin ,@update-body)
+          arg-types)))
+
 (define (get-constant-info vars)
   (let ([typed-vars (filter variable-has-type? vars)])
     (list (map variable-symbol typed-vars)
@@ -23,12 +37,9 @@
     (list node id (send node get-type) expr
           `(define ,id ,expr) (send node get-assumes-code))))
 
-(define (get-symbolic-info node update-type set-id)
-  (let ([update-args (send node get-update-arg-names update-type)])
-    (append (list (send node get-symbolic-code set-id))
-            (list update-args)
-            (send node get-symbolic-update-code update-type update-args set-id)
-            (send/apply node get-old-values-code update-type update-args))))
+(define (get-symbolic-info node update-name set-id)
+  (append (list (send node get-symbolic-code set-id))
+          (symbolic-update-code node update-name set-id)))
 
 ;; Transposes a list of lists.
 ;; eg. (transpose '((1 2 3) (4 5 6)) 3) gives '((1 4) (2 5) (3 6))
@@ -72,7 +83,7 @@
     ;; Relevant information for performing symbolic computation on the input
     ;; Note: It's important to call this only once per update
     ;; type so that the variables have consistent names.
-    (match-define (list define-input update-args update-defns-code update-code update-arg-types define-overwritten-vals overwritten-vals overwritten-vals-types)
+    (match-define (list define-input update-args update-defns-code update-code update-arg-types)
       (datumify
        (get-symbolic-info input-relation update-name 'inputs-set)))
 
@@ -101,16 +112,15 @@
       (define add-terminals
         (map add-terminal-code
              (append (list input-id) intermediate-ids
-                     overwritten-vals update-args
-                     constant-terminal-ids)
+                     update-args constant-terminal-ids)
              (append (list input-type) intermediate-types
-                     overwritten-vals-types update-arg-types
-                     constant-terminal-types)))
+                     update-arg-types constant-terminal-types)))
 
       (define initialization-stmts
         `(;; Example: (define NUM_WORDS 12)
           ,@(program-initialization prog)
           (define inputs-set (mutable-set))
+          (define terminal-info (new Terminal-Info%))
           ;; Example: (define word->topic (build-vector 12 ...))
           ;; The resulting data structure contains symbolic variables.
           ,define-input
@@ -125,24 +135,19 @@
           ;; Basically the same as for intermediates.
           ,define-output))
 
-      ;; update-stmts assumes that the output relation has been defined.
-      ;; It also assumes that inputs-set has been defined.
-      (define update-stmts
-        `(;; Example:
-          ;; (define-symbolic* index9079 integer?)
-          ;; (assert (>= index9079 0))
-          ;; (assert (< index9079 12))
-          ;; (set-add! inputs-set index9079)
-          ;; (define-symbolic* val9080 integer?)
-          ;; (assert (>= val9080 0))
-          ;; (assert (< val9080 3))
-          ;; (set-add! inputs-set val9080)
-          ,update-defns-code
-          ;; Example:
-          ;; (define old-value9082 (vector-ref word->topic index9079))
-          ,define-overwritten-vals
-          ;; Example: (vector-set! word->topic index9079 val9080)
-          ,update-code))
+      (define (make-grammar-expr stmt expr temps guard type mode)
+        `(grammar terminal-info ,stmt ,expr
+                  #:num-temps ,temps #:guard-depth ,guard #:type ,type
+                  #:version ',(hash-ref options 'grammar-version)
+                  #:choice-version ',(hash-ref options 'grammar-choice)
+                  #:mode ',mode))
+
+      (define prederiv-code
+        `((displayln "Generating the prederivative")
+          (define prederiv
+            (time ,(make-grammar-expr 1 1 0 0 (Any-type) '(tmps 2))))
+          (displayln "Running the prederivative")
+          (time (for-each eval-lifted prederiv))))
 
       ;; Example: (set! num2helper (build-vector ...))
       ;; Taken straight from the user program, but operates on
@@ -152,7 +157,9 @@
       ;; the update in case the output relation depends on
       ;; them. So here, we should use a set!
       (define update-intermediate-stmts
-        (map (lambda (code) `(set! ,@(cdr code))) define-intermediates))
+        (map (lambda (code)
+               `(send terminal-info set-value ',(cadr code) ,@(cddr code)))
+             define-intermediates))
 
       ;; Defines a reset function that when called will reset all data
       ;; structures to their state at the point where the function was defined.
@@ -165,9 +172,7 @@
                 `(set! ,id (list-ref clone-state ,index))))))
 
       (define terminal-info-stmts
-        ;; Create the grammar and sample a program
-        `((define terminal-info (new Terminal-Info%))
-          ,(add-terminal-code output-id output-type #:mutable? #t)
+        `(,(add-terminal-code output-id output-type #:mutable? #t)
           ,@add-terminals))
 
       ;; Note: It is not (equal? ,output-id ,output-expr)
@@ -179,12 +184,6 @@
         `(equal? (eval-lifted (send terminal-info get-terminal-by-id ',output-id))
                  ,output-expr))
 
-      (define (make-grammar-expr stmt expr temps guard type)
-        `(grammar terminal-info ,stmt ,expr
-                  #:num-temps ,temps #:guard-depth ,guard #:type ,type
-                  #:version ',(hash-ref options 'grammar-version)
-                  #:choice-version ',(hash-ref options 'grammar-choice)))
-
       (define program-definition
         (if (send output-node has-sketch? update-name)
             (let ([sketch (send output-node get-sketch update-name)])
@@ -193,9 +192,9 @@
                 (time
                  (force-type program (Void-type)
                              (lambda (type)
-                               ,(make-grammar-expr 2 3 0 0 'type))))))
+                               ,(make-grammar-expr 2 2 0 0 'type 'stmt))))))
             `((define program
-                (time ,(make-grammar-expr 2 3 0 1 '(Void-type)))))))
+                (time ,(make-grammar-expr 2 2 0 1 '(Void-type) 'stmt))))))
 
       (define (verbose-code code)
         (if (hash-ref options 'verbose?)
@@ -208,9 +207,11 @@
              (clear-state!)
              (current-bitwidth ,(hash-ref options 'bitwidth))
              ,@initialization-stmts
-             ,@update-stmts
-             ,@update-intermediate-stmts
+             ,update-defns-code
              ,@terminal-info-stmts
+             ,@prederiv-code
+             ,update-code
+             ,@update-intermediate-stmts
 
              ,@(verbose-code '(displayln "Creating symbolic program"))
              ,@program-definition
@@ -236,7 +237,11 @@
              (and (sat? synth)
                   ,@(verbose-code '(displayln "Solution found! Generating code:"))
                   (let* ([result (time (coerce-evaluate program synth))]
-                         [code (lifted-code (eliminate-dead-code result))])
+                         [prederiv-result (time (coerce-evaluate prederiv synth))]
+                         [code (append '(let ())
+                                       (map lifted-code prederiv-result)
+                                       (list 'update-goes-here)
+                                       (list (lifted-code (eliminate-dead-code result))))])
                     (pretty-print code)
                     code))))
 
@@ -251,10 +256,12 @@
             (provide metasketch)
             (current-bitwidth ,(hash-ref options 'bitwidth))
             ,@initialization-stmts
-            ,@update-stmts
+            ,update-defns-code
+            ,@terminal-info-stmts
+            ,@prederiv-code
+            ,update-code
             ,@update-intermediate-stmts
             ,@(add-reset-fn 'reset-state!)
-            ,@terminal-info-stmts
             (define metasketch
               (grammar-metasketch terminal-info
                                   (set->list inputs-set)
@@ -302,6 +309,5 @@
 
     (let ([synthesized-code (send input-relation get-update-code update-name)])
       `(define (,update-name ,@update-args)
-         ,define-overwritten-vals
          ,update-code
          ,synthesized-code))))

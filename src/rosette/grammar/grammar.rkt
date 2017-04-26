@@ -35,7 +35,8 @@
                  #:type [type (Void-type)]
                  #:operators [operator-info default-operators]
                  #:version [version 'basic]
-                 #:choice-version [choice-version 'basic])
+                 #:choice-version [choice-version 'basic]
+                 #:mode [mode 'stmt])
   (define-values (new-pairs-set all-pairs-set operators)
     (remove-polymorphism operator-info terminal-info))
   (define chooser (make-chooser choice-version))
@@ -54,14 +55,16 @@
                             #:guard-depth guard-depth
                             #:use-constants? #t
                             #:type type
-                            #:cache? #t)]
+                            #:cache? #t
+                            #:mode mode)]
           ['general
            (grammar-general terminal-info operators num-stmts depth chooser
                             #:num-temps num-temps
                             #:guard-depth guard-depth
                             #:use-constants? #t
                             #:type type
-                            #:cache? #f)]
+                            #:cache? #f
+                            #:mode mode)]
           [`(ssa ,(? integer? num-constants))
            (grammar-ssa terminal-info operators num-stmts depth chooser
                         #:num-temps num-temps
@@ -69,7 +72,8 @@
                         #:num-constants num-constants
                         #:type type
                         #:new-pairs-set new-pairs-set
-                        #:cache? #t)]
+                        #:cache? #t
+                        #:mode mode)]
           #;['synthax-deep
            (match (list num-stmts depth)
              ['(2 2) (grammar-synthax-deep22 terminal-info)]
@@ -85,6 +89,17 @@
     (send chooser print-stats))
   result)
 
+(define (create-temporary terminal-info type mutable? fn)
+  (define sym (gensym 'tmp))
+  (define subexp (fn))
+  ;; Don't add the terminal if it is definitely #f, but add it
+  ;; if it may not be #f
+  (define lifted-sym
+    (if (and (not (term? subexp)) (false? subexp))
+        (make-lifted-variable sym (Void-type) #:value (void^) #:mutable? #f)
+        (send terminal-info make-and-add-terminal sym #f type
+              #:mutable? mutable?)))
+  (define^ lifted-sym subexp))
 
 (define (grammar-ssa terminal-info operators num-stmts expr-depth chooser
                      #:num-temps [num-temps 0]
@@ -92,29 +107,22 @@
                      #:num-constants [num-constants 0]
                      #:type [start-type (Void-type)]
                      #:new-pairs-set new-pairs-set
-                     #:cache? cache?)
+                     #:cache? cache?
+                     #:mode mode)
   (define (generate type mutable? stmts depth)
     (grammar-general terminal-info operators stmts depth chooser
                      #:num-temps 0 #:guard-depth 0
                      #:use-constants? #f #:cache? cache?
-                     #:type type #:mutable? mutable?))
+                     #:type type #:mutable? mutable?
+                     #:mode 'stmt))
 
   ;; pair: tm-pair defining what type of value we want and whether or
   ;; not it should be mutable.
-  (define (make-temporary pair)
+  (define (create-ssa-temporary pair)
     (match pair
       [(tm-pair type mutable?)
-       (define sym (gensym 'tmp))
-       (define subexp (generate type mutable? 1 1))
-       ;; Don't add the terminal if it is definitely #f, but add it
-       ;; if it may not be #f
-       (define lifted-sym
-         (if (and (not (term? subexp)) (false? subexp))
-             (make-lifted-variable sym (Void-type) #:value (void^)
-                                   #:mutable? #f)
-             (send terminal-info make-and-add-terminal sym #f type
-                   #:mutable? mutable?)))
-       (define^ lifted-sym subexp)]))
+       (create-temporary terminal-info type mutable?
+                         (lambda () (generate type mutable? 1 1)))]))
 
   (define holes
     (for/list ([i num-constants])
@@ -138,16 +146,23 @@
   ;; modify state, so we don't allow Void type. For now we assume
   ;; that all procedures that modify state return void.
   ;; TODO: Better solution to the state modification problem.
+  (define num-defns
+    (if (equal? mode 'stmt)
+        expr-depth
+        (* expr-depth (second mode))))
+
   (define definitions
-    (for*/list ([i expr-depth]
+    (for*/list ([i num-defns]
                 [tmp-pair new-pairs-set]
                 #:unless (equal? (tm-pair-type tmp-pair) (Void-type)))
-      (make-temporary tmp-pair)))
+      (create-ssa-temporary tmp-pair)))
 
   ;; Build the program
-  (apply begin^
-         (append holes definitions
-                 (list (generate (Void-type) #f num-stmts 2)))))
+  (if (equal? mode 'stmt)
+      (apply begin^
+             (append holes definitions
+                     (list (generate (Void-type) #f num-stmts 2))))
+      definitions))
 
 (define (grammar-general terminal-info operators num-stmts expr-depth chooser
                          #:num-temps [num-temps 0]
@@ -155,7 +170,8 @@
                          #:use-constants? [use-constants? #t]
                          #:type [start-type (Void-type)]
                          #:mutable? [mutable? #f]
-                         #:cache? cache?)
+                         #:cache? cache?
+                         #:mode mode)
   (define orig-params
     (hash 'terminal-info terminal-info
           'operators operators
@@ -317,14 +333,21 @@
     (define all-args (append terminals integer-hole boolean-constants recurse))
     (apply my-choose* all-args))
 
-  (if (equal? start-type (Void-type))
-      (build-grammar terminal-info num-stmts expr-depth num-temps guard-depth
-                     general-grammar
-                     (lambda (num-stmts depth)
-                       (build-list num-stmts
-                                   (lambda (i)
-                                     (general-grammar (Void-type) depth)))))
-      (general-grammar start-type expr-depth #:mutable? mutable?)))
+  (cond [(and (equal? mode 'stmt) (equal? start-type (Void-type)))
+         (build-grammar terminal-info num-stmts expr-depth num-temps guard-depth
+                        general-grammar
+                        (lambda (num-stmts depth)
+                          (build-list num-stmts
+                                      (lambda (i)
+                                        (general-grammar (Void-type) depth)))))]
+        [(equal? mode 'stmt)
+         (general-grammar start-type expr-depth #:mutable? mutable?)]
+        [else
+         (for/list ([i (second mode)])
+           (create-temporary
+            terminal-info start-type mutable?
+            (lambda ()
+              (general-grammar start-type expr-depth #:mutable? mutable?))))]))
 
 (define (grammar-basic terminal-info operators num-stmts depth chooser
                        #:num-temps [num-temps 0]
@@ -723,6 +746,9 @@
 
     (define/public (get-terminal-by-id id)
       (hash-ref symbol->terminal id))
+
+    (define/public (set-value id new-val)
+      (set-variable-value! (get-terminal-by-id id) new-val))
 
     ;; Returns the terminals which are instances of subtypes of the argument
     ;; type, and which have the associated flags.

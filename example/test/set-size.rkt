@@ -4,8 +4,11 @@
 
 (define-incremental mystery? (Set-type Mystery)
   #:initialize (enum-make-set 5)
-  #:updates [(add-mystery! add)
-             (remove-mystery! remove)])
+  #:updates
+  [(define (add-mystery! [m Mystery])
+     (enum-set-add! mystery? m))
+   (define (remove-mystery! [m Mystery])
+     (enum-set-remove! mystery? m))])
 
 (define-incremental num-mysteries (Integer-type)
   #:value (my-for/sum ([x 5])

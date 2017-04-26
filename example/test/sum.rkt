@@ -6,7 +6,9 @@
 
 (define-incremental nums (Vector-type 4 (Integer-type))
   #:initialize (make-vector 4 0)
-  #:updates [(assign-nums! assign)])
+  #:updates
+  [(define (assign-nums! [idx (Integer-type)] [val (Integer-type)])
+     (vector-set! nums idx val))])
 
 (define-incremental sum (Integer-type)
   #:value (vector-sum nums)
