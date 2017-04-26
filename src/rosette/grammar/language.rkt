@@ -101,7 +101,13 @@
 (define (apply-wrapper self . args)
   (if (ormap lifted-error? (cons self args))
       (lifted-error)
-      (lifted-apply self args)))
+      ;; Forces Rosette not to merge nodes with different arities,
+      ;; since that typically just causes a bunch of exceptions
+      (match (length args)
+        [0 (lifted-apply-0-args self args)]
+        [1 (lifted-apply-1-arg  self args)]
+        [2 (lifted-apply-2-args self args)]
+        [_ (lifted-apply self args)])))
 
 ;; IMPORTANT: This is only a way to provide a custom write function to
 ;; many of the lifted constructs without having to rewrite it each
@@ -250,6 +256,10 @@
      (is-application-mutable? (infer-type (lifted-apply-proc self))
                               (map gen-mutable? (lifted-apply-args self))))])
 
+;; TODO: Are these serializable? Would be necessary for metasketches
+(struct lifted-apply-0-args lifted-apply () #:transparent)
+(struct lifted-apply-1-arg  lifted-apply () #:transparent)
+(struct lifted-apply-2-args lifted-apply () #:transparent)
 
 
 (define deserialize-lifted-begin
