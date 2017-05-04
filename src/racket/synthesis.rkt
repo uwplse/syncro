@@ -43,7 +43,7 @@
   (let ([id (send node get-id)]
         [expr (send node get-fn-code)])
     (list node id (send node get-type) expr
-          `(define ,id ,expr) (send node get-assumes-code))))
+          `(define ,id ,expr) (send node get-invariants-code))))
 
 (define (get-symbolic-info node update-name set-id)
   (append (list (symbolic-code node set-id))
@@ -83,7 +83,7 @@
     (get-node-info (get-node graph id)))
   
   ;; Relevant information about the input relation
-  (match-define (list input-relation input-id input-type _ _ input-assumes)
+  (match-define (list input-relation input-id input-type _ _ input-invariant)
     (get-id-info (car (get-ids graph))))
 
   (for/list ([update-name (send input-relation get-update-names)])
@@ -132,7 +132,7 @@
           ;; Example: (define word->topic (build-vector 12 ...))
           ;; The resulting data structure contains symbolic variables.
           ,define-input
-          (define input-assertions ,input-assumes)
+          (define input-assertion ,input-invariant)
           ;; Example: (define num2helper (build-vector ...))
           ;; Taken straight from the user program, but operates on
           ;; symbolic variables.
@@ -219,6 +219,7 @@
              ,@terminal-info-stmts
              ,@prederiv-code
              ,update-code
+             (define input-assertion-after-update ,input-invariant)
              ,@update-intermediate-stmts
 
              ,@(verbose-code '(displayln "Creating symbolic program"))
@@ -229,7 +230,8 @@
 
              ;; Assert all preconditions
              (define (assert-fn x) (assert x))
-             (for-each assert-fn input-assertions)
+             (assert input-assertion)
+             (assert input-assertion-after-update)
 
              (define (assert-pre input)
                (for-each assert-fn (input-preconditions input)))

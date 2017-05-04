@@ -69,12 +69,12 @@
 
     ;; id:                Name of the variable
     ;; type:              Type of the variable
-    ;; assumes:           Expression to get assumptions about the node
+    ;; invariants:        Expression to get invariants about the node
     ;; update-names:      The names of allowed updates
     ;; update-name->info: Required information for each update
     ;; init-code:         Code to initialize the value of the data structure
     ;; fn-code:           Expression to recompute the value of the node
-    (init-field id type assumes update-name->info init-code fn-code
+    (init-field id type invariants update-name->info init-code fn-code
                 [sketches (make-hash)])
 
     (for ([update-name (hash-keys update-name->info)])
@@ -98,7 +98,7 @@
 
     (define/public (get-id) id)
     (define/public (get-type) type)
-    (define/public (get-assumes-code) assumes)
+    (define/public (get-invariants-code) invariants)
     (define/public (get-fn-code) fn-code)
 
     (define/public (has-sketch? update-name)

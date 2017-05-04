@@ -82,9 +82,9 @@
 ;; Adds metadata to the dependency graph, and defines the data
 ;; structure in Racket.
 (define-syntax (define-incremental-prog stx)
-  (define-splicing-syntax-class maybe-assumes
-    (pattern (~seq #:assume assumes:expr))
-    (pattern (~seq) #:with assumes #'(list)))
+  (define-splicing-syntax-class maybe-invariants
+    (pattern (~seq #:invariant invariants:expr))
+    (pattern (~seq) #:with invariants #'#t))
 
   (define-splicing-syntax-class init-or-value
     (pattern (~seq #:initialize init:expr) #:with value #'#f)
@@ -107,11 +107,11 @@
 
   (syntax-parse stx
     #:context 'define-incremental
-    [(_ prog name type-exp a:maybe-assumes iv:init-or-value d:maybe-depends
+    [(_ prog name type-exp i:maybe-invariants iv:init-or-value d:maybe-depends
         u:maybe-updates s:maybe-sketches)
      (syntax/loc stx
        (define-incremental-base prog name type-exp
-         [assumes a.assumes]
+         [invariants i.invariants]
          [initialize iv.init]
          [value iv.value]
          [depends d.parents]
@@ -119,8 +119,8 @@
          [sketches s.sketches]))]))
 
 (define-syntax (define-incremental-base stx)
-  (syntax-case stx (assumes initialize depends updates sketches lambda define)
-    [(_ prog name type-exp [assumes assumption-expr]
+  (syntax-case stx (invariants initialize depends updates sketches lambda define)
+    [(_ prog name type-exp [invariants invariant-expr]
         [initialize init-exp] [value val-exp] [depends [parent ...]]
         [updates [(define (update-name [update-arg update-arg-type] ...)
                     update-body ...) ...]]
@@ -135,7 +135,7 @@
 
          ;; Create the node
          (define node
-           (new node% [id 'name] [type type-exp] [assumes 'assumption-expr]
+           (new node% [id 'name] [type type-exp] [invariants 'invariant-expr]
                 [init-code 'init-exp] [fn-code 'val-exp]
                 [update-name->info
                  (make-hash

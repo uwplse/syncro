@@ -43,7 +43,7 @@
     (set-add! s new-value)))
 
 (define-incremental node->children (Vector-type Node (Set-type Node)) () (replace)
-  #:assume (assert-acyclic node->children))
+  #:invariant (assert-acyclic node->children))
 
 (define-incremental node->parents (Vector-type Node (Set-type Node)) () (replace)
   (let ([vec (build-vector NUM_NODES

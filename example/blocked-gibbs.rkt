@@ -34,10 +34,10 @@
 ;; blocks contains the list of all blocks. There should be no overlap
 ;; in blocks.
 (define-symbolic-constant blocks (List-type 10 Block-type)
-  #:assume (for* ([set1 blocks]
-                  [set2 blocks])
-             (unless (eq? set1 set2)
-               (assert (set-empty? (set-intersect set1 set2))))))
+  #:invariant (for* ([set1 blocks]
+                     [set2 blocks])
+                (unless (eq? set1 set2)
+                  (assert (set-empty? (set-intersect set1 set2))))))
 
 ;;;;;;;;;;;;;;;;;;;;
 ;; Mutable values ;;
