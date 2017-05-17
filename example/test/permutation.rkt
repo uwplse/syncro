@@ -9,7 +9,14 @@
   [(define (swap! [i (Integer-type)] [j (Integer-type)])
      (let ([tmp (vector-ref permutation i)])
        (vector-set! permutation i (vector-ref permutation j))
-       (vector-set! permutation j tmp)))])
+       (vector-set! permutation j tmp)))
+   (define (swap-no-tmp! [i (Integer-type)] [j (Integer-type)])
+     (vector-set! permutation i
+                  (+ (vector-ref permutation i) (vector-ref permutation j)))
+     (vector-set! permutation j
+                  (- (vector-ref permutation i) (vector-ref permutation j)))
+     (vector-set! permutation i
+                  (- (vector-ref permutation i) (vector-ref permutation j))))])
 
 (define-incremental inverse-permutation (Vector-type LEN (Integer-type))
   #:value

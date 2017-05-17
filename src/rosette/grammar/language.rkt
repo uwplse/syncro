@@ -776,8 +776,6 @@
 
 ;; Removes any temporary variable definitions that are never used.
 ;; Does not work on symbolic values.
-;; A version that does work on symbolic values can be found in
-;; grammar-test.rkt.
 (define (eliminate-dead-code code)
   ;; Hard coded for the grammars we have for now
   (define begin-code

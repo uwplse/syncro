@@ -1,10 +1,11 @@
 #lang incremental
 
-(define NUM_WORDS (Integer-type) 12)
-(define NUM_TOPICS (Integer-type) 3)
-(define NUM_DOCUMENTS (Integer-type) 2)
-(define VOCABULARY_SIZE (Integer-type) 10)
-(define BETA (Integer-type) 1)
+(define int (Integer-type))
+(define NUM_WORDS int 12)
+(define NUM_TOPICS int 3)
+(define NUM_DOCUMENTS int 2)
+(define VOCABULARY_SIZE int 10)
+(define BETA int 1)
 
 ;; Enum types can be used as indices into vectors.
 ;; We assume that the words have already been interned.
@@ -27,7 +28,7 @@
      ;(define old-topic (vector-ref word->topic word))
      (vector-set! word->topic word new-topic))])
 
-(define-incremental num1 (Vector-type Topic (Integer-type))
+(define-incremental num1 (Vector-type Topic int)
   #:value
   (begin
     (build-vector
@@ -42,7 +43,7 @@
 ;;   (vector-decrement! num1 old-value)
 ;;   (vector-increment! num1 new-value))
 
-(define-incremental num2helper (Vector-type Document (Vector-type Topic (Integer-type)))
+(define-incremental num2helper (Vector-type Document (Vector-type Topic int))
   #:value
   (begin
     (build-vector
@@ -66,7 +67,7 @@
 ;;   (vector-decrement! subvec old-value)
 ;;   (vector-increment! subvec new-value))
 
-(define-incremental num2 (Vector-type Document (Integer-type))
+(define-incremental num2 (Vector-type Document int)
   #:value
   (build-vector
    NUM_DOCUMENTS
@@ -109,14 +110,14 @@
 ;;     (when (= (vector-ref subvec old-value) 0)
 ;;       (vector-decrement! num2 doc))))
 
-(define-incremental num1sum (Integer-type)
+(define-incremental num1sum int
   #:value (my-for/sum ([x num1]) x)
   #:depends (num1))
 ;; Expect
 ;; (let () (void))
 ;; (Turns out that num1 is guaranteed to be constant)
 
-(define-incremental num2sum (Integer-type)
+(define-incremental num2sum int
   #:value (my-for/sum ([x num2]) x)
   #:depends (num2))
 ;; Expect

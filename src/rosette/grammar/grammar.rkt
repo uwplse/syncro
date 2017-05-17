@@ -124,7 +124,7 @@
        (create-temporary terminal-info type mutable?
                          (lambda () (generate type mutable? 1 1)))]))
 
-  (define holes
+  (define integer-holes
     (for/list ([i num-constants])
       (define-symbolic* hole integer?)
       (define sym (gensym 'constant))
@@ -160,9 +160,9 @@
   ;; Build the program
   (if (equal? mode 'stmt)
       (apply begin^
-             (append holes definitions
+             (append integer-holes definitions
                      (list (generate (Void-type) #f num-stmts 2))))
-      definitions))
+      (append integer-holes definitions)))
 
 (define (grammar-general terminal-info operators num-stmts expr-depth chooser
                          #:num-temps [num-temps 0]
