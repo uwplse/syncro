@@ -176,22 +176,22 @@
 (define (make-lifted-variable symbol type
                               #:value [value (unknown-value)]
                               #:mutable? [mutable? #f]
-                              #:definition [definition #f])
-  (lifted-variable symbol type value mutable? definition))
+                              #:expression [expression #f])
+  (lifted-variable symbol type value mutable? expression))
 
 (define (update-lifted-variable var
                                 #:symbol [symbol #f]
                                 #:type [type #f]
                                 #:value [value (unknown-value)]
                                 #:mutable? [mutable? #f]
-                                #:definition [definition #f])
+                                #:expression [expression #f])
   (unless (lifted-variable? var)
     (error (format "update-lifted-variable: Not a lifted variable: ~a" var)))
   (lifted-variable (or symbol (variable-symbol var))
                    (or type (variable-type var))
                    (if (unknown-value? value) (variable-value var) value)
                    (or mutable? (variable-mutable? var))
-                   (or definition (variable-definition var))))
+                   (or expression (variable-expression var))))
 
 
 

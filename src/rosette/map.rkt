@@ -11,17 +11,17 @@
 ;; keys itself must be specified initially and can never be changed.
 (struct vec-map (keys values) #:transparent)
 
-(define (build-map capacity input-fn output-fn varset)
+(define (build-map capacity input-fn output-fn [varset #f])
   (when (term? capacity)
     (internal-error
      (format "make-symbolic-map: capacity is not concrete: ~a" capacity)))
 
   (define keys
     (for/vector #:length capacity ([i capacity])
-      (input-fn i)))
+      (if varset (input-fn i varset) (input-fn i))))
   (define vals
     (for/vector #:length capacity ([i capacity])
-      (output-fn i)))
+      (if varset (output-fn i varset) (output-fn i))))
 
   ;; TODO(metasketch): Don't use an assert directly
   (assert (apply distinct? (vector->list keys)))

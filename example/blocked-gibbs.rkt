@@ -1,19 +1,17 @@
-#lang racket
+#lang incremental
 
 ;; An optimization to factored blocked Gibbs sampling -- memoizing the
 ;; sampling factors that would be generated to sample from each
 ;; possible block.
 
-(require "../src/racket/constructs.rkt")
-
 ;;;;;;;;;;;;;;;
 ;; Constants ;;
 ;;;;;;;;;;;;;;;
 
-(define-constant NUM_VALS (Integer-type) 4)
+(define-symbolic NUM_VALS #:type (Integer-type) #:configs [4])
 (define-enum-type Val NUM_VALS)
 
-(define-constant NUM_VARS (Integer-type) 10)
+(define-symbolic NUM_VARS #:type (Integer-type) #:configs [10])
 (define-enum-type Var NUM_VARS)
 
 ;; For now, let's assume that factor graphs and factors are built in,
@@ -25,15 +23,15 @@
 ;; given list of variables.
 ;; A Factor Graph is an undirected graph where each variable is
 ;; connected to any factors that include that variable.
-(define-symbolic-constant factor-graph
-  (Factor-Graph-type Var NUM_VARS Val NUM_VALS))
+(define-symbolic factor-graph
+  #:type (Factor-Graph-type Var NUM_VARS Val NUM_VALS))
 
 (define Block-type (Set-type Var))
 
 ;; Each block is a set of variables.
 ;; blocks contains the list of all blocks. There should be no overlap
 ;; in blocks.
-(define-symbolic-constant blocks (List-type 10 Block-type)
+(define-symbolic blocks #:type (List-type 10 Block-type)
   #:invariant (for* ([set1 blocks]
                      [set2 blocks])
                 (unless (eq? set1 set2)
@@ -45,8 +43,10 @@
 
 ;; Arbitrary means that we can make arbitrary changes to the state
 ;; (though they must still preserve the type)
-(define-incremental state (Vector-type Var Val) () (arbitrary)
-  (build-vector NUM_VARS (lambda (var) (random NUM_VALS))))
+;; TODO: Define that better.
+(define-incremental state #:type (Vector-type Var Val)
+  #:initialize (build-vector NUM_VARS (lambda (var) (random NUM_VALS)))
+  #:updates [arbitrary arbitrary])
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Incremental structures ;;
@@ -86,10 +86,12 @@
 ;; Algorithm ;;
 ;;;;;;;;;;;;;;;
 
-(define (main)
-  (for ([i 1000])
-    (for ([block blocks])
-      (set-state! (specialize state
-                              (sample-from-factor
-                               (sampling-factor block))))))
-  (displayln state))
+(algorithm
+ (define (main)
+   (for ([i 1000])
+     (for ([block blocks])
+       (set-state! (specialize state
+                               (sample-from-factor
+                                (sampling-factor block))))))
+   (displayln state))
+ (main))

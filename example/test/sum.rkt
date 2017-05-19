@@ -4,13 +4,15 @@
 ;; bitwidth of 10 and vector length of 10). However, making the vector
 ;; smaller makes it considerably faster.
 
-(define-incremental nums (Vector-type 4 (Integer-type))
+(define int (Integer-type))
+
+(define-incremental nums #:type (Vector-type 4 int)
   #:initialize (make-vector 4 0)
   #:updates
-  [(define (assign-nums! [idx (Integer-type)] [val (Integer-type)])
+  [(define (assign-nums! [idx int] [val int])
      (vector-set! nums idx val))])
 
-(define-incremental sum (Integer-type)
+(define-incremental sum #:type int
   #:value (vector-sum nums)
   #:depends (nums))
 

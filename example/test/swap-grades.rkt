@@ -1,19 +1,24 @@
 #lang incremental
 
-(define-enum-type Student 3)
+(define int (Integer-type))
 
-(define-incremental grades (Vector-type Student (Integer-type))
-  #:initialize (make-vector 3 0)
+(define-symbolic NUM_STUDENTS #:type int #:configs [3 4])
+(define-enum-type Student NUM_STUDENTS)
+
+(define-symbolic PASSING_GRADE #:type int)
+
+(define-incremental grades #:type (Vector-type Student int)
+  #:initialize (make-vector NUM_STUDENTS 0)
   #:updates [(define (swap-grades! [student1 Student] [student2 Student])
                (let ([tmp (vector-ref grades student1)])
                  (vector-set! grades student1 (vector-ref grades student2))
                  (vector-set! grades student2 tmp)))])
 
-(define-incremental passing-students (Set-type Student)
+(define-incremental passing-students #:type (Set-type Student)
   #:value
-  (let ([result (enum-make-set 3)])
-    (for ([student 3])
-      (when (>= (vector-ref grades student) 7)
+  (let ([result (enum-make-set NUM_STUDENTS)])
+    (for ([student NUM_STUDENTS])
+      (when (>= (vector-ref grades student) PASSING_GRADE)
         (enum-set-add! result student)))
     result)
   #:depends (grades))
@@ -28,7 +33,7 @@
 ;;   (if s2-pass?
 ;;       (enum-set-add! passing-students student1)
 ;;       (enum-set-remove! passing-students student1))
-;; Could also directly check if the grade is under 7
+;; Could also directly check if the grade is under PASSING_GRADE
 
 ;; Result the synthesizer gave me was basically that:
 ;; (let ()

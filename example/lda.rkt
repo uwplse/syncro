@@ -5,12 +5,14 @@
 ;;;;;;;;;;;;;;;
 ;; Constants ;;
 ;;;;;;;;;;;;;;;
-(define NUM_WORD_INSTANCES (Integer-type) 12)
-(define NUM_TOPICS (Integer-type) 3)
-(define NUM_DOCUMENTS (Integer-type) 2)
-(define VOCABULARY_SIZE (Integer-type) 10)
-(define ALPHA (Integer-type) 1)
-(define BETA (Integer-type) 1)
+
+(define int (Integer-type))
+(define-symbolic NUM_WORD_INSTANCES #:type int #:configs [12 4])
+(define-symbolic NUM_TOPICS #:type int #:configs [3 4])
+(define-symbolic NUM_DOCUMENTS #:type int #:configs [2 4])
+(define-symbolic VOCABULARY_SIZE #:type int #:configs [10 4])
+(define-symbolic ALPHA #:type int)
+(define-symbolic BETA #:type int)
 
 (define-enum-type WordInstance NUM_WORD_INSTANCES)
 (define-enum-type WordText VOCABULARY_SIZE)
@@ -18,26 +20,10 @@
 (define-enum-type Document NUM_DOCUMENTS)
 
 ;; Vector mapping each word instance to the document it is in.
-;; TODO: Can we make this symbolic but still constant?
-(define word->document (Vector-type WordInstance Document)
-  (build-vector NUM_WORD_INSTANCES (lambda (w) (if (< w 5) 0 1))))
+(define-symbolic word->document #:type (Vector-type WordInstance Document))
 
 ;; Vector mapping each word instance to its identity.
-;; TODO: Can we make this symbolic but still constant?
-(define word->text (Vector-type WordInstance WordText)
-  (build-vector NUM_WORD_INSTANCES (lambda (w) (remainder w VOCABULARY_SIZE))))
-
-;; TODO: What happens if we write this as an incremental structure?
-;; If we have the free variable analysis, it should automatically
-;; realize that this is a constant
-;; TODO: We actually always need values that are one smaller than the
-;; values stored here. Writing that here would make the program less
-;; clear. What performance benefit would it give?
-(define num-for-document (Vector-type Document (Integer-type))
-  (let ([result (make-vector NUM_DOCUMENTS 0)])
-    (for ([w NUM_WORD_INSTANCES])
-      (vector-increment! result (vector-ref word->document w)))
-    result))
+(define-symbolic word->text #:type (Vector-type WordInstance WordText))
 
 ;;;;;;;;;;;;;;;;;;;;
 ;; Mutable values ;;
@@ -45,7 +31,7 @@
 
 ;; Vector mapping each word to the topic it is currently assigned.
 ;; Every iteration one of the words has its topic changed.
-(define-incremental word->topic (Vector-type WordInstance Topic)
+(define-incremental word->topic #:type (Vector-type WordInstance Topic)
   #:initialize (build-vector NUM_WORD_INSTANCES
                              (lambda (w) (random NUM_TOPICS)))
   #:updates
@@ -57,7 +43,21 @@
 ;; Incremental structures ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define-incremental num-for-topic-text (Vector-type Topic (Vector-type WordText (Integer-type)))
+;; TODO: Is it sufficient to restrict the depends clause, or will the
+;; synthesis still try to incrementalize this?
+;; TODO: We actually always need values that are one smaller than the
+;; values stored here. Writing that here would make the program less
+;; clear. What performance benefit would it give?
+(define-incremental num-for-document #:type (Vector-type Document int)
+  #:value
+  (let ([result (make-vector NUM_DOCUMENTS 0)])
+    (for ([w NUM_WORD_INSTANCES])
+      (vector-increment! result (vector-ref word->document w)))
+    result)
+  #:depends ())
+
+(define-incremental num-for-topic-text
+  #:type (Vector-type Topic (Vector-type WordText int))
   #:value
   (let ([result (build-vector NUM_TOPICS
                               (lambda (topic)
@@ -81,7 +81,7 @@
 ;;             1
 ;;             0)))))))
 
-(define-incremental num-for-topic (Vector-type Topic (Integer-type))
+(define-incremental num-for-topic #:type (Vector-type Topic int)
   #:value
   (build-vector
    NUM_TOPICS
@@ -89,7 +89,8 @@
      (vector-sum (vector-ref num-for-topic-text topic))))
   #:depends (word->topic))
 
-(define-incremental num-for-document-topic (Vector-type Document (Vector-type Topic (Integer-type)))
+(define-incremental num-for-document-topic
+  #:type (Vector-type Document (Vector-type Topic int))
   #:value
   (let ([result (build-vector NUM_DOCUMENTS
                               (lambda (doc)

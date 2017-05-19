@@ -8,7 +8,7 @@
 ;; Constants ;;
 ;;;;;;;;;;;;;;;
 
-(define NUM_NODES (Integer-type) 5)
+(define-symbolic NUM_NODES #:type (Integer-type) #:configs [5])
 (define-enum-type Node NUM_NODES)
 
 ;;;;;;;;;;;;;;;;;;;;
@@ -29,7 +29,7 @@
 ;; updates that are used in synthesis. (See symbolic-update-code in
 ;; types.rkt -- we need to be able to create that function
 ;; automatically for the new update.)
-(define-incremental graph (DAG-type Node)
+(define-incremental graph #:type (DAG-type Node)
   #:initialize (make-graph NUM_NODES)
   #:updates
   [(define (add-child! [parent Node] [child Node])
@@ -41,7 +41,7 @@
 ;; Incremental structures ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define-incremental mb (Vector-type Node (Set-type Node))
+(define-incremental mb #:type (Vector-type Node (Set-type Node))
   #:value
   (build-vector
    NUM_NODES

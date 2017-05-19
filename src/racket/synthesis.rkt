@@ -33,11 +33,45 @@
           `(begin ,@update-body)
           arg-types)))
 
+(define (constant-initialization-code constant)
+  (define var (constant-var constant))
+  (define sym (variable-symbol var))
+  (cond [(equal? (constant-version constant) 'config)
+         `(define ,sym (make-configurable ',sym))]
+        [(variable-has-expression? var) 
+         (variable-definition var)]
+        [else
+         `(define ,sym 'placeholder)]))
+
+(define (constant-value-code constant config-num varset-name)
+  (define var (constant-var constant))
+  (cond [(equal? (constant-version constant) 'config)
+         (let ([sym (variable-symbol var)]
+               [expr (variable-expression var)])
+           `(set! ,sym ,(list-ref expr config-num)))]
+        [(variable-has-expression? var) 
+         (variable-set!-code var)]
+        [else
+         `(set! ,(variable-symbol var)
+                (make-symbolic ,(repr (variable-type var)) ,varset-name))]))
+
 ;; Various helpers that simply get information out of data structures.
-(define (get-constant-info vars)
-  (let ([typed-vars (filter variable-has-type? vars)])
+(define (get-constant-info constants varset-name)
+  (let* ([vars (map constant-var constants)]
+         [typed-vars (filter variable-has-type? vars)]
+         [configs (filter (lambda (c) (equal? (constant-version c) 'config))
+                          constants)]
+         [nums (remove-duplicates
+                (map (compose length variable-expression constant-var)
+                     configs))])
+    (unless (<= (length nums) 1)
+      (error (format "All configurations must have the same length! Given program has ~a"
+                     nums)))
+
     (list (map variable-symbol typed-vars)
-          (map variable-type typed-vars))))
+          (map variable-type typed-vars)
+          (map (compose variable-symbol constant-var) configs)
+          (if (null? nums) 1 (first nums)))))
 
 (define (get-node-info node)
   (let ([id (send node get-id)]
@@ -74,10 +108,12 @@
 ;; prog: A program struct (see read-file.rkt)
 (define (perform-synthesis prog options)
   (define graph (program-dependency-graph prog))
-  
+
+  (define constants (program-constants prog))
   ;; Relevant information about constants
-  (match-define (list constant-terminal-ids constant-terminal-types)
-    (get-constant-info (program-constants prog)))
+  (match-define (list constant-terminal-ids constant-terminal-types
+                      config-terminal-ids num-configs)
+    (get-constant-info constants 'inputs-set))
   
   (define (get-id-info id)
     (get-node-info (get-node graph id)))
@@ -114,22 +150,27 @@
         ;; Note: Here we use (repr type) to get an expression that
         ;; evaluates to the type, but we could also store this
         ;; expression taken straight from the user program.
-        `(send terminal-info make-and-add-terminal ',var ,var ,(repr type)
+        `(send terminal-info make-and-add-terminal ',var ,(repr type)
                #:mutable? ,mutable?))
+      (define (set-terminal-code var)
+        `(send terminal-info set-value ',var ,var))
 
-      (define add-terminals
-        (map add-terminal-code
-             (append (list input-id) intermediate-ids
-                     update-args constant-terminal-ids)
-             (append (list input-type) intermediate-types
-                     update-arg-types constant-terminal-types)))
+      (define all-ids-except-output
+        (append (list input-id) intermediate-ids
+                update-args constant-terminal-ids))
+      (define all-types-except-output
+        (append (list input-type) intermediate-types
+                update-arg-types constant-terminal-types))
+      (define add-terminal-stmts
+        (cons (add-terminal-code output-id output-type #:mutable? #t)
+              (map add-terminal-code
+                   all-ids-except-output all-types-except-output)))
+      (define set-terminal-stmts
+        (map set-terminal-code (cons output-id all-ids-except-output)))
 
+      ;; TODO: This is misnamed, constants come before this
       (define initialization-stmts
-        `(;; Example: (define NUM_WORDS 12)
-          ,@(program-initialization prog)
-          (define inputs-set (mutable-set))
-          (define terminal-info (new Terminal-Info%))
-          ;; Example: (define word->topic (build-vector 12 ...))
+        `(;; Example: (define word->topic (build-vector 12 ...))
           ;; The resulting data structure contains symbolic variables.
           ,define-input
           (define input-assertion ,input-invariant)
@@ -150,10 +191,12 @@
                   #:choice-version ',(hash-ref options 'grammar-choice)
                   #:mode ',mode))
 
-      (define prederiv-code
+      (define prederiv-defn-code
         `((displayln "Generating the prederivative")
           (define prederiv
-            (time ,(make-grammar-expr 1 1 0 0 (Any-type) '(tmps 2))))
+            (time ,(make-grammar-expr 1 1 0 0 (Any-type) '(tmps 2))))))
+      (define prederiv-run-code
+        `(,@set-terminal-stmts
           (displayln "Running the prederivative")
           (time (for-each eval-lifted prederiv))))
 
@@ -179,10 +222,6 @@
                          [index (in-naturals 0)])
                 `(set! ,id (list-ref clone-state ,index))))))
 
-      (define terminal-info-stmts
-        `(,(add-terminal-code output-id output-type #:mutable? #t)
-          ,@add-terminals))
-
       ;; Note: It is not (equal? ,output-id ,output-expr)
       ;; because when we run the lifted program, it modifies
       ;; the value *stored in the lifted program*, which is not
@@ -192,58 +231,92 @@
         `(equal? (eval-lifted (send terminal-info get-terminal-by-id ',output-id))
                  ,output-expr))
 
-      (define program-definition
-        (if (send output-node has-sketch? update-name)
-            (let ([sketch (send output-node get-sketch update-name)])
-              `((define program
-                  (make-lifted terminal-info all-operators ',sketch))
-                (time
-                 (force-type program (Void-type)
-                             (lambda (type)
-                               ,(make-grammar-expr 2 2 0 0 'type 'stmt))))))
-            `((define program
-                (time ,(make-grammar-expr 2 2 0 1 '(Void-type) 'stmt))))))
-
       (define (verbose-code code)
         (if (hash-ref options 'verbose?)
             (list code)
             '()))
 
+      (define program-definition
+        `(,@(verbose-code '(displayln "Creating symbolic program"))
+          ,@(if (send output-node has-sketch? update-name)
+                (let ([sketch (send output-node get-sketch update-name)])
+                  `((define program
+                      (make-lifted terminal-info all-operators ',sketch))
+                    (time
+                     (force-type program (Void-type)
+                                 (lambda (type)
+                                   ,(make-grammar-expr 2 2 0 0 'type 'stmt))))))
+                `((define program
+                    (time ,(make-grammar-expr 2 2 0 1 '(Void-type) 'stmt)))))))
+      (define program-run-code
+        `(,@set-terminal-stmts
+          (time (eval-lifted program))))
+
+      (define (get-code-for-config i)
+        `(let ()
+           (define inputs-set (mutable-set))
+           ;; Example: (define NUM_WORDS 12)
+           ,@(map (lambda (c) (constant-value-code c i 'inputs-set))
+                  constants)
+           (for-each set-configurable-value!
+                     configurables
+                     (list ,@config-terminal-ids))
+           ,@initialization-stmts
+           ,update-defns-code
+           ,@prederiv-run-code
+           ,update-code
+           (define input-assertion-after-update ,input-invariant)
+           ,@update-intermediate-stmts
+
+           ;; Symbolically run the sampled program
+           ,@(verbose-code '(displayln "Running the generated program"))
+           ,@program-run-code
+
+           ;; Assert all preconditions
+           (define (assert-fn x) (assert x))
+           (assert input-assertion)
+           (assert input-assertion-after-update)
+
+           (define (assert-pre input)
+             (for-each assert-fn (input-preconditions input)))
+           (define inputs-list (set->list inputs-set))
+           (for-each assert-pre inputs-list)
+
+           (list inputs-list ,postcondition-expr)))
+
       (define (run-synthesis)
+        ;; Every variable in terminal-info has a type, which could
+        ;; depend on a number in a configuration (for example, the
+        ;; Word type which has NUM_WORDS items).
+        ;; However, the terminal info must be defined separately from
+        ;; any configuration, because the sampled program must work
+        ;; for all configurations. And the program generation process
+        ;; does need the types, though not things like NUM_WORDS.
+        ;; We solve this by making types configurable. See types.rkt.
         (define rosette-code
           `(let ()
              (clear-state!)
              (current-bitwidth ,(hash-ref options 'bitwidth))
-             ,@initialization-stmts
-             ,update-defns-code
-             ,@terminal-info-stmts
-             ,@prederiv-code
-             ,update-code
-             (define input-assertion-after-update ,input-invariant)
-             ,@update-intermediate-stmts
-
-             ,@(verbose-code '(displayln "Creating symbolic program"))
+             ,@(map constant-initialization-code constants)
+             (define configurables (list ,@config-terminal-ids))
+             (define terminal-info (new Terminal-Info%))
+             ,@add-terminal-stmts
+             ,@prederiv-defn-code
              ,@program-definition
-             ;; Symbolically run the sampled program
-             ,@(verbose-code '(displayln "Running the generated program"))
-             (time (eval-lifted program))
-
-             ;; Assert all preconditions
-             (define (assert-fn x) (assert x))
-             (assert input-assertion)
-             (assert input-assertion-after-update)
-
-             (define (assert-pre input)
-               (for-each assert-fn (input-preconditions input)))
-             (define inputs-list (set->list inputs-set))
-             (for-each assert-pre inputs-list)
-             
+             (define inputs-and-postconditions
+               ,(cons 'list
+                      (for/list ([i num-configs])
+                        (get-code-for-config i))))
              (define synth
                (time
-                (synthesize #:forall (map input-val inputs-list)
-                            #:guarantee
-                            (begin (assert ,postcondition-expr)
-                                   ,@(verbose-code `(displayln "Completed symbolic generation! Running the solver:"))))))
+                (synthesize
+                 #:forall (map input-val
+                               (foldl append '()
+                                      (map first inputs-and-postconditions)))
+                 #:guarantee
+                 (begin (for ([pair inputs-and-postconditions])
+                          (assert (second pair)))
+                        ,@(verbose-code `(displayln "Completed symbolic generation! Running the solver:"))))))
              (and (sat? synth)
                   ,@(verbose-code '(displayln "Solution found! Generating code:"))
                   (let* ([result (time (coerce-evaluate program synth))]
@@ -254,7 +327,6 @@
                                        (list (lifted-code (eliminate-dead-code result))))])
                     (pretty-print code)
                     code))))
-
         (when (hash-ref options 'debug?) (pretty-print rosette-code))
         (run-in-rosette rosette-code))
 
@@ -267,8 +339,9 @@
             (current-bitwidth ,(hash-ref options 'bitwidth))
             ,@initialization-stmts
             ,update-defns-code
-            ,@terminal-info-stmts
-            ,@prederiv-code
+            ,@add-terminal-stmts
+            ,@prederiv-defn-code
+            ,@prederiv-run-code
             ,update-code
             ,@update-intermediate-stmts
             ,@(add-reset-fn 'reset-state!)

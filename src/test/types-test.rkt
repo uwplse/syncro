@@ -74,9 +74,9 @@
        (check-not-equal? proc (Procedure-type (list int bool) (Integer-type)))
        (check-not-equal? vec (Vector-type 10 int))
        ;; Enums are only equal to themselves
-       (check-not-equal? enum (Enum-type 'Word 12))
-       (check-equal? enum enum)
-       (check-not-equal? set-enum (Set-type (Enum-type 'Word 12)))
+       (check-equal? enum (Enum-type 'Word 12))
+       (check-not-equal? enum (Enum-type 'Foo 12))
+       (check-not-equal? set-enum (Set-type (Enum-type 'Foo 12)))
        (check-equal? set-enum (Set-type enum))
        ;; New type variables are different from old ones
        (check-not-equal? vec-var (Vector-type (Type-var idx) bool))
@@ -185,7 +185,7 @@
                                    (Vector-type int bool)))
 
        (check-true (is-supertype? set-enum (Set-type enum)))
-       (check-false (is-supertype? set-enum (Set-type (Enum-type 'Word 12))))
+       (check-false (is-supertype? set-enum (Set-type (Enum-type 'Foo 12))))
 
        ;; Rec maps a -> int and b -> vec
        (check-true (is-supertype? rec (Record-type 'foo (list 'a 'b 'c)
@@ -269,7 +269,7 @@
                                 #:read-index #f #:write-index #f)
                
                (and (not b1) (not b2))
-               '(Set-type Word)))
+               '(Set-type (Enum-type 'Word 12))))
 
        (for ([(condition code) results])
          (define synth (solve (assert condition)))

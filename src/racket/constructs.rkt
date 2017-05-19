@@ -20,27 +20,31 @@
          (all-from-out "../rosette/operators.rkt")
          (all-from-out "../rosette/record.rkt")
          (except-out (all-from-out "../rosette/types.rkt") Enum-type)
-         incremental algorithm my-for/sum my-for/or my-for/and)
+         incremental my-for/sum my-for/or my-for/and)
 
 (define-syntax-rule (incremental expr ...)
   (begin
     ;; TODO: Currently we have to thread prog by passing it to all of the
     ;; helper macros. Is there a better way to do this?
-    (define prog (program '() '() (make-dependency-graph) '()))
+    (define prog (make-program))
     (desugar prog expr) ...
-    (set-program-initialization! prog (reverse (program-initialization prog)))
-    (set-program-constants! prog (reverse (program-constants prog)))
+    (finalize-program prog)
     (pretty-print
      (perform-synthesis prog (cmd-parse (current-command-line-arguments))))))
+
+(define (finalize-program p)
+  (set-program-constants! p (reverse (program-constants p))))
 
 ;; Desugars top-level expressions in the incremental form. Primarily
 ;; threads the prog variable through the other helper macros.
 (define-syntax (desugar stx)
-  (syntax-case stx (define define-enum-type define-incremental algorithm)
+  (syntax-case stx (define define-enum-type define-symbolic define-incremental algorithm)
     [(_ prog (define expr ...))
      (syntax/loc stx (define-constant-prog prog expr ...))]
     [(_ prog (define-enum-type expr ...))
      (syntax/loc stx (define-enum-type-prog prog expr ...))]
+    [(_ prog (define-symbolic expr ...))
+     (syntax/loc stx (define-symbolic-prog prog expr ...))]
     [(_ prog (define-incremental expr ...))
      (syntax/loc stx (define-incremental-prog prog expr ...))]
     [(_ prog (algorithm expr ...))
@@ -48,25 +52,16 @@
     [(_ prog expr)
      (syntax/loc stx expr)]))
 
+(define (add-constant! prog c)
+  (set-program-constants! prog (cons c (program-constants prog))))
+
 ;; Defines a constant in Racket and stores metadata in prog.
-(define-syntax (define-constant-prog stx)
-  (syntax-case stx ()
-    [(_ prog var val)
-     (syntax/loc stx
-       (define-constant-prog prog var #f val))]
-    [(_ prog var type-exp val)
-     (syntax/loc stx
-       (begin
-         (set-program-initialization!
-          prog
-          (cons '(define var val) (program-initialization prog)))
-         (set-program-constants!
-          prog
-          (cons (make-variable 'var #:type type-exp
-                               #:definition '(define var val))
-                (program-constants prog)))
-         (define var val)
-         (void)))]))
+(define-syntax-rule (define-constant-prog prog var val)
+  (begin
+    (let ([tmp (make-variable 'var #:expression 'val)])
+      (add-constant! prog (constant tmp 'untyped)))
+    (define var val)
+    (void)))
 
 ;; Different Enums should not be able to replace each other. So, in
 ;; the subtype method we compare Enums by identity. However if the
@@ -78,6 +73,22 @@
 ;; are supposed to reuse that name in the program.
 (define-syntax-rule (define-enum-type-prog prog name items)
   (define-constant-prog prog name (Enum-type 'name items)))
+
+(define-syntax (define-symbolic-prog stx)
+  (syntax-parse stx
+    #:context 'define-symbolic
+    [(_ prog var:id #:type type-exp:expr)
+     (syntax/loc stx
+       (let ([tmp (make-variable 'var #:type type-exp)])
+         (add-constant! prog (constant tmp 'symbolic))))]
+    [(_ prog var:id #:type type-exp:expr #:configs [c-exp ...])
+     (syntax/loc stx
+       (begin
+         (let ([tmp (make-variable 'var #:type type-exp
+                                   #:expression '(c-exp ...))])
+           (add-constant! prog (constant tmp 'config)))
+         (define var (make-configurable 'var))
+         (void)))]))
 
 ;; Adds metadata to the dependency graph, and defines the data
 ;; structure in Racket.
@@ -107,8 +118,8 @@
 
   (syntax-parse stx
     #:context 'define-incremental
-    [(_ prog name type-exp i:maybe-invariants iv:init-or-value d:maybe-depends
-        u:maybe-updates s:maybe-sketches)
+    [(_ prog name #:type type-exp i:maybe-invariants iv:init-or-value
+        d:maybe-depends u:maybe-updates s:maybe-sketches)
      (syntax/loc stx
        (define-incremental-base prog name type-exp
          [invariants i.invariants]
@@ -155,15 +166,7 @@
          ;; Put the node in the graph
          (add-node! (program-dependency-graph prog) 'name node)
          (for ([p '(parent ...)])
-           (add-dependency! (program-dependency-graph prog) p 'name))
-
-         ;; Define the initial value
-         (define name (or init-exp val-exp))
-         (void)))]))
-
-;; TODO: This is a placeholder
-(define-syntax-rule (algorithm expr ...)
-  (void))
+           (add-dependency! (program-dependency-graph prog) p 'name))))]))
 
 ;; NOTE: The reimplementations of for can also be found in
 ;; src/rosette/util.rkt

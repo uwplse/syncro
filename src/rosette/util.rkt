@@ -4,7 +4,8 @@
          display-return
          input-val input-preconditions input?
          (rename-out [input make-input])
-         my-for/sum my-for/or my-for/and coerce-evaluate clone)
+         my-for/sum my-for/or my-for/and coerce-evaluate clone
+         (struct-out unknown-value))
 
 (define display-errors? (make-parameter #f))
 (define (maybe-internal-error str)
@@ -20,6 +21,9 @@
 (define (display-return x)
   (displayln x)
   x)
+
+;; Used wherever we could have a value but don't yet know it.
+(struct unknown-value () #:transparent)
 
 (struct input (val preconditions) #:transparent)
 

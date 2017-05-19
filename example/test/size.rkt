@@ -1,12 +1,12 @@
 #lang incremental
 
-(define-incremental mystery? (Vector-type 5 (Boolean-type))
+(define-incremental mystery? #:type (Vector-type 5 (Boolean-type))
   #:initialize (vector #t #f #f #t #f)
   #:updates
   [(define (assign-mystery! [idx (Integer-type)] [m (Boolean-type)])
      (vector-set! mystery? idx m))])
 
-(define-incremental num-mysteries (Integer-type)
+(define-incremental num-mysteries #:type (Integer-type)
   #:value (my-for/sum ([x mystery?])
             (if x 1 0))
   #:depends (mystery?))

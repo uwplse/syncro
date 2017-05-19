@@ -109,7 +109,7 @@
     [`(define ,var ,val)
      (let* ([value (recurse val)]
             [type (infer-type value)])
-       (send terminal-info make-and-add-terminal var (unknown-value) type)
+       (send terminal-info make-and-add-terminal var type)
        (define^ (recurse var) value))]
     [`(for-enum-set ((,var ,set-expr)) . ,body)
      (let* ([set (recurse set-expr)]
@@ -118,7 +118,7 @@
          (internal-error
           (format "make-lifted -- Not a set type ~a" set-type)))
 
-       (send terminal-info make-and-add-terminal var (unknown-value)
+       (send terminal-info make-and-add-terminal var
              (Set-content-type set-type))
        (for-enum-set^ (recurse var) set (recurse `(begin ,@body))))]
 

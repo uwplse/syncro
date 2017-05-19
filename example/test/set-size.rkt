@@ -1,17 +1,18 @@
 #lang incremental
 
-(define-enum-type Mystery 5)
+(define-symbolic NUM_MYSTERIES #:type (Integer-type) #:configs [5 3])
+(define-enum-type Mystery NUM_MYSTERIES)
 
-(define-incremental mystery? (Set-type Mystery)
-  #:initialize (enum-make-set 5)
+(define-incremental mystery? #:type (Set-type Mystery)
+  #:initialize (enum-make-set NUM_MYSTERIES)
   #:updates
   [(define (add-mystery! [m Mystery])
      (enum-set-add! mystery? m))
    (define (remove-mystery! [m Mystery])
      (enum-set-remove! mystery? m))])
 
-(define-incremental num-mysteries (Integer-type)
-  #:value (my-for/sum ([x 5])
+(define-incremental num-mysteries #:type (Integer-type)
+  #:value (my-for/sum ([x NUM_MYSTERIES])
             (if (enum-set-contains? mystery? x) 1 0))
   #:depends (mystery?))
 

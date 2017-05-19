@@ -8,14 +8,15 @@
 (define tests
   (test-suite
    "Tests for variable.rkt"
-   (let* ([var (make-variable 'x #:definition '(define x 3))]
+   (let* ([var (make-variable 'x #:expression 3)]
           [int-var (make-variable 'x #:type (Integer-type))])
 
      (test-case "Basic variables"
        (check-false (variable? 'x))
        (check-true (variable? var))
        (check-equal? (variable-symbol var) 'x)
-       (check-equal? (variable-definition var) '(define x 3)))
+       (check-equal? (variable-definition var) '(define x 3))
+       (check-equal? (variable-set!-code var) '(set! x 3)))
 
      (test-case "Typed variables"
        (check-false (variable-has-type? var))

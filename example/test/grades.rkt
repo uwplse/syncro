@@ -1,24 +1,28 @@
 #lang incremental
 
-(define-enum-type Student 3)
+(define int (Integer-type))
+(define-symbolic NUM_STUDENTS #:type int #:configs [3 4])
+(define-enum-type Student NUM_STUDENTS)
 
-(define-incremental grades (Vector-type Student (Integer-type))
-  #:initialize (make-vector 3 0)
+(define-symbolic PASSING_GRADE #:type int)
+
+(define-incremental grades #:type (Vector-type Student int)
+  #:initialize (make-vector NUM_STUDENTS 0)
   #:updates
-  [(define (assign-grade! [student Student] [new-grade (Integer-type)])
+  [(define (assign-grade! [student Student] [new-grade int])
      (vector-set! grades student new-grade))])
 
-(define-incremental passing-students (Set-type Student)
+(define-incremental passing-students #:type (Set-type Student)
   #:value
-  (let ([result (enum-make-set 3)])
-    (for ([student 3])
-      (when (>= (vector-ref grades student) 7)
+  (let ([result (enum-make-set NUM_STUDENTS)])
+    (for ([student NUM_STUDENTS])
+      (when (>= (vector-ref grades student) PASSING_GRADE)
         (enum-set-add! result student)))
     result)
   #:depends (grades))
 
 ;; Expected result:
-;; (if (< new-value 7)
+;; (if (< new-value PASSING_GRADE)
 ;;     (enum-set-remove! passing-students index)
 ;;     (enum-set-add! passing-students index)
 

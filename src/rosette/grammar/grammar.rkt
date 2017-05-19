@@ -97,7 +97,7 @@
   (define lifted-sym
     (if (and (not (term? subexp)) (false? subexp))
         (make-lifted-variable sym (Void-type) #:value (void^) #:mutable? #f)
-        (send terminal-info make-and-add-terminal sym #f type
+        (send terminal-info make-and-add-terminal sym type
               #:mutable? mutable?)))
   (define^ lifted-sym subexp))
 
@@ -129,8 +129,8 @@
       (define-symbolic* hole integer?)
       (define sym (gensym 'constant))
       (define lifted-sym
-        (send terminal-info make-and-add-terminal sym hole
-              (Integer-type) #:mutable? #f))
+        (send terminal-info make-and-add-terminal sym (Integer-type)
+              #:value hole #:mutable? #f))
       (define^ lifted-sym hole)))
 
   ;; Choose definitions for each variable
@@ -163,6 +163,7 @@
              (append integer-holes definitions
                      (list (generate (Void-type) #f num-stmts 2))))
       (append integer-holes definitions)))
+
 
 (define (grammar-general terminal-info operators num-stmts expr-depth chooser
                          #:num-temps [num-temps 0]
@@ -504,8 +505,8 @@
     (for/list ([sym temps])
       (define subexp (expr-grammar (Any-type) 1))
       (define lifted-sym
-        (send terminal-info make-and-add-terminal sym (eval-lifted subexp)
-              (infer-type subexp) #:mutable? #f))
+        (send terminal-info make-and-add-terminal sym (infer-type subexp)
+              #:value (eval-lifted subexp) #:mutable? #f))
       (define^ lifted-sym subexp)))
 
   ;; Build the program
@@ -725,10 +726,13 @@
 
     (field [symbol->terminal (make-hash)])
 
-    (define/public (make-and-add-terminal sym value type
+    (define/public (make-and-add-terminal sym type
+                                          #:value [value (unknown-value)]
                                           #:mutable? [mutable? #f])
       (define terminal
-        (make-lifted-variable sym type #:value value #:mutable? mutable?))
+        (if (unknown-value? value)
+            (make-lifted-variable sym type #:mutable? mutable?)
+            (make-lifted-variable sym type #:value value #:mutable? mutable?)))
       (add-terminal terminal)
       terminal)
 
