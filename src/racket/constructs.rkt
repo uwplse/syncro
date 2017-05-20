@@ -106,10 +106,10 @@
     (pattern (~seq #:depends parents:expr))
     (pattern (~seq) #:with parents #'()))
 
-  (define-splicing-syntax-class maybe-updates
+  (define-splicing-syntax-class maybe-deltas
     ;; TODO: Better error message (see above)
-    (pattern (~seq #:updates updates:expr))
-    (pattern (~seq) #:with updates #'()))
+    (pattern (~seq #:deltas deltas:expr))
+    (pattern (~seq) #:with deltas #'()))
 
   (define-splicing-syntax-class maybe-sketches
     ;; TODO: Better error messages (see above)
@@ -119,46 +119,46 @@
   (syntax-parse stx
     #:context 'define-incremental
     [(_ prog name #:type type-exp i:maybe-invariants iv:init-or-value
-        d:maybe-depends u:maybe-updates s:maybe-sketches)
+        d:maybe-depends delta:maybe-deltas s:maybe-sketches)
      (syntax/loc stx
        (define-incremental-base prog name type-exp
          [invariants i.invariants]
          [initialize iv.init]
          [value iv.value]
          [depends d.parents]
-         [updates u.updates]
+         [deltas delta.deltas]
          [sketches s.sketches]))]))
 
 (define-syntax (define-incremental-base stx)
-  (syntax-case stx (invariants initialize depends updates sketches lambda define)
+  (syntax-case stx (invariants initialize depends deltas sketches lambda define)
     [(_ prog name type-exp [invariants invariant-expr]
         [initialize init-exp] [value val-exp] [depends [parent ...]]
-        [updates [(define (update-name [update-arg update-arg-type] ...)
-                    update-body ...) ...]]
+        [deltas [(define (delta-name [delta-arg delta-arg-type] ...)
+                   delta-body ...) ...]]
         [sketches [(sketch-name (lambda (sketch-arg ...) sketch-expr ...))
                    ...]])
      (syntax/loc stx
        (begin
          ;; Check the validity of the input
-         (unless (= (length '(update-name ...))
-                    (length (remove-duplicates '(update-name ...))))
-           (error "Cannot have duplicate updates!"))
+         (unless (= (length '(delta-name ...))
+                    (length (remove-duplicates '(delta-name ...))))
+           (error "Cannot have duplicate deltas!"))
 
          ;; Create the node
          (define node
            (new node% [id 'name] [type type-exp] [invariants 'invariant-expr]
                 [init-code 'init-exp] [fn-code 'val-exp]
-                [update-name->info
+                [delta-name->info
                  (make-hash
                   (list
-                   (cons 'update-name
-                         (make-update-info '(update-arg ...)
-                                           (list update-arg-type ...)
-                                           '(update-body ...))) ...))]))
+                   (cons 'delta-name
+                         (make-delta-info '(delta-arg ...)
+                                           (list delta-arg-type ...)
+                                           '(delta-body ...))) ...))]))
 
          ;; Add any sketches to the node
-         (let ([ancestor (get-node-for-update 'sketch-name)])
-           (send ancestor assert-update-arg-names! 'sketch-name
+         (let ([ancestor (get-node-for-delta 'sketch-name)])
+           (send ancestor assert-delta-arg-names! 'sketch-name
                  '(sketch-arg ...))
            (send node set-sketch! 'sketch-name '(begin sketch-expr ...)))
          ...

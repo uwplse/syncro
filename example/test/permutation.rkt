@@ -6,7 +6,7 @@
 (define-incremental permutation #:type (Vector-type LEN int)
   #:invariant (equal? (sort (vector->list permutation) <) (range LEN))
   #:initialize (build-vector LEN identity)
-  #:updates
+  #:deltas
   [(define (swap! [i int] [j int])
      (let ([tmp (vector-ref permutation i)])
        (vector-set! permutation i (vector-ref permutation j))

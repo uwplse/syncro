@@ -34,7 +34,7 @@
 (define-incremental word->topic #:type (Vector-type WordInstance Topic)
   #:initialize (build-vector NUM_WORD_INSTANCES
                              (lambda (w) (random NUM_TOPICS)))
-  #:updates
+  #:deltas
   [(define (change-topic! [word WordInstance] [new-topic Topic])
      (vector-set! word->topic word new-topic))])
 

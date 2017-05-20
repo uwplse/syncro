@@ -31,7 +31,7 @@
     (for ([prior-node node])
       (assert (not (enum-set-contains? ch prior-node)))))
   #:initialize (void)
-  #:updates
+  #:deltas
   ;; An update that allows us to replace one child with another.
   [(define (replace [node Node] [old-value Node] [new-value Node])
      (let ([c (vector-ref node->children node)])

@@ -2,7 +2,7 @@
 
 (define-incremental mystery? #:type (Vector-type 5 (Boolean-type))
   #:initialize (vector #t #f #f #t #f)
-  #:updates
+  #:deltas
   [(define (assign-mystery! [idx (Integer-type)] [m (Boolean-type)])
      (vector-set! mystery? idx m))])
 

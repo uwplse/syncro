@@ -5,7 +5,7 @@
 
 (define-incremental mystery? #:type (Set-type Mystery)
   #:initialize (enum-make-set NUM_MYSTERIES)
-  #:updates
+  #:deltas
   [(define (add-mystery! [m Mystery])
      (enum-set-add! mystery? m))
    (define (remove-mystery! [m Mystery])

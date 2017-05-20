@@ -31,7 +31,7 @@
 ;; automatically for the new update.)
 (define-incremental graph #:type (DAG-type Node)
   #:initialize (make-graph NUM_NODES)
-  #:updates
+  #:deltas
   [(define (add-child! [parent Node] [child Node])
      (add-edge! graph parent child))
    (define (remove-child! [parent Node] [child Node])

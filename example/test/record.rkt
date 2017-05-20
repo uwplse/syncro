@@ -17,7 +17,7 @@
 
 (define-incremental info #:type (Vector-type Student Student-info-type)
   #:initialize (make-vector NUM_STUDENTS (Student-info 0))
-  #:updates
+  #:deltas
   [(define (assign-info! [student Student] [new-info Student-info-type])
      (vector-set! info student new-info))])
 

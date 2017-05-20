@@ -23,7 +23,7 @@
 ;; slot in the vector.
 (define-incremental word->topic #:type (Vector-type Word Topic)
   #:initialize (build-vector NUM_WORDS (lambda (w) (random NUM_TOPICS)))
-  #:updates
+  #:deltas
   [(define (change-topic! [word Word] [new-topic Topic])
      (vector-set! word->topic word new-topic))])
 

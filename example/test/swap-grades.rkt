@@ -9,7 +9,7 @@
 
 (define-incremental grades #:type (Vector-type Student int)
   #:initialize (make-vector NUM_STUDENTS 0)
-  #:updates [(define (swap-grades! [student1 Student] [student2 Student])
+  #:deltas [(define (swap-grades! [student1 Student] [student2 Student])
                (let ([tmp (vector-ref grades student1)])
                  (vector-set! grades student1 (vector-ref grades student2))
                  (vector-set! grades student2 tmp)))])

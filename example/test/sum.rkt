@@ -8,7 +8,7 @@
 
 (define-incremental nums #:type (Vector-type 4 int)
   #:initialize (make-vector 4 0)
-  #:updates
+  #:deltas
   [(define (assign-nums! [idx int] [val int])
      (vector-set! nums idx val))])
 

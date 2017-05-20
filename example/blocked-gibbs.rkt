@@ -46,7 +46,7 @@
 ;; TODO: Define that better.
 (define-incremental state #:type (Vector-type Var Val)
   #:initialize (build-vector NUM_VARS (lambda (var) (random NUM_VALS)))
-  #:updates [arbitrary arbitrary])
+  #:deltas [arbitrary arbitrary])
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Incremental structures ;;

@@ -8,7 +8,7 @@
 
 (define-incremental grades #:type (Vector-type Student int)
   #:initialize (make-vector NUM_STUDENTS 0)
-  #:updates
+  #:deltas
   [(define (assign-grade! [student Student] [new-grade int])
      (vector-set! grades student new-grade))])
 

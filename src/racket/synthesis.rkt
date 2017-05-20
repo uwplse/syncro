@@ -19,18 +19,18 @@
         [var (send node get-id)])
     `(define ,var (make-symbolic ,(repr type) ,varset-name))))
 
-(define (symbolic-update-code node update-name set-id)
-  (let* ([update-args (send node get-update-args update-name)]
-         [arg-names (map variable-symbol update-args)]
-         [arg-types (map variable-type update-args)]
-         [update-body (send node get-update-body update-name)])
+(define (symbolic-delta-code node delta-name set-id)
+  (let* ([delta-args (send node get-delta-args delta-name)]
+         [arg-names (map variable-symbol delta-args)]
+         [arg-types (map variable-type delta-args)]
+         [delta-body (send node get-delta-body delta-name)])
     (define arg-defns
       (map (lambda (name type)
              `(define ,name (make-symbolic ,(repr type) ,set-id)))
            arg-names arg-types))
     (list arg-names
           `(begin ,@arg-defns)
-          `(begin ,@update-body)
+          `(begin ,@delta-body)
           arg-types)))
 
 (define (constant-initialization-code constant)
@@ -79,9 +79,9 @@
     (list node id (send node get-type) expr
           `(define ,id ,expr) (send node get-invariants-code))))
 
-(define (get-symbolic-info node update-name set-id)
+(define (get-symbolic-info node delta-name set-id)
   (append (list (symbolic-code node set-id))
-          (symbolic-update-code node update-name set-id)))
+          (symbolic-delta-code node delta-name set-id)))
 
 ;; Transposes a list of lists.
 ;; eg. (transpose '((1 2 3) (4 5 6)) 3) gives '((1 4) (2 5) (3 6))
@@ -122,19 +122,17 @@
   (match-define (list input-relation input-id input-type _ _ input-invariant)
     (get-id-info (car (get-ids graph))))
 
-  (for/list ([update-name (send input-relation get-update-names)])
+  (for/list ([delta-name (send input-relation get-delta-names)])
     
     ;; Relevant information for performing symbolic computation on the input
-    ;; Note: It's important to call this only once per update
-    ;; type so that the variables have consistent names.
-    (match-define (list define-input update-args update-defns-code update-code update-arg-types)
+    (match-define (list define-input delta-args delta-defns-code delta-code delta-arg-types)
       (datumify
-       (get-symbolic-info input-relation update-name 'inputs-set)))
+       (get-symbolic-info input-relation delta-name 'inputs-set)))
 
     (define intermediate-ids '())
     (for ([output-id (cdr (get-ids graph))])
-      (printf "Synthesizing update rule for ~a upon update ~a to ~a~%"
-              output-id update-name input-id)
+      (printf "Synthesizing update rule for ~a upon delta ~a to ~a~%"
+              output-id delta-name input-id)
       
       ;; Relevant information about intermediate relations
       ;; Does a lot of recomputation, but not a bottleneck
@@ -157,10 +155,10 @@
 
       (define all-ids-except-output
         (append (list input-id) intermediate-ids
-                update-args constant-terminal-ids))
+                delta-args constant-terminal-ids))
       (define all-types-except-output
         (append (list input-type) intermediate-types
-                update-arg-types constant-terminal-types))
+                delta-arg-types constant-terminal-types))
       (define add-terminal-stmts
         (cons (add-terminal-code output-id output-type #:mutable? #t)
               (map add-terminal-code
@@ -203,9 +201,9 @@
       ;; Example: (set! num2helper (build-vector ...))
       ;; Taken straight from the user program, but operates on
       ;; symbolic variables.
-      ;; Note that this must come after the update.
+      ;; Note that this must come after the delta.
       ;; TODO: For now, we have to define intermediates before
-      ;; the update in case the output relation depends on
+      ;; the delta in case the output relation depends on
       ;; them. So here, we should use a set!
       (define update-intermediate-stmts
         (map (lambda (code)
@@ -238,8 +236,8 @@
 
       (define program-definition
         `(,@(verbose-code '(displayln "Creating symbolic program"))
-          ,@(if (send output-node has-sketch? update-name)
-                (let ([sketch (send output-node get-sketch update-name)])
+          ,@(if (send output-node has-sketch? delta-name)
+                (let ([sketch (send output-node get-sketch delta-name)])
                   `((define program
                       (make-lifted terminal-info all-operators ',sketch))
                     (time
@@ -262,10 +260,10 @@
                      configurables
                      (list ,@config-terminal-ids))
            ,@initialization-stmts
-           ,update-defns-code
+           ,delta-defns-code
            ,@prederiv-run-code
-           ,update-code
-           (define input-assertion-after-update ,input-invariant)
+           ,delta-code
+           (define input-assertion-after-delta ,input-invariant)
            ,@update-intermediate-stmts
 
            ;; Symbolically run the sampled program
@@ -275,7 +273,7 @@
            ;; Assert all preconditions
            (define (assert-fn x) (assert x))
            (assert input-assertion)
-           (assert input-assertion-after-update)
+           (assert input-assertion-after-delta)
 
            (define (assert-pre input)
              (for-each assert-fn (input-preconditions input)))
@@ -323,7 +321,7 @@
                          [prederiv-result (time (coerce-evaluate prederiv synth))]
                          [code (append '(let ())
                                        (map lifted-code prederiv-result)
-                                       (list 'update-goes-here)
+                                       (list 'delta-goes-here)
                                        (list (lifted-code (eliminate-dead-code result))))])
                     (pretty-print code)
                     code))))
@@ -338,11 +336,11 @@
             (provide metasketch)
             (current-bitwidth ,(hash-ref options 'bitwidth))
             ,@initialization-stmts
-            ,update-defns-code
+            ,delta-defns-code
             ,@add-terminal-stmts
             ,@prederiv-defn-code
             ,@prederiv-run-code
-            ,update-code
+            ,delta-code
             ,@update-intermediate-stmts
             ,@(add-reset-fn 'reset-state!)
             (define metasketch
@@ -380,17 +378,17 @@
       (if result
           (begin
             (when (hash-ref options 'debug?) (pretty-print result))
-            (send input-relation add-update-code update-name result))
+            (send input-relation add-delta-code delta-name result))
           (begin
             (displayln
-             (format "No program found to update ~a upon change ~a to ~a"
-                     output-id update-name input-id))
-            (send input-relation add-update-code update-name
-                  (send output-relation get-update-code 'recompute))))
+             (format "No program found to update ~a upon delta ~a to ~a"
+                     output-id delta-name input-id))
+            (send input-relation add-delta-code delta-name
+                  (send output-relation get-delta-code 'recompute))))
 
       (set! intermediate-ids (append intermediate-ids (list output-id))))
 
-    (let ([synthesized-code (send input-relation get-update-code update-name)])
-      `(define (,update-name ,@update-args)
-         ,update-code
+    (let ([synthesized-code (send input-relation get-delta-code delta-name)])
+      `(define (,delta-name ,@delta-args)
+         ,delta-code
          ,synthesized-code))))
