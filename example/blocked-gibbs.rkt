@@ -8,10 +8,10 @@
 ;; Constants ;;
 ;;;;;;;;;;;;;;;
 
-(define-symbolic NUM_VALS #:type (Integer-type) #:configs [4])
+(define NUM_VALS #:type (Integer-type) #:configs [4] #:for-types)
 (define-enum-type Val NUM_VALS)
 
-(define-symbolic NUM_VARS #:type (Integer-type) #:configs [10])
+(define NUM_VARS #:type (Integer-type) #:configs [10] #:for-types)
 (define-enum-type Var NUM_VARS)
 
 ;; For now, let's assume that factor graphs and factors are built in,
@@ -23,7 +23,7 @@
 ;; given list of variables.
 ;; A Factor Graph is an undirected graph where each variable is
 ;; connected to any factors that include that variable.
-(define-symbolic factor-graph
+(define factor-graph
   #:type (Factor-Graph-type Var NUM_VARS Val NUM_VALS))
 
 (define Block-type (Set-type Var))
@@ -31,7 +31,7 @@
 ;; Each block is a set of variables.
 ;; blocks contains the list of all blocks. There should be no overlap
 ;; in blocks.
-(define-symbolic blocks #:type (List-type 10 Block-type)
+(define blocks #:type (List-type 10 Block-type)
   #:invariant (for* ([set1 blocks]
                      [set2 blocks])
                 (unless (eq? set1 set2)
@@ -44,7 +44,7 @@
 ;; Arbitrary means that we can make arbitrary changes to the state
 ;; (though they must still preserve the type)
 ;; TODO: Define that better.
-(define-incremental state #:type (Vector-type Var Val)
+(define-structure state #:type (Vector-type Var Val)
   #:initialize (build-vector NUM_VARS (lambda (var) (random NUM_VALS)))
   #:deltas [arbitrary arbitrary])
 
@@ -62,7 +62,7 @@
 ;; that when called will efficiently do the same thing as the code
 ;; given. It may assume that the value depends only on the arguments
 ;; to the function and the "state" data structure.
-(define-incremental-fn (sampling-factor [block Block-type]) : (Factor-type Var Val) (state)
+(define-structure-fn (sampling-factor [block Block-type]) : (Factor-type Var Val) (state)
   (let ()
     (define adjacent-factors
       (flatmap (lambda (var) (get-factors factor-graph var))

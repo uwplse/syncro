@@ -25,7 +25,7 @@
 
 ;; Creates a new, empty dep-graph
 (define (make-dependency-graph)
-  (let ([g (directed-graph '())])
+  (let ([g (undirected-graph '())])
     (define-vertex-property g id->node)
     (dep-graph g id->node id->node-set! '())))
 
@@ -44,7 +44,7 @@
 ;; dg: dep-graph
 ;; parent, child: symbols, names of variable to create a dependency for
 (define (add-dependency! dg parent child)
-  (add-directed-edge! (dep-graph-graph dg) parent child))
+  (add-edge! (dep-graph-graph dg) parent child))
 
 ;; dg: dep-graph
 ;; id: symbol (variable name)
@@ -69,12 +69,12 @@
 
     ;; id:                Name of the variable
     ;; type:              Type of the variable
-    ;; invariants:        Expression to get invariants about the node
+    ;; invariant:         Expression to get invariant about the node
     ;; delta-names:       The names of allowed deltas
     ;; delta-name->info:  Required information for each delta
     ;; init-code:         Code to initialize the value of the data structure
     ;; fn-code:           Expression to recompute the value of the node
-    (init-field id type invariants delta-name->info init-code fn-code
+    (init-field id type invariant delta-name->info init-code fn-code
                 [sketches (make-hash)])
 
     (for ([delta-name (hash-keys delta-name->info)])
@@ -98,7 +98,7 @@
 
     (define/public (get-id) id)
     (define/public (get-type) type)
-    (define/public (get-invariants-code) invariants)
+    (define/public (get-invariant-code) invariant)
     (define/public (get-fn-code) fn-code)
 
     (define/public (has-sketch? delta-name)

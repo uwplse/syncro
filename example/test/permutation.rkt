@@ -1,9 +1,9 @@
 #lang incremental
 
-(define int (Integer-type))
-(define-symbolic LEN #:type int #:configs [1 5])
+(define int #:value (Integer-type) #:for-types)
+(define LEN #:type int #:configs [1 5] #:for-types)
 
-(define-incremental permutation #:type (Vector-type LEN int)
+(define-structure permutation #:type (Vector-type LEN int)
   #:invariant (equal? (sort (vector->list permutation) <) (range LEN))
   #:initialize (build-vector LEN identity)
   #:deltas
@@ -19,7 +19,7 @@
      (vector-set! permutation i
                   (- (vector-ref permutation i) (vector-ref permutation j))))])
 
-(define-incremental inverse-permutation #:type (Vector-type LEN int)
+(define-structure inverse-permutation #:type (Vector-type LEN int)
   #:value
   (let ([result (make-vector LEN 0)])
     (for ([i LEN])

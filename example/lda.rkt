@@ -6,13 +6,13 @@
 ;; Constants ;;
 ;;;;;;;;;;;;;;;
 
-(define int (Integer-type))
-(define-symbolic NUM_WORD_INSTANCES #:type int #:configs [12 4])
-(define-symbolic NUM_TOPICS #:type int #:configs [3 4])
-(define-symbolic NUM_DOCUMENTS #:type int #:configs [2 4])
-(define-symbolic VOCABULARY_SIZE #:type int #:configs [10 4])
-(define-symbolic ALPHA #:type int)
-(define-symbolic BETA #:type int)
+(define int #:value (Integer-type) #:for-types)
+(define NUM_WORD_INSTANCES #:type int #:configs [12 4] #:for-types)
+(define NUM_TOPICS #:type int #:configs [3 4] #:for-types)
+(define NUM_DOCUMENTS #:type int #:configs [2 4] #:for-types)
+(define VOCABULARY_SIZE #:type int #:configs [10 4] #:for-types)
+(define ALPHA #:type int)
+(define BETA #:type int)
 
 (define-enum-type WordInstance NUM_WORD_INSTANCES)
 (define-enum-type WordText VOCABULARY_SIZE)
@@ -20,10 +20,21 @@
 (define-enum-type Document NUM_DOCUMENTS)
 
 ;; Vector mapping each word instance to the document it is in.
-(define-symbolic word->document #:type (Vector-type WordInstance Document))
+(define word->document #:type (Vector-type WordInstance Document))
 
 ;; Vector mapping each word instance to its identity.
-(define-symbolic word->text #:type (Vector-type WordInstance WordText))
+(define word->text #:type (Vector-type WordInstance WordText))
+
+;; TODO: We actually always need values that are one smaller than the
+;; values stored here. Writing that here would make the program less
+;; clear. What performance benefit would it give?
+(define num-for-document #:type (Vector-type Document int)
+  #:value
+  (let ([result (make-vector NUM_DOCUMENTS 0)])
+    (for ([w NUM_WORD_INSTANCES])
+      (vector-increment! result (vector-ref word->document w)))
+    result))
+
 
 ;;;;;;;;;;;;;;;;;;;;
 ;; Mutable values ;;
@@ -31,7 +42,7 @@
 
 ;; Vector mapping each word to the topic it is currently assigned.
 ;; Every iteration one of the words has its topic changed.
-(define-incremental word->topic #:type (Vector-type WordInstance Topic)
+(define-structure word->topic #:type (Vector-type WordInstance Topic)
   #:initialize (build-vector NUM_WORD_INSTANCES
                              (lambda (w) (random NUM_TOPICS)))
   #:deltas
@@ -43,20 +54,7 @@
 ;; Incremental structures ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-;; TODO: Is it sufficient to restrict the depends clause, or will the
-;; synthesis still try to incrementalize this?
-;; TODO: We actually always need values that are one smaller than the
-;; values stored here. Writing that here would make the program less
-;; clear. What performance benefit would it give?
-(define-incremental num-for-document #:type (Vector-type Document int)
-  #:value
-  (let ([result (make-vector NUM_DOCUMENTS 0)])
-    (for ([w NUM_WORD_INSTANCES])
-      (vector-increment! result (vector-ref word->document w)))
-    result)
-  #:depends ())
-
-(define-incremental num-for-topic-text
+(define-structure num-for-topic-text
   #:type (Vector-type Topic (Vector-type WordText int))
   #:value
   (let ([result (build-vector NUM_TOPICS
@@ -81,7 +79,7 @@
 ;;             1
 ;;             0)))))))
 
-(define-incremental num-for-topic #:type (Vector-type Topic int)
+(define-structure num-for-topic #:type (Vector-type Topic int)
   #:value
   (build-vector
    NUM_TOPICS
@@ -89,7 +87,7 @@
      (vector-sum (vector-ref num-for-topic-text topic))))
   #:depends (word->topic))
 
-(define-incremental num-for-document-topic
+(define-structure num-for-document-topic
   #:type (Vector-type Document (Vector-type Topic int))
   #:value
   (let ([result (build-vector NUM_DOCUMENTS

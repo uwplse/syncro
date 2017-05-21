@@ -1,10 +1,10 @@
 #lang incremental
 
-(define int (Integer-type))
-(define-symbolic NUM_STUDENTS #:type int #:configs [3 4])
+(define int #:value (Integer-type) #:for-types)
+(define NUM_STUDENTS #:type int #:configs [3 4] #:for-types)
 (define-enum-type Student NUM_STUDENTS)
 
-(define-symbolic PASSING_GRADE #:type int)
+(define PASSING_GRADE #:type int)
 
 (define-record Student-info
   ;; Could add an id field and assume that the id is always equal to
@@ -15,13 +15,13 @@
   ;; Students could get an incomplete instead of failing.
   #;(incomplete (Boolean-type)))
 
-(define-incremental info #:type (Vector-type Student Student-info-type)
+(define-structure info #:type (Vector-type Student Student-info-type)
   #:initialize (make-vector NUM_STUDENTS (Student-info 0))
   #:deltas
   [(define (assign-info! [student Student] [new-info Student-info-type])
      (vector-set! info student new-info))])
 
-(define-incremental failing-students #:type (Set-type Student)
+(define-structure failing-students #:type (Set-type Student)
   #:value
   (let ([result (enum-make-set NUM_STUDENTS)])
     (for ([student NUM_STUDENTS])

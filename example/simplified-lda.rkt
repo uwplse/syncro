@@ -1,12 +1,12 @@
 #lang incremental
 
-(define int (Integer-type))
-(define-symbolic NUM_WORDS #:type int #:configs [12 4])
-(define-symbolic NUM_TOPICS #:type int #:configs [3 4])
-(define-symbolic NUM_DOCUMENTS #:type int #:configs [2 4])
+(define int #:value (Integer-type) #:for-types)
+(define NUM_WORDS #:type int #:configs [12 4] #:for-types)
+(define NUM_TOPICS #:type int #:configs [3 4] #:for-types)
+(define NUM_DOCUMENTS #:type int #:configs [2 4] #:for-types)
 
-(define-symbolic VOCABULARY_SIZE #:type int)
-(define-symbolic BETA #:type int)
+(define VOCABULARY_SIZE #:type int)
+(define BETA #:type int)
 
 ;; Enum types can be used as indices into vectors.
 ;; We assume that the words have already been interned.
@@ -15,19 +15,19 @@
 (define-enum-type Document NUM_DOCUMENTS)
 
 ;; Vector mapping each word to the document it is in.
-(define-symbolic word->document #:type (Vector-type Word Document))
+(define word->document #:type (Vector-type Word Document))
 
 ;; Vector mapping each word to the topic it is currently assigned.
 ;; Every iteration one of the words has its topic changed.
 ;; The allowed mutations are "assign", meaning an assignment to one
 ;; slot in the vector.
-(define-incremental word->topic #:type (Vector-type Word Topic)
+(define-structure word->topic #:type (Vector-type Word Topic)
   #:initialize (build-vector NUM_WORDS (lambda (w) (random NUM_TOPICS)))
   #:deltas
   [(define (change-topic! [word Word] [new-topic Topic])
      (vector-set! word->topic word new-topic))])
 
-(define-incremental num1 #:type (Vector-type Topic int)
+(define-structure num1 #:type (Vector-type Topic int)
   #:value
   (begin
     (build-vector
@@ -42,7 +42,7 @@
 ;;   (vector-decrement! num1 old-value)
 ;;   (vector-increment! num1 new-value))
 
-(define-incremental num2helper #:type (Vector-type Document (Vector-type Topic int))
+(define-structure num2helper #:type (Vector-type Document (Vector-type Topic int))
   #:value
   (begin
     (build-vector
@@ -66,7 +66,7 @@
 ;;   (vector-decrement! subvec old-value)
 ;;   (vector-increment! subvec new-value))
 
-(define-incremental num2 #:type (Vector-type Document int)
+(define-structure num2 #:type (Vector-type Document int)
   #:value
   (build-vector
    NUM_DOCUMENTS
@@ -109,14 +109,14 @@
 ;;     (when (= (vector-ref subvec old-value) 0)
 ;;       (vector-decrement! num2 doc))))
 
-(define-incremental num1sum #:type int
+(define-structure num1sum #:type int
   #:value (my-for/sum ([x num1]) x)
   #:depends (num1))
 ;; Expect
 ;; (let () (void))
 ;; (Turns out that num1 is guaranteed to be constant)
 
-(define-incremental num2sum #:type int
+(define-structure num2sum #:type int
   #:value (my-for/sum ([x num2]) x)
   #:depends (num2))
 ;; Expect

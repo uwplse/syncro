@@ -33,51 +33,49 @@
           `(begin ,@delta-body)
           arg-types)))
 
-(define (constant-initialization-code constant)
-  (define var (constant-var constant))
-  (define sym (variable-symbol var))
-  (cond [(equal? (constant-version constant) 'config)
+(define (constant-initialization-code c)
+  (define sym (variable-symbol c))
+  (cond [(not (constant-for-types? c))
+         `(define ,sym 'placeholder)]
+        [(config-constant? c)
          `(define ,sym (make-configurable ',sym))]
-        [(variable-has-expression? var) 
-         (variable-definition var)]
+        [(variable-has-expression? c) 
+         (variable-definition c)]
         [else
-         `(define ,sym 'placeholder)]))
+         (error (format "Internal error: Constant ~a can't be initialized"
+                        c))]))
 
-(define (constant-value-code constant config-num varset-name)
-  (define var (constant-var constant))
-  (cond [(equal? (constant-version constant) 'config)
-         (let ([sym (variable-symbol var)]
-               [expr (variable-expression var)])
-           `(set! ,sym ,(list-ref expr config-num)))]
-        [(variable-has-expression? var) 
-         (variable-set!-code var)]
+(define (constant-value-code c config-num varset-name)
+  (cond [(config-constant? c)
+         (let ([sym (variable-symbol c)]
+               [exprs (constant-configs c)])
+           `(set! ,sym ,(list-ref exprs config-num)))]
+        [(variable-has-expression? c) 
+         (variable-set!-code c)]
         [else
-         `(set! ,(variable-symbol var)
-                (make-symbolic ,(repr (variable-type var)) ,varset-name))]))
+         `(set! ,(variable-symbol c)
+                (make-symbolic ,(repr (variable-type c)) ,varset-name))]))
 
 ;; Various helpers that simply get information out of data structures.
 (define (get-constant-info constants varset-name)
-  (let* ([vars (map constant-var constants)]
-         [typed-vars (filter variable-has-type? vars)]
-         [configs (filter (lambda (c) (equal? (constant-version c) 'config))
-                          constants)]
+  (let* ([typed-vars (filter variable-has-type? constants)]
+         [configs (filter config-constant? constants)]
          [nums (remove-duplicates
-                (map (compose length variable-expression constant-var)
-                     configs))])
+                (map (compose length constant-configs) configs))])
     (unless (<= (length nums) 1)
       (error (format "All configurations must have the same length! Given program has ~a"
                      nums)))
 
     (list (map variable-symbol typed-vars)
           (map variable-type typed-vars)
-          (map (compose variable-symbol constant-var) configs)
+          (map variable-symbol configs)
           (if (null? nums) 1 (first nums)))))
 
 (define (get-node-info node)
   (let ([id (send node get-id)]
         [expr (send node get-fn-code)])
     (list node id (send node get-type) expr
-          `(define ,id ,expr) (send node get-invariants-code))))
+          `(define ,id ,expr) (send node get-invariant-code))))
 
 (define (get-symbolic-info node delta-name set-id)
   (append (list (symbolic-code node set-id))

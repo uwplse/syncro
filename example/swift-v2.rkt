@@ -10,14 +10,14 @@
 ;; Constants ;;
 ;;;;;;;;;;;;;;;
 
-(define-symbolic NUM_NODES #:type (Integer-type) #:configs [10])
+(define NUM_NODES #:type (Integer-type) #:configs [10] #:for-types)
 (define-enum-type Node NUM_NODES)
 
 ;;;;;;;;;;;;;;;;;;;;
 ;; Mutable values ;;
 ;;;;;;;;;;;;;;;;;;;;
 
-(define-incremental node->children #:type (Vector-type Node (Set-type Node))
+(define-structure node->children #:type (Vector-type Node (Set-type Node))
   ;; Asserts that the graph defined by the adjacency list is acyclic.
   ;; In particular, since the ordering on nodes does not matter, we
   ;; will require that the nodes already be topologically sorted, that
@@ -43,7 +43,7 @@
 ;; Incremental structures ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define-incremental node->parents #:type (Vector-type Node (Set-type Node))
+(define-structure node->parents #:type (Vector-type Node (Set-type Node))
   #:value
   (let ([vec (build-vector NUM_NODES
                            (lambda (i) (enum-make-set NUM_NODES)))])
@@ -61,7 +61,7 @@
   ;;     (filter (lambda (n) (enum-set-contains? (vector-ref node->parents n) node))
   ;;             (range NUM_NODES)))))
 
-(define-incremental mb #:type (Vector-type Node (Set-type Node))
+(define-structure mb #:type (Vector-type Node (Set-type Node))
   #:value
   (build-vector
    NUM_NODES

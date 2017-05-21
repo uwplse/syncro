@@ -2,12 +2,11 @@
 
 (require "util.rkt")
 
-(provide make-variable variable variable?
-         variable-symbol variable-type variable-mutable?
-         variable-expression variable-value set-variable-value!
+(provide (struct-out variable) make-variable
          variable-has-type? variable-has-value? variable-has-expression?
-         variable-definition variable-set!-code variable-has-definition?)
+         variable-has-definition? variable-definition variable-set!-code
 
+         (struct-out constant) make-constant config-constant?)
 
 ;; symbol: A symbol representing the variable name.
 ;; type: The type (from types.rkt) of value this variable can contain.
@@ -42,3 +41,23 @@
   (list 'define (variable-symbol var) (variable-expression var)))
 (define (variable-set!-code var)
   (list 'set! (variable-symbol var) (variable-expression var)))
+
+
+;; This is used by the Racket parsing code to support configurations,
+;; which can have multiple concrete values. It's added here because I
+;; don't know whether it's okay to have a Racket struct that has a
+;; Rosette struct at its parent.
+(struct constant variable (configs for-types?) #:transparent)
+(define (make-constant symbol
+                       #:type [type #f]
+                       #:value [value (unknown-value)]
+                       #:mutable? [mutable? #f]
+                       #:expression [expression #f]
+                       #:configs [configs #f]
+                       #:for-types? [for-types? #f])
+  (when (and expression configs)
+    (internal-error "Cannot have a constant with both #:expression and #:configs!"))
+  (constant symbol type value mutable? expression configs for-types?))
+
+(define (config-constant? c)
+  (not (false? (constant-configs c))))

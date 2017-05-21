@@ -1,18 +1,18 @@
 #lang incremental
 
-(define int (Integer-type))
-(define-symbolic NUM_STUDENTS #:type int #:configs [3 4])
+(define int #:value (Integer-type) #:for-types)
+(define NUM_STUDENTS #:type int #:configs [3 4] #:for-types)
 (define-enum-type Student NUM_STUDENTS)
 
-(define-symbolic PASSING_GRADE #:type int)
+(define PASSING_GRADE #:type int)
 
-(define-incremental grades #:type (Vector-type Student int)
+(define-structure grades #:type (Vector-type Student int)
   #:initialize (make-vector NUM_STUDENTS 0)
   #:deltas
   [(define (assign-grade! [student Student] [new-grade int])
      (vector-set! grades student new-grade))])
 
-(define-incremental passing-students #:type (Set-type Student)
+(define-structure passing-students #:type (Set-type Student)
   #:value
   (let ([result (enum-make-set NUM_STUDENTS)])
     (for ([student NUM_STUDENTS])
