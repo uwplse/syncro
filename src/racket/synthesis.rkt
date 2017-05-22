@@ -303,26 +303,46 @@
                ,(cons 'list
                       (for/list ([i num-configs])
                         (get-code-for-config i))))
+
+             (define (print-program model)
+               (let* ([result (coerce-evaluate program model)]
+                      [prederiv-result (coerce-evaluate prederiv model)]
+                      [code `(let ()
+                               ,@(map lifted-code prederiv-result)
+                               'delta-goes-here
+                               ,(lifted-code (eliminate-dead-code result)))])
+                 (pretty-print code)
+                 code))
+             (define (print-cex cex)
+               (define (get-value id)
+                 (define result
+                   (eval-lifted (send terminal-info get-terminal-by-id id)))
+                 (coerce-evaluate result cex))
+               (let* ([updated-input (get-value ',input-id)]
+                      [updated-output (get-value ',output-id)]
+                      [delta-args (map get-value '(,@delta-args))]
+                      ;[expected-output (coerce-evaluate ,output-expr cex)]
+                      [update-code (cons ',delta-name delta-args)])
+                 (printf "Counterexample: After update ~a, we have:~%Input: ~a~%Actual output:   ~a~%Expected output: ~%"
+                         update-code updated-input updated-output
+                         #;expected-output)))
+
              (define synth
                (time
-                (synthesize
+                (synthesize-with-printers
                  #:forall (map input-val
                                (foldl append '()
                                       (map first inputs-and-postconditions)))
                  #:guarantee
                  (begin (for ([pair inputs-and-postconditions])
                           (assert (second pair)))
-                        ,@(verbose-code `(displayln "Completed symbolic generation! Running the solver:"))))))
+                        ,@(verbose-code `(displayln "Completed symbolic generation! Running the solver:")))
+                 #:printers
+                 [,(if (hash-ref options 'debug?) 'print-program '(const #t))
+                  ,(if (hash-ref options 'debug?) 'print-cex '(const #t))])))
              (and (sat? synth)
                   ,@(verbose-code '(displayln "Solution found! Generating code:"))
-                  (let* ([result (time (coerce-evaluate program synth))]
-                         [prederiv-result (time (coerce-evaluate prederiv synth))]
-                         [code (append '(let ())
-                                       (map lifted-code prederiv-result)
-                                       (list 'delta-goes-here)
-                                       (list (lifted-code (eliminate-dead-code result))))])
-                    (pretty-print code)
-                    code))))
+                  (print-program synth))))
         (when (hash-ref options 'debug?) (pretty-print rosette-code))
         (run-in-rosette rosette-code))
 
