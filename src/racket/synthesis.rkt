@@ -218,15 +218,6 @@
                          [index (in-naturals 0)])
                 `(set! ,id (list-ref clone-state ,index))))))
 
-      ;; Note: It is not (equal? ,output-id ,output-expr)
-      ;; because when we run the lifted program, it modifies
-      ;; the value *stored in the lifted program*, which is not
-      ;; necessarily the same as the value in ,output-id.
-      ;; Example: (assert (equal? (... get-by-id 'num2) (build-vector ...)))
-      (define postcondition-expr
-        `(equal? (eval-lifted (send terminal-info get-terminal-by-id ',output-id))
-                 ,output-expr))
-
       (define (verbose-code code)
         (if (hash-ref options 'verbose?)
             (list code)
@@ -247,6 +238,10 @@
       (define program-run-code
         `(,@set-terminal-stmts
           (time (eval-lifted program))))
+
+      (define postcondition-expr
+        `(equal? (eval-lifted (send terminal-info get-terminal-by-id ',output-id))
+                 ,output-expr))
 
       (define (get-code-for-config i)
         `(let ()
@@ -278,7 +273,34 @@
            (define inputs-list (set->list inputs-set))
            (for-each assert-pre inputs-list)
 
-           (list inputs-list ,postcondition-expr)))
+           ;; Note: It is not (equal? ,output-id ,output-expr)
+           ;; because when we run the lifted program, it modifies
+           ;; the value *stored in the lifted program*, which is not
+           ;; necessarily the same as the value in ,output-id.
+           ;; Example: (assert (equal? (... get-by-id 'num2) (build-vector ...)))
+           (define new-output
+             (eval-lifted
+              (send terminal-info get-terminal-by-id ',output-id)))
+           (define expected-result ,output-expr)
+           (define postcondition (equal? new-output expected-result))
+
+           (define (print-cex model)
+             (define (get-value thing)
+               (coerce-evaluate thing model))
+             (and (not (coerce-evaluate postcondition model))
+                  (let* ([updated-input (get-value ,input-id)]
+                         [updated-output (get-value new-output)]
+                         [delta-args (map get-value (list ,@delta-args))]
+                         [expected-output (get-value expected-result)]
+                         [update-code (cons ',delta-name delta-args)])
+                    (printf "Counterexample: After update ~a, we have:~%~a: ~a~%Actual ~a:   ~a~%Expected ~a: ~a~%"
+                            update-code
+                            (symbol->string ',input-id)  updated-input
+                            (symbol->string ',output-id) updated-output
+                            (symbol->string ',output-id) expected-output)
+                    #f)))
+
+           (list inputs-list postcondition print-cex)))
 
       (define (run-synthesis)
         ;; Every variable in terminal-info has a type, which could
@@ -299,7 +321,7 @@
              ,@add-terminal-stmts
              ,@prederiv-defn-code
              ,@program-definition
-             (define inputs-and-postconditions
+             (define results-for-config
                ,(cons 'list
                       (for/list ([i num-configs])
                         (get-code-for-config i))))
@@ -313,28 +335,20 @@
                                ,(lifted-code (eliminate-dead-code result)))])
                  (pretty-print code)
                  code))
-             (define (print-cex cex)
-               (define (get-value id)
-                 (define result
-                   (eval-lifted (send terminal-info get-terminal-by-id id)))
-                 (coerce-evaluate result cex))
-               (let* ([updated-input (get-value ',input-id)]
-                      [updated-output (get-value ',output-id)]
-                      [delta-args (map get-value '(,@delta-args))]
-                      ;[expected-output (coerce-evaluate ,output-expr cex)]
-                      [update-code (cons ',delta-name delta-args)])
-                 (printf "Counterexample: After update ~a, we have:~%Input: ~a~%Actual output:   ~a~%Expected output: ~%"
-                         update-code updated-input updated-output
-                         #;expected-output)))
+             (define (print-cex model)
+               ;; Each configuration has its own counterexample printer.
+               ;; Call each one until one succeeds.
+               (for/or ([triple results-for-config])
+                 ((third triple) model)))
 
              (define synth
                (time
                 (synthesize-with-printers
                  #:forall (map input-val
                                (foldl append '()
-                                      (map first inputs-and-postconditions)))
+                                      (map first results-for-config)))
                  #:guarantee
-                 (begin (for ([pair inputs-and-postconditions])
+                 (begin (for ([pair results-for-config])
                           (assert (second pair)))
                         ,@(verbose-code `(displayln "Completed symbolic generation! Running the solver:")))
                  #:printers
@@ -394,9 +408,7 @@
             (run-metasketch)
             (run-synthesis)))
       (if result
-          (begin
-            (when (hash-ref options 'debug?) (pretty-print result))
-            (send input-relation add-delta-code delta-name result))
+          (send input-relation add-delta-code delta-name result)
           (begin
             (displayln
              (format "No program found to update ~a upon delta ~a to ~a"
