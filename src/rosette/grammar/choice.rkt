@@ -39,7 +39,7 @@
     (define/public (print-stats)
       (printf "Used ~a boolean variables to encode a search space of log size ~a~%"
               (send stats get-num-vars)
-              (send stats get-search-space)))
+              (send stats get-rounded-search-space)))
 
     (define/public (choose* args default)
       ;; Even if args is null, there is one choice (the default)
@@ -89,7 +89,7 @@
       (printf "Used ~a boolean variables instead of the naive ~a variables to encode a search space of log size ~a~%"
               num-vars
               (send stats get-num-vars)
-              (send stats get-search-space)))
+              (send stats get-rounded-search-space)))
     
     (define/public (get-var)
       (if curr-ptr
@@ -157,4 +157,5 @@
       (set! search-space (+ search-space (log num-choices))))
 
     (define/public (get-num-vars) num-vars)
-    (define/public (get-search-space) (/ search-space (log 2)))))
+    (define/public (get-rounded-search-space)
+      (inexact->exact (round (/ search-space (log 2)))))))

@@ -105,6 +105,9 @@
 ;; creates the relevant update functions.
 ;; prog: A program struct (see read-file.rkt)
 (define (perform-synthesis prog options)
+  (define (logging-enabled? option)
+    (set-member? (hash-ref options 'logging) option))
+
   (define graph (program-dependency-graph prog))
 
   (define constants (program-constants prog))
@@ -129,8 +132,9 @@
 
     (define intermediate-ids '())
     (for ([output-id (cdr (get-ids graph))])
-      (printf "Synthesizing update rule for ~a upon delta ~a to ~a~%"
-              output-id delta-name input-id)
+      (when (logging-enabled? 'progress)
+        (printf "Synthesizing update rule for ~a upon delta ~a to ~a~%"
+                output-id delta-name input-id))
       
       ;; Relevant information about intermediate relations
       ;; Does a lot of recomputation, but not a bottleneck
@@ -141,6 +145,18 @@
       (define output-node (get-node graph output-id))
       (match-define (list output-relation _ output-type output-expr define-output _)
         (get-node-info output-node))
+
+      (define (log-for-option option code)
+        (if (logging-enabled? option) (list code) '()))
+
+      (define (timing-code code msg)
+        (if (logging-enabled? 'stats)
+            `(let-values ([(result-from-time cpu-time real-time gc-time)
+                           (time-apply (thunk ,code) '())])
+               (printf "Took ~ams (~a cpu, ~a gc) to ~a~%"
+                       real-time cpu-time gc-time ,msg)
+               (first result-from-time))
+            code))
 
       (define (add-terminal-code var type #:mutable? [mutable? #f])
         ;; Note: Here we use (repr type) to get an expression that
@@ -185,16 +201,19 @@
                   #:num-temps ,temps #:guard-depth ,guard #:type ,type
                   #:version ',(hash-ref options 'grammar-version)
                   #:choice-version ',(hash-ref options 'grammar-choice)
-                  #:mode ',mode))
+                  #:mode ',mode
+                  #:print-statistics
+                  ,(set-member? (hash-ref options 'logging) 'stats)))
 
       (define prederiv-defn-code
-        `((displayln "Generating the prederivative")
+        `(,@(log-for-option 'progress '(displayln "Generating the prederivative"))
           (define prederiv
-            (time ,(make-grammar-expr 1 1 0 0 (Any-type) '(tmps 2))))))
+            ,(timing-code (make-grammar-expr 1 1 0 0 (Any-type) '(tmps 2))
+                          "generate the prederivative"))))
       (define prederiv-run-code
         `(,@set-terminal-stmts
-          (displayln "Running the prederivative")
-          (time (for-each eval-lifted prederiv))))
+          ,(timing-code '(for-each eval-lifted prederiv)
+                        "run the prederivative")))
 
       ;; Example: (set! num2helper (build-vector ...))
       ;; Taken straight from the user program, but operates on
@@ -218,26 +237,25 @@
                          [index (in-naturals 0)])
                 `(set! ,id (list-ref clone-state ,index))))))
 
-      (define (verbose-code code)
-        (if (hash-ref options 'verbose?)
-            (list code)
-            '()))
-
       (define program-definition
-        `(,@(verbose-code '(displayln "Creating symbolic program"))
+        `(,@(log-for-option 'progress '(displayln "Creating symbolic program"))
           ,@(if (send output-node has-sketch? delta-name)
                 (let ([sketch (send output-node get-sketch delta-name)])
                   `((define program
                       (make-lifted terminal-info all-operators ',sketch))
-                    (time
-                     (force-type program (Void-type)
-                                 (lambda (type)
-                                   ,(make-grammar-expr 2 2 0 0 'type 'stmt))))))
+                    ,(timing-code
+                      `(force-type program (Void-type)
+                                   (lambda (type)
+                                     ,(make-grammar-expr 2 2 0 0 'type 'stmt)))
+                      "generate the sketch")))
                 `((define program
-                    (time ,(make-grammar-expr 2 2 0 1 '(Void-type) 'stmt)))))))
+                    ,(timing-code
+                      (make-grammar-expr 2 2 0 1 '(Void-type) 'stmt)
+                      "generate the postderivative"))))))
       (define program-run-code
         `(,@set-terminal-stmts
-          (time (eval-lifted program))))
+          ,(timing-code '(eval-lifted program)
+                        "run the postderivative")))
 
       (define postcondition-expr
         `(equal? (eval-lifted (send terminal-info get-terminal-by-id ',output-id))
@@ -254,13 +272,20 @@
                      (list ,@config-terminal-ids))
            ,@initialization-stmts
            ,delta-defns-code
+           ,@(log-for-option
+              'progress
+              `(printf "Running the prederivative for configuration ~a~%"
+                       ,(add1 i)))
            ,@prederiv-run-code
            ,delta-code
            (define input-assertion-after-delta ,input-invariant)
            ,@update-intermediate-stmts
 
            ;; Symbolically run the sampled program
-           ,@(verbose-code '(displayln "Running the generated program"))
+           ,@(log-for-option
+              'progress
+              `(printf "Running the generated program for configuration ~a~%"
+                       ,(add1 i)))
            ,@program-run-code
 
            ;; Assert all preconditions
@@ -293,7 +318,7 @@
                          [delta-args (map get-value (list ,@delta-args))]
                          [expected-output (get-value expected-result)]
                          [update-code (cons ',delta-name delta-args)])
-                    (printf "Counterexample: After update ~a, we have:~%~a: ~a~%Actual ~a:   ~a~%Expected ~a: ~a~%"
+                    (printf "  After update ~a, we have:~%  ~a: ~a~%  Actual ~a:   ~a~%  Expected ~a: ~a~%"
                             update-code
                             (symbol->string ',input-id)  updated-input
                             (symbol->string ',output-id) updated-output
@@ -326,38 +351,47 @@
                       (for/list ([i num-configs])
                         (get-code-for-config i))))
 
-             (define (print-program model)
+             (define (get-code model)
                (let* ([result (coerce-evaluate program model)]
-                      [prederiv-result (coerce-evaluate prederiv model)]
-                      [code `(let ()
-                               ,@(map lifted-code prederiv-result)
-                               'delta-goes-here
-                               ,(lifted-code (eliminate-dead-code result)))])
-                 (pretty-print code)
-                 code))
+                      [prederiv-result (coerce-evaluate prederiv model)])
+                 `(let ()
+                    ,@(map lifted-code prederiv-result)
+                    'delta-goes-here
+                    ,(lifted-code (eliminate-dead-code result)))))
+
+             (define (print-program model)
+               (displayln "Found a potential program:")
+               (pretty-print (get-code model)))
              (define (print-cex model)
+               (displayln "Found a counterexample:")
                ;; Each configuration has its own counterexample printer.
                ;; Call each one until one succeeds.
                (for/or ([triple results-for-config])
                  ((third triple) model)))
 
              (define synth
-               (time
-                (synthesize-with-printers
-                 #:forall (map input-val
-                               (foldl append '()
-                                      (map first results-for-config)))
-                 #:guarantee
-                 (begin (for ([pair results-for-config])
-                          (assert (second pair)))
-                        ,@(verbose-code `(displayln "Completed symbolic generation! Running the solver:")))
-                 #:printers
-                 [,(if (hash-ref options 'debug?) 'print-program '(const #t))
-                  ,(if (hash-ref options 'debug?) 'print-cex '(const #t))])))
+               ,(timing-code
+                 `(synthesize-with-printers
+                   #:forall (map input-val
+                                 (foldl append '()
+                                        (map first results-for-config)))
+                   #:guarantee
+                   (begin (for ([pair results-for-config])
+                            (assert (second pair)))
+                          ,@(log-for-option 'progress `(displayln "Completed symbolic generation! Running the solver:")))
+                   #:printers
+                   [,(if (logging-enabled? 'cegis) 'print-program '(const #t))
+                    ,(if (logging-enabled? 'cegis) 'print-cex '(const #t))])
+                 "solve the formula"))
              (and (sat? synth)
-                  ,@(verbose-code '(displayln "Solution found! Generating code:"))
-                  (print-program synth))))
-        (when (hash-ref options 'debug?) (pretty-print rosette-code))
+                  ,@(log-for-option
+                     'progress
+                     '(displayln "Solution found! Generating code:"))
+                  (let ([code (get-code synth)])
+                    ,@(log-for-option 'progress '(pretty-print code))
+                    code))))
+
+        (when (logging-enabled? 'debug) (pretty-print rosette-code))
         (run-in-rosette rosette-code))
 
       (define (run-metasketch)
@@ -382,7 +416,7 @@
                                   reset-state!
                                   ,options))))
 
-        (when (hash-ref options 'debug?) (pretty-print module-code))
+        (when (logging-enabled? 'debug) (pretty-print module-code))
         (define module-file (hash-ref options 'module-file))
         (when (file-exists? module-file) (delete-file module-file))
         (with-output-to-file module-file
@@ -397,8 +431,8 @@
                    #:bitwidth ,(hash-ref options 'bitwidth)
                    #:verbose #t))
 
-        (when (hash-ref options 'debug?) (pretty-print synth-code))
-        (when (hash-ref options 'verbose?)
+        (when (logging-enabled? 'debug) (pretty-print synth-code))
+        (when (logging-enabled? 'progress)
           (displayln "Starting the metasketch search"))
         (define result (run-in-racket synth-code))
         (and result (lifted-code (second result))))

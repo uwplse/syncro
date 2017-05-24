@@ -36,7 +36,8 @@
                  #:operators [operator-info default-operators]
                  #:version [version 'basic]
                  #:choice-version [choice-version 'basic]
-                 #:mode [mode 'stmt])
+                 #:mode [mode 'stmt]
+                 #:print-statistics [print-statistics #f])
   (define-values (new-pairs-set all-pairs-set operators)
     (remove-polymorphism operator-info terminal-info))
   (define chooser (make-chooser choice-version))
@@ -85,8 +86,7 @@
           [_
            (error (format "Unknown grammar type: ~a" version))])))
   
-  (unless (member version '(synthax-deep))
-    (send chooser print-stats))
+  (when print-statistics (send chooser print-stats))
   result)
 
 (define (create-temporary terminal-info type mutable? fn)

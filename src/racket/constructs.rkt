@@ -33,7 +33,8 @@
     (define prog (make-program))
     (desugar prog expr) ...
     (finalize-program prog)
-    (pretty-print
+    (for-each
+     pretty-print
      (perform-synthesis prog (cmd-parse (current-command-line-arguments))))))
 
 (define (finalize-program p)
