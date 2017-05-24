@@ -352,13 +352,14 @@
                         (get-code-for-config i))))
 
              (define (get-code model)
-               (let* ([result (coerce-evaluate program model)]
-                      [prederiv-result (coerce-evaluate prederiv model)])
-                 (append '(let ())
-                         (map lifted-code prederiv-result)
-                         (list
-                          ',delta-code
-                          (lifted-code (eliminate-dead-code result))))))
+               (let* ([pre-result (coerce-evaluate prederiv model)]
+                      [post-result (coerce-evaluate program model)])
+                 (let-values ([(cleaned-prederiv cleaned-postderiv)
+                               (eliminate-dead-code pre-result post-result)])
+                   (append '(let ())
+                           (map lifted-code cleaned-prederiv)
+                           (list ',delta-code
+                                 (lifted-code cleaned-postderiv))))))
 
              (define (print-program model)
                (displayln "Found a potential program:")

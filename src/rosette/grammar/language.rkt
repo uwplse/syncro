@@ -775,28 +775,24 @@
               ...))]))
 
 ;; Removes any temporary variable definitions that are never used.
+;; prederiv: List of lifted-defines.
+;; postderiv: lifted-begin whose elements may be lifted-defines.
+;; If postderiv is not a lifted-begin, we simply return everything
+;; without performing any analysis.
 ;; Does not work on symbolic values.
-(define (eliminate-dead-code code)
-  ;; Hard coded for the grammars we have for now
-  (define begin-code
-    (cond [(lifted-begin? code) code]
-          [(and (lifted-if? code)
-                (lifted-begin? (lifted-if-else-branch code)))
-           (lifted-if-else-branch code)]
-          [else #f]))
-  (if begin-code (eliminate-dead-code-from-begin begin-code) code))
+(define (eliminate-dead-code prederiv postderiv)
+  (if (not (and (list? prederiv) (lifted-begin? postderiv)))
+      (values prederiv postderiv)
+      (eliminate-dead-code-helper prederiv postderiv)))
 
-;; code must be a lifted-begin
-;; Does not work on symbolic values.
-;; A version that does work on symbolic values can be found in
-;; grammar-test.rkt.
-(define (eliminate-dead-code-from-begin code)
+(define (eliminate-dead-code-helper prederiv postderiv)
   (let ([sym-table (mutable-set)])
     (define (add-sym x)
       (when (lifted-variable? x)
         (set-add! sym-table (variable-symbol x))))
 
-    ;; Ignore an item if it defines a temporary variable that is never used.
+    ;; Ignore an item if it defines a temporary variable that is
+    ;; never used.
     (define (ignore? item)
       (and (lifted-define? item)
            (not (set-member? sym-table
@@ -805,9 +801,15 @@
     (define (build-symbol-table item)
       (fold-lifted item add-sym (const #t)))
 
-    (lifted-begin
-     (reverse
-      (for/list ([item (reverse (lifted-begin-args code))]
-                 #:when (and (not (ignore? item))
-                             (build-symbol-table item)))
-        item)))))
+    (define (analyze-list lst)
+      (reverse
+       (for/list ([item (reverse lst)]
+                  #:when (and (not (ignore? item))
+                              (build-symbol-table item)))
+         item)))
+
+    (define updated-post
+      (lifted-begin (analyze-list (lifted-begin-args postderiv))))
+    (define updated-pre
+      (analyze-list prederiv))
+    (values updated-pre updated-post)))
