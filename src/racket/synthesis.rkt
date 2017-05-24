@@ -354,10 +354,11 @@
              (define (get-code model)
                (let* ([result (coerce-evaluate program model)]
                       [prederiv-result (coerce-evaluate prederiv model)])
-                 `(let ()
-                    ,@(map lifted-code prederiv-result)
-                    'delta-goes-here
-                    ,(lifted-code (eliminate-dead-code result)))))
+                 (append '(let ())
+                         (map lifted-code prederiv-result)
+                         (list
+                          ',delta-code
+                          (lifted-code (eliminate-dead-code result))))))
 
              (define (print-program model)
                (displayln "Found a potential program:")
