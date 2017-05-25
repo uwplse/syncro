@@ -72,6 +72,16 @@
           (enum-set-add! result elem)))
       result)))
 
+(define (enum-set-subtract set1 set2)
+  ;; set subtraction of two sets
+  (for/all ([set1 set1])
+    (let* ([num-items (vector-length set1)]
+           [result (enum-make-set num-items)])
+      (for ([elem num-items])
+        (when (and (enum-set-contains? set1 elem) (not (enum-set-contains? set2 elem)))
+          (enum-set-add! result elem)))
+      result)))
+
 (define (enum-set->list set)
   (filter (lambda (elem) (enum-set-contains? set elem))
           (range (vector-length set))))
