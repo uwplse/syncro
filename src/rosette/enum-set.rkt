@@ -61,6 +61,17 @@
           (enum-set-add! result elem)))
       result)))
 
+(define (enum-set-intersect set1 . others)
+  ;; same as union but andmap instead of ormap
+  (for/all ([set1 set1])
+    (let* ([num-items (vector-length set1)]
+           [result (enum-make-set num-items)]
+           [all (cons set1 others)])
+      (for ([elem num-items])
+        (when (andmap (lambda (x) (enum-set-contains? x elem)) all)
+          (enum-set-add! result elem)))
+      result)))
+
 (define (enum-set->list set)
   (filter (lambda (elem) (enum-set-contains? set elem))
           (range (vector-length set))))
