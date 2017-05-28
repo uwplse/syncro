@@ -1,17 +1,44 @@
-To run the code:
+# $NAME
 
-- Install Rosette 2 and Graph using `raco`
-- Run `racket grades.rkt` under `example/test`, or any other example you want.
+$Name uses program synthesis to automatically generate incremental update rules that can speed up programs by orders of magnitude.
 
-Currently command line options are not working properly -- instead, you need to change the values in `src/racket/cmd-parse.rkt`. Descriptions of what each parameter does can be found in that file.
+## Installation
 
-In particular, there are multiple kinds of grammars that can be used:
-- Basic grammar: This only has support for a subset of data structures, primarily vectors and arithmetic. In particular, anything involving sets or graphs will not work.
-- General grammar: A grammar that can be easily extended with new operators. All examples should work with the general grammar.
-- Caching grammar: The same as the general grammar, but with a caching optimization. All examples should work with the caching grammar, and they should be slightly faster than the general grammar. Use this by default.
-- SSA grammar: An experimental grammar that tries to generate programs in something like SSA form in order to make synthesis more tractable. It is currently still under development and examples may not work with it; however it is typically faster than the other grammars when it does work.
+* Install [Racket](https://download.racket-lang.org/)
+* Install Rosette 2
 
-In addition, the basic and general grammars can use the "sharing" option, which allows them to share boolean variables among different subtrees of the AST. This option is not compatible with the caching grammar or the SSA grammar.
+      $ raco pkg install rosette
 
-There is experimental support for metasketches, using the Synapse library. The default version of the Synapse library only works with Rosette 1, but there is a branch that has a partial port to Rosette 2, and that's what this repository requires. As of March 24, 2017 the parts of the code that use Synapse have been commented out so you should not need to install them.
+* Install the `graph` package
 
+      $ raco pkg install graph
+
+* Clone this repository and install it using `raco`:
+
+      $ cd incremental
+      $ ls
+      README.md	example		info.rkt	src
+      direct-example	incremental	scratch
+      $ raco pkg install
+
+## Using $NAME
+
+To use $NAME, you first write a program using the incremental language, which means your file must start with `#lang incremental`. Once you have written such a program, it can be run by Racket directly. For example, to run the provided demo:
+
+    $ racket demo.rkt
+
+Each such program automatically supports various command line flags, which you can learn about through `--help`:
+
+    $ racket demo.rkt --help
+
+## The Language
+
+For a quick introduction, see `demo.rkt`.
+
+## Current Limitations
+
+* The `basic` grammar (`-g` option) only supports a small subset of the language that other grammars support.
+* The `#:initialize` and `algorithm` parts of the program do nothing. They are placeholders that will eventually be used in code generation.
+* The `#:sketches` construct and SSA grammar (`-g "(ssa n)"` option) do not play well together. The code will work but will likely be slow.
+* Grammar size is hardcoded and cannot yet be controlled by command line options. Change the relevant numbers in `synthesis.rkt` if you need to tweak the size of the grammar.
+* There is experimental support for metasketches, using the Synapse library. This has been commented out so that no dependencies are introduced, but any references to metasketches in the code are dead code and can be ignored.

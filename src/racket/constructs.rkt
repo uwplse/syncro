@@ -35,7 +35,7 @@
     (finalize-program prog)
     (for-each
      pretty-print
-     (perform-synthesis prog (cmd-parse (current-command-line-arguments))))))
+     (find-update-rules prog (cmd-parse (current-command-line-arguments))))))
 
 (define (finalize-program p)
   ;; Constants are added in reverse order, so fix them here

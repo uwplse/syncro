@@ -80,7 +80,8 @@
    [("-c" "--grammar-choice")
     choice
     ("Which type of choose* to use."
-     "Either basic or sharing.")
+     "Either basic or sharing."
+     "Sharing is incompatible with the ssa option for -g.")
     (let ([choice-sym (string->symbol choice)])
       (unless (member choice-sym '(basic sharing))
         (error (format "Invalid option to -c or --grammar-choice: ~a"
