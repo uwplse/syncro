@@ -464,18 +464,19 @@
   ;; Outer loops ;;
   ;;;;;;;;;;;;;;;;;
 
-  (define input-id (car (get-ids graph)))
-  (define input-node (get-node graph input-id))
-  (for/list ([delta-name (send input-node get-delta-names)])
-    (define intermediate-ids '())
-    (for ([output-id (cdr (get-ids graph))])
-      (perform-synthesis input-id delta-name intermediate-ids output-id)
-      (set! intermediate-ids (append intermediate-ids (list output-id))))
+  ; (define input-id (car (get-ids graph)))
+  (for/fold ([result null]) ([input-id (get-ids graph)])
+    (define input-node (get-node graph input-id))
+    (append (for/list ([delta-name (send input-node get-delta-names)])
+      (define intermediate-ids '())
+      (for ([output-id (get-ids graph)] #:when (not (equal? output-id input-id)))
+        (perform-synthesis input-id delta-name intermediate-ids output-id)
+        (set! intermediate-ids (append intermediate-ids (list output-id))))
 
-    (match-define (list delta-args _ delta-code _)
-      (datumify (symbolic-delta-code input-node delta-name 'inputs-set)))
+      (match-define (list delta-args _ delta-code _)
+        (datumify (symbolic-delta-code input-node delta-name 'inputs-set)))
 
-    (let ([synthesized-code (send input-node get-delta-code delta-name)])
-      `(define (,delta-name ,@delta-args)
-         ,delta-code
-         ,synthesized-code))))
+      (let ([synthesized-code (send input-node get-delta-code delta-name)])
+        `(define (,delta-name ,@delta-args)
+           ,delta-code
+           ,synthesized-code))) result)))
