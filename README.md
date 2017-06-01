@@ -1,6 +1,6 @@
-# $NAME
+# Syncro
 
-$Name uses program synthesis to automatically generate incremental update rules that can speed up programs by orders of magnitude.
+Syncro uses program synthesis to automatically generate incremental update rules that can speed up programs by orders of magnitude.
 
 ## Installation
 
@@ -21,19 +21,15 @@ $Name uses program synthesis to automatically generate incremental update rules 
       direct-example	incremental	scratch
       $ raco pkg install
 
-## Using $NAME
+## Using Syncro
 
-To use $NAME, you first write a program using the incremental language, which means your file must start with `#lang incremental`. Once you have written such a program, it can be run by Racket directly. For example, to run the provided demo:
+To use Syncro, you first write a program using the incremental language, which means your file must start with `#lang incremental`. Once you have written such a program, it can be run by Racket directly. For example, to run the provided examples:
 
-    $ racket demo.rkt
+    $ racket example/test/sketch.rkt
 
 Each such program automatically supports various command line flags, which you can learn about through `--help`:
 
-    $ racket demo.rkt --help
-
-## The Language
-
-For a quick introduction, see `demo.rkt`.
+    $ racket example/test/sketch.rkt --help
 
 ## Current Limitations
 
