@@ -7,8 +7,7 @@
   #:initialize (enum-make-set SET_SIZE)
   #:deltas
   [(define (add-elemT! [m SET_TYPE])
-     (enum-set-add! T? m)
-     (+ 1 1))
+     (enum-set-add! T? m))
 
    #;(define (remove-elemT! [m SET_TYPE])
      (enum-set-remove! T? m))])

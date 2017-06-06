@@ -5,7 +5,7 @@
 (require "../rosette/types.rkt" "../rosette/variable.rkt")
 
 (provide make-dependency-graph node%
-         add-node! add-dependency! path?
+         add-node! add-dependency! check-path?
          get-node get-ids get-node-for-delta
          make-delta-info)
 
@@ -57,14 +57,14 @@
   (dep-graph-id-list dg))
 
 ;; dg: dep-graph
-;; Returns if there is a path from from-id to to-id
-;; Note returns #f when from-id equals to to-id
-(define (path? dg to-id from-id)
-  #;(printf "finding path from ~a to ~a~%" from-id to-id)
+;; from-id: start the bfs in this node
+;; Returns a lambda that takes an argument and check if it belongs in the path
+(define (check-path? dg from-id)
   (define-values (dist _) (bfs (dep-graph-graph dg) from-id))
-  (if (eq? to-id from-id)
-      #f
-     (and (hash-has-key? dist to-id) (not (= (hash-ref dist to-id) +inf.0)))))
+  (define res (lambda (to-id)
+    (and (not (eq? to-id from-id))
+      (and (hash-has-key? dist to-id) (not (= (hash-ref dist to-id) +inf.0))))))
+  res)
 
 ;;;;;;;;;;;
 ;; Nodes ;;
