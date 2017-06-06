@@ -195,6 +195,9 @@
         ,define-output))
 
     (define (make-grammar-expr stmt expr temps guard type mode)
+      #;(displayln type)
+      #;(printf "type ~a output ~a delta ~a input ~a~%"
+              type output-id delta-name input-id)
       `(grammar terminal-info ,stmt ,expr
                 #:num-temps ,temps #:guard-depth ,guard #:type ,type
                 #:version ',(hash-ref options 'grammar-version)
@@ -457,6 +460,7 @@
           (displayln
            (format "No program found to update ~a upon delta ~a to ~a"
                    output-id delta-name input-id))
+          ; (displayln (send output-node get-delta-code 'recompute))
           (send input-node add-delta-code delta-name
                 (send output-node get-delta-code 'recompute)))))
 
@@ -469,8 +473,10 @@
     (define input-node (get-node graph input-id))
     (append (for/list ([delta-name (send input-node get-delta-names)])
       (define intermediate-ids '())
-      (for ([output-id (get-ids graph)] #:when (not (equal? output-id input-id)))
+      (for ([output-id (get-ids graph)] #:when (path? graph output-id input-id))
         (perform-synthesis input-id delta-name intermediate-ids output-id)
+        ; (printf "done update rule for ~a upon delta ~a to ~a~%"
+        ;       output-id delta-name input-id)
         (set! intermediate-ids (append intermediate-ids (list output-id))))
 
       (match-define (list delta-args _ delta-code _)

@@ -5,7 +5,7 @@
 (require "../rosette/types.rkt" "../rosette/variable.rkt")
 
 (provide make-dependency-graph node%
-         add-node! add-dependency!
+         add-node! add-dependency! path?
          get-node get-ids get-node-for-delta
          make-delta-info)
 
@@ -55,6 +55,16 @@
 ;; Returns the names of all variables added to the dependency graph.
 (define (get-ids dg)
   (dep-graph-id-list dg))
+
+;; dg: dep-graph
+;; Returns if there is a path from from-id to to-id
+;; Note returns #f when from-id equals to to-id
+(define (path? dg to-id from-id)
+  #;(printf "finding path from ~a to ~a~%" from-id to-id)
+  (define-values (dist _) (bfs (dep-graph-graph dg) from-id))
+  (if (eq? to-id from-id)
+      #f
+     (and (hash-has-key? dist to-id) (not (= (hash-ref dist to-id) +inf.0)))))
 
 ;;;;;;;;;;;
 ;; Nodes ;;
