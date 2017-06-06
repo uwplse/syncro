@@ -464,7 +464,6 @@
   ;; Outer loops ;;
   ;;;;;;;;;;;;;;;;;
 
-  ; (define input-id (car (get-ids graph)))
   (for/fold ([result null]) ([input-id (get-ids graph)])  
     (define input-node (get-node graph input-id))
     (define check-path-fn (check-path? graph input-id))

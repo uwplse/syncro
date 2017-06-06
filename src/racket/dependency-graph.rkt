@@ -142,7 +142,8 @@
               (not (hash-has-key? delta-fns delta-name)))
           (begin (when (not (equal? delta-name 'recompute))
                    (printf "Warning: Using recomputation instead of delta ~a to ~a~%" delta-name id))
-                 `(set! ,id ,(get-fn-code)))
+                 (if (eq? (get-fn-code) #f) `()
+                 `(set! ,id ,(get-fn-code))))
           (hash-ref delta-fns delta-name)))
 
     ;; Appends the given code to the delta function for the given
