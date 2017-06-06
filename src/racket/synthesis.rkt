@@ -464,12 +464,12 @@
   ;; Outer loops ;;
   ;;;;;;;;;;;;;;;;;
 
-  ; (define input-id (car (get-ids graph)))
-  (for/fold ([result null]) ([input-id (get-ids graph)])
+  (for/fold ([result null]) ([input-id (get-ids graph)])  
     (define input-node (get-node graph input-id))
+    (define check-path-fn (check-path? graph input-id))
     (append (for/list ([delta-name (send input-node get-delta-names)])
       (define intermediate-ids '())
-      (for ([output-id (get-ids graph)] #:when (not (equal? output-id input-id)))
+      (for ([output-id (get-ids graph)] #:when (check-path-fn output-id))
         (perform-synthesis input-id delta-name intermediate-ids output-id)
         (set! intermediate-ids (append intermediate-ids (list output-id))))
 

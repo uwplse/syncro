@@ -5,7 +5,7 @@
 (require "../rosette/types.rkt" "../rosette/variable.rkt")
 
 (provide make-dependency-graph node%
-         add-node! add-dependency!
+         add-node! add-dependency! check-path?
          get-node get-ids get-node-for-delta
          make-delta-info)
 
@@ -55,6 +55,16 @@
 ;; Returns the names of all variables added to the dependency graph.
 (define (get-ids dg)
   (dep-graph-id-list dg))
+
+;; dg: dep-graph
+;; from-id: start the bfs in this node
+;; Returns a lambda that takes an argument and check if it belongs in the path
+(define (check-path? dg from-id)
+  (define-values (dist _) (bfs (dep-graph-graph dg) from-id))
+  (define res (lambda (to-id)
+    (and (not (eq? to-id from-id))
+      (and (hash-has-key? dist to-id) (not (= (hash-ref dist to-id) +inf.0))))))
+  res)
 
 ;;;;;;;;;;;
 ;; Nodes ;;
@@ -132,7 +142,8 @@
               (not (hash-has-key? delta-fns delta-name)))
           (begin (when (not (equal? delta-name 'recompute))
                    (printf "Warning: Using recomputation instead of delta ~a to ~a~%" delta-name id))
-                 `(set! ,id ,(get-fn-code)))
+                 (if (eq? (get-fn-code) #f) `()
+                 `(set! ,id ,(get-fn-code))))
           (hash-ref delta-fns delta-name)))
 
     ;; Appends the given code to the delta function for the given
