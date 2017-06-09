@@ -250,21 +250,13 @@
     (let ([domain-pairs
            (and (can-use-operator? operator orig-params depth desired-type)
                 (operator-domain-with-mutability operator desired-type mutable?))]
-          [cache-copy (and cache? (hash-copy cache))]
-          [mapping (make-type-map)])
+          [cache-copy (and cache? (hash-copy cache))])
       
       (define (get-or-make-subexp pair)
-        (let* ([simple-type (replace-type-vars (tm-pair-type pair) mapping #t)]
-               [mutable? (tm-pair-mutable? pair)]
-               [subexp (cached-grammar simple-type #:mutable? mutable? (- depth 1)
-                                       cache-copy cache #t)])
-          
-          ;; The value of this unify can be seen in equal?^, where if
-          ;; the first expression chosen is of type Int, this will
-          ;; force the second expression to also have type Int
-          #;(when subexp
-            (unify (car type-pair) (infer-type subexp) mapping))
-          subexp))
+        (let* ([simple-type (tm-pair-type pair)]
+               [mutable? (tm-pair-mutable? pair)])
+          (cached-grammar simple-type #:mutable? mutable? (- depth 1)
+                                       cache-copy cache #t)))
 
       (define (special-andmap fn lst)
         (if (null? lst)
