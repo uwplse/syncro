@@ -53,6 +53,8 @@
      (syntax/loc stx (define-structure-prog prog expr ...))]
     [(_ prog (algorithm expr ...))
      (syntax/loc stx (set-program-algorithm! prog '(begin expr ...)))]
+    [(_ prog (define-record expr ...))
+     (syntax/loc stx (define-record expr ...))]
     [(_ prog expr)
      (printf "WARNING: Unknown expression: ~a~%" (syntax->datum #'expr))
      (syntax/loc stx expr)]))
