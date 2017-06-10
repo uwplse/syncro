@@ -28,6 +28,7 @@
           [int (Integer-type)]
           [bv5 (Bitvector-type 5)]
           [vec (Vector-type 10 (Boolean-type))]
+          [lst (List-type 3 (Integer-type))]
           [sett (Set-type (Any-type))]
           [dag (DAG-type (Any-type))]
           [rec (Record-type 'foo '(a b) (list int vec))]
@@ -36,8 +37,8 @@
           [wproc (Procedure-type (list (Vector-type 3 int)) int #:write-index 0)]
           [err (Error-type)]
           [void (Void-type)]
-          [all-no-enum-var (list any bot idx bool int bv5 vec sett dag rec
-                                 proc rproc wproc err void)]
+          [all-no-enum-var (list any bot idx bool int bv5 vec lst sett
+                                 dag rec proc rproc wproc err void)]
           [enum (Enum-type 'Word 12)]
           [set-enum (Set-type enum)]
           [all-no-var (append all-no-enum-var (list enum set-enum))]
@@ -61,6 +62,7 @@
        (check-equal? int (Vector-index-type vec))
        (check-equal? bv5 (Bitvector-type 5))
        (check-equal? vec (Vector-type 10 bool))
+       (check-equal? lst (List-type 3 (Integer-type)))
        (check-equal? sett (Set-type (Any-type)))
        (check-equal? dag (DAG-type (Any-type)))
        (check-equal? proc (Procedure-type (list (Vector-type 3 (Integer-type)))
@@ -73,6 +75,7 @@
        (check-not-equal? idx int)
        (check-not-equal? proc (Procedure-type (list int bool) (Integer-type)))
        (check-not-equal? vec (Vector-type 10 int))
+       (check-not-equal? lst (List-type 3 bv5))
        ;; Enums are only equal to themselves
        (check-equal? enum (Enum-type 'Word 12))
        (check-not-equal? enum (Enum-type 'Foo 12))
@@ -93,6 +96,7 @@
        (check-equal? (get-parent int) idx)
        (check-equal? (get-parent bv5) idx)
        (check-equal? (get-parent vec) any)
+       (check-equal? (get-parent lst) any)
        (check-equal? (get-parent sett) any)
        (check-equal? (get-parent dag) any)
        (check-equal? (get-parent proc) any)
@@ -122,6 +126,7 @@
                Bitvector-type? bv5
                Enum-type? enum
                Vector-type? vec
+               List-type? lst
                Set-type? sett
                DAG-type? dag
                Record-type? rec
@@ -137,6 +142,7 @@
                Bitvector-type? (set bot bv5)
                Enum-type? (set bot enum)
                Vector-type? (set bot vec vec-var)
+               List-type? (set bot lst)
                Set-type? (set bot sett set-enum)
                DAG-type? (set bot dag)
                Record-type? (set bot rec rec-var)
