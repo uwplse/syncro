@@ -107,8 +107,6 @@
 (define (add-terminal-to-info-code info-sym var-sym type [mutable? #f])
   `(send ,info-sym make-and-add-terminal ',var-sym ,(repr type)
          #:mutable? ,mutable?))
-(define (set-terminal-in-info-code info-sym var-sym)
-  `(send ,info-sym set-value ',var-sym ,var-sym))
 
 ;; Creates the necessary Rosette code for synthesis, runs it, and
 ;; creates the relevant update functions.
@@ -164,7 +162,6 @@
       (datumify (symbolic-delta-code input-node delta-name 'inputs-set)))
 
     (define add-terminal-code (curry add-terminal-to-info-code 'terminal-info))
-    (define set-terminal-code (curry set-terminal-in-info-code 'terminal-info))
 
     (define non-output-ids
       (cons input-id
@@ -175,8 +172,9 @@
     (define add-terminal-stmts
       (cons (add-terminal-code output-id output-type #t)
             (map add-terminal-code non-output-ids non-output-types)))
-    (define set-terminal-stmts
-      (map set-terminal-code (cons output-id non-output-ids)))
+    (define make-env-expr
+      `(make-environment (list ,@(map (lambda (id) `(cons ',id ,id))
+                                      (cons output-id non-output-ids)))))
 
     ;; TODO: This is misnamed, constants come before this
     (define define-structures
@@ -209,9 +207,15 @@
           ,(timing-code (make-grammar-expr 1 1 0 0 (Any-type) '(tmps 2))
                         "generate the prederivative"))))
     (define prederiv-run-code
-      `(,@set-terminal-stmts
-        ,(timing-code '(for-each eval-lifted prederiv)
-                      "run the prederivative")))
+      `((define initial-env ,make-env-expr)
+        (define env-after-prederiv
+          ,(timing-code
+            '(let loop ([code-lst prederiv] [loop-env initial-env])
+               (if (null? code-lst)
+                   loop-env
+                   (let ([new-env (second (eval-lifted (car code-lst) loop-env))])
+                     (loop (cdr code-lst) new-env))))
+            "run the prederivative"))))
 
     ;; Example: (set! num2helper (build-vector ...))
     ;; Taken straight from the user program, but operates on
@@ -220,11 +224,6 @@
     ;; TODO: For now, we have to define intermediates before
     ;; the delta in case the output relation depends on
     ;; them. So here, we should use a set!
-    (define update-intermediate-stmts
-      (map (lambda (code)
-             `(send terminal-info set-value ',(cadr code) ,@(cddr code)))
-           define-intermediates))
-
     (define program-definition
       `(,@(log-for-option 'progress '(displayln "Creating symbolic program"))
         ,@(if (send output-node has-sketch? delta-name)
@@ -241,13 +240,19 @@
                     (make-grammar-expr 2 2 0 1 '(Void-type) 'stmt)
                     "generate the postderivative"))))))
     (define program-run-code
-      `(,@set-terminal-stmts
-        ,(timing-code '(eval-lifted program)
-                      "run the postderivative")))
+      `((define env-for-postderiv
+          ,(for/fold ([code `(environment-set env-after-prederiv ',input-id ,input-id)])
+                     ([def define-intermediates])
+             `(environment-set code ',(cadr def) ,(cddr def))))
+        (define final-env
+          ,(timing-code '(second (eval-lifted program env-for-postderiv))
+                        "run the postderivative"))))
 
     (define postcondition-expr
-      `(equal? (eval-lifted (send terminal-info get-terminal-by-id ',output-id))
-               ,output-expr))
+      `(let ([output-terminal (send terminal-info get-terminal-by-id ',output-id)])
+         (define output-value
+           (first (eval-lifted output-terminal final-env)))
+         (equal? output-value ,output-expr)))
 
     (define (get-code-for-config i)
       `(let ()
@@ -267,7 +272,6 @@
          ,@prederiv-run-code
          ,delta-code
          (define input-assertion-after-delta ,input-invariant)
-         ,@update-intermediate-stmts
 
          ;; Symbolically run the sampled program
          ,@(log-for-option
@@ -292,8 +296,9 @@
          ;; necessarily the same as the value in ,output-id.
          ;; Example: (assert (equal? (... get-by-id 'num2) (build-vector ...)))
          (define new-output
-           (eval-lifted
-            (send terminal-info get-terminal-by-id ',output-id)))
+           (first
+            (eval-lifted
+             (send terminal-info get-terminal-by-id ',output-id) final-env)))
          (define expected-result ,output-expr)
          (define postcondition (equal? new-output expected-result))
 
@@ -411,7 +416,6 @@
           ,@prederiv-defn-code
           ,@prederiv-run-code
           ,delta-code
-          ,@update-intermediate-stmts
           ,@(add-reset-fn 'reset-state!)
           (define metasketch
             (grammar-metasketch terminal-info

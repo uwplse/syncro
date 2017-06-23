@@ -21,9 +21,9 @@
   [(define/generic gen-eval-lifted eval-lifted)
    (define/generic gen-lifted-code lifted-code)
    (define/generic gen-fold-lifted fold-lifted)
-   (define (eval-lifted self)
+   (define (eval-lifted self initial-env)
      (check-grammar-defined self)
-     (gen-eval-lifted (lifted-grammar-value self)))
+     (gen-eval-lifted (lifted-grammar-value self) initial-env))
 
    (define (lifted-code self)
      (check-grammar-defined self)

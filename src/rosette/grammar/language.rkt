@@ -2,7 +2,8 @@
 ;; once synthesis is complete.
 #lang rosette
 
-(require "../enum-set.rkt" "../record.rkt"
+(require "env.rkt"
+         "../enum-set.rkt" "../record.rkt"
          "../types.rkt" "../util.rkt" "../variable.rkt"
          racket/serialize)
 
@@ -47,8 +48,9 @@
 ;; Currently a lot of copy pasted code
 
 (define-generics lifted
-  ;; Evaluates the lifted expression to produce a value.
-  (eval-lifted lifted)
+  ;; Evaluates the lifted expression in the given environment env to
+  ;; produce a value and a new environment.
+  (eval-lifted lifted env)
   ;; Produces Racket code that represents the lifted expression.
   (lifted-code lifted)
   ;; Fold
@@ -56,11 +58,11 @@
 
   #:defaults
   ([integer?
-    (define (eval-lifted x) x)
+    (define (eval-lifted x env) (list x env))
     (define (lifted-code x) x)
     (define (fold-lifted x mapper reducer) (mapper x))]
    [boolean?
-    (define (eval-lifted x) x)
+    (define (eval-lifted x env) (list x env))
     (define (lifted-code x) x)
     (define (fold-lifted x mapper reducer) (mapper x))]))
 
@@ -173,12 +175,8 @@
    (or (current-load-relative-directory) (current-directory)))
   
   #:methods gen:lifted
-  [(define (eval-lifted self)
-     (if (variable-has-value? self)
-         (variable-value self)
-         (internal-error
-          (format "Called eval-lifted on ~a before defining it"
-                  (variable-symbol self)))))
+  [(define (eval-lifted self env)
+     (list (environment-ref env (variable-symbol self)) env))
 
    (define (lifted-code self)
      (variable-symbol self))
@@ -242,10 +240,24 @@
   [(define/generic gen-eval-lifted eval-lifted)
    (define/generic gen-lifted-code lifted-code)
    (define/generic gen-fold-lifted fold-lifted)
-   
-   (define (eval-lifted self)
-     (apply (gen-eval-lifted (lifted-apply-proc self))
-            (map gen-eval-lifted (lifted-apply-args self))))
+
+   ;; Perhaps we could disallow changes to the environment inside of
+   ;; an expression, and then we don't have to thread around updated
+   ;; environments so much?
+   ;; This would make the code cleaner, though probably would make it
+   ;; less flexible and not faster, so probably should not do this.
+   (define (eval-lifted self initial-env)
+     (match-define (list proc env-after-proc)
+       (gen-eval-lifted (lifted-apply-proc self) initial-env))
+
+     (let loop ([result '()]
+                [loop-env env-after-proc]
+                [lifted-args (lifted-apply-args self)])
+         (if (null? lifted-args)
+             (list (apply proc (reverse result)) loop-env)
+             (match-let ([(list arg-val new-env)
+                          (gen-eval-lifted (car lifted-args) loop-env)])
+               (loop (cons arg-val result) new-env (cdr lifted-args))))))
 
    (define (lifted-code self)
      (cons (gen-lifted-code (lifted-apply-proc self))
@@ -322,10 +334,16 @@
    (define/generic gen-lifted-code lifted-code)
    (define/generic gen-fold-lifted fold-lifted)
    
-   (define (eval-lifted self)
+   (define (eval-lifted self initial-env)
      ;; TODO: This would be an issue if the number of args is symbolic
-     (for/last ([arg (lifted-begin-args self)])
-       (gen-eval-lifted arg)))
+     (let loop ([lifted-args (lifted-begin-args self)]
+                [result (void)]
+                [loop-env initial-env])
+       (if (null? lifted-args)
+           (list result loop-env)
+           (apply loop
+                  (cdr lifted-args)
+                  (gen-eval-lifted (car lifted-args) loop-env)))))
 
    (define (lifted-code self)
      (cons 'let (cons '() (map gen-lifted-code (lifted-begin-args self)))))
@@ -381,10 +399,12 @@
    (define/generic gen-lifted-code lifted-code)
    (define/generic gen-fold-lifted fold-lifted)
 
-   (define (eval-lifted self)
-     (if (gen-eval-lifted (lifted-if-condition self))
-         (gen-eval-lifted (lifted-if-then-branch self))
-         (gen-eval-lifted (lifted-if-else-branch self))))
+   (define (eval-lifted self initial-env)
+     (match-define (list condition-val next-env)
+       (gen-eval-lifted (lifted-if-condition self) initial-env))
+     (if condition-val
+         (gen-eval-lifted (lifted-if-then-branch self) next-env)
+         (gen-eval-lifted (lifted-if-else-branch self) next-env)))
 
    (define (lifted-code self)
      (list 'if
@@ -444,9 +464,11 @@
    (define/generic gen-lifted-code lifted-code)
    (define/generic gen-fold-lifted fold-lifted)
 
-   (define (eval-lifted self)
-     (get-field (gen-eval-lifted (lifted-get-field-record self))
-                (lifted-get-field-field-name self)))
+   (define (eval-lifted self initial-env)
+     (match-define (list record-value next-env)
+       (gen-eval-lifted (lifted-get-field-record self) initial-env))
+     (list (get-field record-value (lifted-get-field-field-name self))
+           next-env))
 
    (define (lifted-code self)
      (list 'get-field
@@ -510,10 +532,14 @@
    (define/generic gen-lifted-code lifted-code)
    (define/generic gen-fold-lifted fold-lifted)
 
-   (define (eval-lifted self)
-     (set-field! (gen-eval-lifted (lifted-set-field!-record self))
-                 (lifted-set-field!-field-name self)
-                 (gen-eval-lifted (lifted-set-field!-value self))))
+   (define (eval-lifted self initial-env)
+     (match-define (list record-value first-env)
+       (gen-eval-lifted (lifted-set-field!-record self) initial-env))
+     (match-define (list field-value final-env)
+       (gen-eval-lifted (lifted-set-field!-value self) first-env))
+
+     (set-field! record-value (lifted-set-field!-field-name self) field-value)
+     (list (void) final-env))
 
    (define (lifted-code self)
      (list 'set-field!
@@ -589,11 +615,14 @@
    (define/generic gen-lifted-code lifted-code)
    (define/generic gen-fold-lifted fold-lifted)
 
-   (define (eval-lifted self)
+   (define (eval-lifted self initial-env)
      (match self
        [(lifted-define var val)
-        (let ([result (gen-eval-lifted val)])
-          (set-variable-value! var result))]))
+        (let ()
+          (match-define (list result next-env)
+            (gen-eval-lifted val initial-env))
+          (define sym (variable-symbol var))
+          (list (void) (environment-set next-env sym result)))]))
 
    (define (lifted-code self)
      (list 'define
@@ -622,30 +651,6 @@
       (lifted-error)
       (lifted-define var val)))
 
-;; var is syntax containing a symbol
-;; expr is syntax containing an expression that evaluates to a lifted
-;; expression
-;; This currently is difficult to implement well. The syntax we want
-;; is something like
-;; (begin^ (define^ x 3)
-;;         (*^ x 2))
-;; However, this requires that x be defined to the lifted-variable
-;; that is created for defines. This can't be done with a macro,
-;; because define^ is in an expression context, so it can't expand to
-;; defines. We could make begin^ also be a macro, and then arrange it
-;; so that any define^s in the begin^ are evaluated in the surrounding
-;; context (which could not be an expression context), and somehow
-;; stitch together the results. However, then dynamically generating
-;; define^s is more complicated -- it would have to be done with a
-;; macro.
-;; (define-syntax-rule (define^ var expr)
-;;   (begin
-;;     (define lifted-val expr)
-;;     (define var
-;;       (make-lifted-variable 'var (infer-type lifted-val)))
-;;     (lifted-define var lifted-val)))
-
-
 
 (define deserialize-lifted-set!
   (make-deserialize-info
@@ -662,10 +667,12 @@
   [(define/generic gen-eval-lifted eval-lifted)
    (define/generic gen-lifted-code lifted-code)
    (define/generic gen-fold-lifted fold-lifted)
-   (define (eval-lifted self)
-     (set-variable-value! (lifted-set!-var self)
-                          (gen-eval-lifted (lifted-set!-val self)))
-     (void))
+
+   (define (eval-lifted self initial-env)
+     (define sym (variable-symbol (lifted-set!-var self)))
+     (match-define (list value next-env)
+       (gen-eval-lifted (lifted-set!-val self) initial-env))
+     (list (void) (environment-set next-env sym value)))
 
    (define (lifted-code self)
      (list 'set!
@@ -709,23 +716,35 @@
   [(define/generic gen-eval-lifted eval-lifted)
    (define/generic gen-lifted-code lifted-code)
    (define/generic gen-fold-lifted fold-lifted)
-   (define (eval-lifted self)
+   (define (eval-lifted self initial-env)
      (match self
        [(lifted-for-enum-set var set-expr body)
-        (define set (gen-eval-lifted set-expr))
+        (match-define (list set first-env)
+          (gen-eval-lifted set-expr initial-env))
+        (define sym (variable-symbol var))
         (define num-items (vector-length set))
 
+        ;; This may be an issue. What if the set expression could give
+        ;; one of two different sets that have different lengths? The
+        ;; type system might prevent this, I'm not sure.
         (when (term? num-items)
           (internal-error
            (format "eval-lifted: Number of items in enum set should be concrete, was ~a"
                    num-items)))
 
-        (for ([i num-items])
-          (when (enum-set-contains? set i)
-            (set-variable-value! var i)
-            (gen-eval-lifted body)))
-
-        (void)]))
+        ;; We introduce a new variable into the environment here, but
+        ;; never remove it.
+        ;; In our current model, variables can be introduced but can't
+        ;; be removed. We must manually make sure there are no name
+        ;; conflicts.
+        (let loop ([i 0] [result (void)] [loop-env first-env])
+          (cond [(= i num-items)
+                 (list result loop-env)]
+                [(enum-set-contains? set i)
+                 (let ([new-env (environment-set loop-env sym i)])
+                   (apply loop (+ i 1) (gen-eval-lifted body new-env)))]
+                [else
+                 (loop (+ i 1) result loop-env)]))]))
 
    (define (lifted-code self)
      (match self
@@ -777,7 +796,7 @@
    #f
    (or (current-load-relative-directory) (current-directory)))
   #:methods gen:lifted
-  [(define (eval-lifted self)
+  [(define (eval-lifted self env)
      (error "Default error -- LIFTED-ERROR"))
 
    (define (lifted-code self)

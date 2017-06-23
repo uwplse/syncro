@@ -498,7 +498,7 @@
       (define subexp (expr-grammar (Any-type) 1))
       (define lifted-sym
         (send terminal-info make-and-add-terminal sym (infer-type subexp)
-              #:value (eval-lifted subexp) #:mutable? #f))
+              #:mutable? #f))
       (define^ lifted-sym subexp)))
 
   ;; Build the program
@@ -755,9 +755,3 @@
                      (or (not mutable?)
                          (variable-mutable? terminal))))
               (hash-values symbol->terminal)))))
-
-
-  ;; (define result (lifted-define var val))
-  ;; (when info
-  ;;   (send info add-terminal var (eval-lifted subexp) (infer-type subexp)
-  ;;         #:mutable #f)
