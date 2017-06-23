@@ -176,8 +176,9 @@
   [(define (eval-lifted self)
      (if (variable-has-value? self)
          (variable-value self)
-         (error (format "Called eval-lifted on ~a before defining it"
-                        (variable-symbol self)))))
+         (internal-error
+          (format "Called eval-lifted on ~a before defining it"
+                  (variable-symbol self)))))
 
    (define (lifted-code self)
      (variable-symbol self))
@@ -214,7 +215,8 @@
                                 #:mutable? [mutable? #f]
                                 #:expression [expression #f])
   (unless (lifted-variable? var)
-    (error (format "update-lifted-variable: Not a lifted variable: ~a" var)))
+    (internal-error
+     (format "update-lifted-variable: Not a lifted variable: ~a" var)))
   (lifted-variable (or symbol (variable-symbol var))
                    (or type (variable-type var))
                    (if (unknown-value? value) (variable-value var) value)
