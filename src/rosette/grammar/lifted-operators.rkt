@@ -1,9 +1,10 @@
 #lang rosette
 
-(require "../enum-set.rkt" "../graph.rkt" "../map.rkt"
+(require "env.rkt" "../enum-set.rkt" "../graph.rkt" "../map.rkt"
          "../operators.rkt" "../types.rkt" "language.rkt")
 
 (provide
+ global-environment
  ;; Operators that construct lifted AST nodes
  void^ not^ and^ or^ =^ <^ equal?^ +^ -^ *^ #;/^
  vector-increment!^ vector-decrement!^ vector-set!^ vector-ref^
@@ -80,11 +81,11 @@
 
   [vector-increment! vector-increment!^ vec-inc/dec-type]
   [vector-decrement! vector-decrement!^ vec-inc/dec-type]
-  [vector-set! vector-set!^ vec-set!-type]
-  [vector-ref vector-ref^ vec-ref-type]
+  [vector-set!       vector-set!^       vec-set!-type]
+  [vector-ref        vector-ref^        vec-ref-type]
 
-  [enum-set-add! enum-set-add!^ enum-set-modify-type]
-  [enum-set-remove! enum-set-remove!^ enum-set-modify-type]
+  [enum-set-add!      enum-set-add!^      enum-set-modify-type]
+  [enum-set-remove!   enum-set-remove!^   enum-set-modify-type]
   [enum-set-contains? enum-set-contains?^ enum-set-contains?-type]
 
   [map-ref map-ref^ map-ref-type] [map-set! map-set!^ map-set!-type]
@@ -97,4 +98,30 @@
 
 (define-lifted-using-proc
   [(lambda (x y) (and x y)) and and^ and-or-type]
-  [(lambda (x y) (or x y)) or or^ and-or-type])
+  [(lambda (x y) (or x y))  or  or^  and-or-type])
+
+(define global-environment
+  (make-environment
+   (list (cons 'void void) (cons 'not not)
+         (cons '= =) (cons '< <) (cons 'equal? equal?)
+         (cons '+ +) (cons '- -) (cons '* *)
+
+         (cons 'vector-increment! vector-increment!)
+         (cons 'vector-decrement! vector-decrement!)
+         (cons 'vector-set!       vector-set!)
+         (cons 'vector-ref        vector-ref)
+
+         (cons 'enum-set-add!      enum-set-add!)
+         (cons 'enum-set-remove!   enum-set-remove!)
+         (cons 'enum-set-contains? enum-set-contains?)
+
+         (cons 'map-ref map-ref) (cons 'map-set! map-set!)
+
+         (cons 'add-edge!    add-edge!)
+         (cons 'remove-edge! remove-edge!)
+         (cons 'has-edge?    has-edge?)
+         (cons 'vertex-parents  vertex-parents)
+         (cons 'vertex-children vertex-children)
+
+         (cons 'and (lambda (x y) (and x y)))
+         (cons 'or  (lambda (x y) (or  x y))))))

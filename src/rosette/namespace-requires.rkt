@@ -1,7 +1,7 @@
 #lang rosette
 
 (require
- (only-in "grammar/grammar-operators.rkt" all-operators)
+ (only-in "grammar/grammar-operators.rkt" all-operators global-environment)
  rosette/lib/synthax
  "../racket/cegis.rkt"
  ;; Removed metasketch for now to remove dependency on Synapse
@@ -11,7 +11,7 @@
  "types.rkt" "util.rkt")
 
 (provide
- all-operators
+ all-operators global-environment
  (all-from-out
   rosette/lib/synthax
   "../racket/cegis.rkt"

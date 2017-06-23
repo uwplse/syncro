@@ -173,8 +173,9 @@
       (cons (add-terminal-code output-id output-type #t)
             (map add-terminal-code non-output-ids non-output-types)))
     (define make-env-expr
-      `(make-environment (list ,@(map (lambda (id) `(cons ',id ,id))
-                                      (cons output-id non-output-ids)))))
+      (for/fold ([curr-env-code 'global-environment])
+                ([id (cons output-id non-output-ids)])
+        `(environment-set ,curr-env-code ',id ,id)))
 
     ;; TODO: This is misnamed, constants come before this
     (define define-structures
@@ -241,9 +242,9 @@
                     "generate the postderivative"))))))
     (define program-run-code
       `((define env-for-postderiv
-          ,(for/fold ([code `(environment-set env-after-prederiv ',input-id ,input-id)])
+          ,(for/fold ([curr-env-code `(environment-set env-after-prederiv ',input-id ,input-id)])
                      ([def define-intermediates])
-             `(environment-set code ',(cadr def) ,(cddr def))))
+             `(environment-set ,curr-env-code ',(cadr def) (begin ,@(cddr def)))))
         (define final-env
           ,(timing-code '(second (eval-lifted program env-for-postderiv))
                         "run the postderivative"))))
