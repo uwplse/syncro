@@ -34,7 +34,7 @@
    "Tests for grammar.rkt"
 
    (test-case "Terminal info"
-     (let* ([info (new Terminal-Info%)]
+     (let* ([info (new Lexical-Terminal-Info%)]
             [int (Integer-type)]
             [idx (Index-type)]
             [bool (Boolean-type)]
@@ -64,7 +64,7 @@
        (check-equal? (get #:type any) (set 'v 'w 'x 'y 'z))))
 
    ;; Define a Terminal-info for the next set of tests
-   (let* ([info (new Terminal-Info%)]
+   (let* ([info (new Lexical-Terminal-Info%)]
           [int (Integer-type)]
           [Word (Enum-type 'Word 12)]
           [Topic (Enum-type 'Topic 3)]

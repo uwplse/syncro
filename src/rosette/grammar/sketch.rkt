@@ -1,6 +1,6 @@
 #lang rosette
 
-(require "language.rkt"
+(require "language.rkt" "grammar.rkt"
          "../types.rkt" "../variable.rkt" "../util.rkt"
          racket/serialize)
 
@@ -118,9 +118,11 @@
          (internal-error
           (format "make-lifted -- Not a set type ~a" set-type)))
 
-       (send terminal-info make-and-add-terminal var
-             (Set-content-type set-type))
-       (for-enum-set^ (recurse var) set (recurse `(begin ,@body))))]
+       (define new-info (new Lexical-Terminal-Info% [parent terminal-info]))
+       (send new-info make-and-add-terminal var (Set-content-type set-type))
+       (for-enum-set^ (make-lifted new-info operators var)
+                      set
+                      (make-lifted new-info operators `(begin ,@body))))]
 
     ;; Grammar generation
     [`(??) (make-lifted-grammar)]
@@ -132,7 +134,7 @@
     ;; Base cases
     [(? number?) code]
     [(? symbol?)
-     (cond [(send terminal-info has-terminal? code)
+     (cond [(send terminal-info has-id? code)
             (send terminal-info get-terminal-by-id code)]
            [(hash-has-key? id->operator code)
             (hash-ref id->operator code)]

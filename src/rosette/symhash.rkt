@@ -2,7 +2,7 @@
 
 (require (only-in "util.rkt" maybe-internal-error))
 
-(provide rhash rhash-has-key? rhash-ref rhash-set)
+(provide rhash rhash? rhash-has-key? rhash-ref rhash-set rhash-keys)
 
 ;; Implementation of hash maps that can handle symbolic keys and values.
 ;; Requires that keys do not *contain* symbolic values, and that keys
@@ -16,6 +16,10 @@
         result
         (loop (cdr assocs)
               (rhash-set result (caar assocs) (cdar assocs))))))
+
+(define (rhash? thing)
+  (for/all ([thing thing])
+    (hash? thing)))
 
 (define (rhash-has-key? rhash key)
   (for*/all ([rhash rhash]
@@ -46,3 +50,7 @@
         (maybe-internal-error
          (format "Invalid arguments to rhash-ref: ~a ~a" rhash key)))
       (hash-set rhash key value))))
+
+(define (rhash-keys rhash)
+  (for/all ([rhash rhash])
+    (hash-keys rhash)))

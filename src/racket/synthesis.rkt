@@ -336,7 +336,7 @@
            (current-bitwidth ,(hash-ref options 'bitwidth))
            ,@(map constant-initialization-code constants)
            (define configurables (list ,@config-terminal-ids))
-           (define terminal-info (new Terminal-Info%))
+           (define terminal-info (new Lexical-Terminal-Info%))
            ,@add-terminal-stmts
            ,@prederiv-defn-code
            ,@program-definition
