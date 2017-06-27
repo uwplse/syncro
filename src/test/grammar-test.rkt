@@ -40,20 +40,20 @@
             [bool (Boolean-type)]
             [any (Any-type)]
             [vec (Vector-type int bool)]
-            [z (make-lifted-variable 'z int #:value 3)])
+            [z (make-lifted-variable 'z int)])
        
-       (define (make a b v #:mutable? m)
-         (send info make-and-add-terminal a b #:value v #:mutable? m))
+       (define (make a b #:mutable? m)
+         (send info make-and-add-terminal a b #:mutable? m))
        
        (define (get #:type type #:mutable? [m #f])
          (list->set
           (map variable-symbol
                (send info get-terminals #:type type #:mutable? m))))
 
-       (make 'v idx 1 #:mutable? #t)
-       (make 'w any "foo" #:mutable? #f)
-       (make 'x int 3 #:mutable? #t)
-       (make 'y int 4 #:mutable? #f)
+       (make 'v idx #:mutable? #t)
+       (make 'w any #:mutable? #f)
+       (make 'x int #:mutable? #t)
+       (make 'y int #:mutable? #f)
        (send info add-terminal z)
        
        (check-equal? (send info get-terminal-by-id 'z) z)
@@ -72,19 +72,16 @@
           [num1-type (Vector-type Topic int)]
           [related-word-type (Vector-type Word (Vector-type Topic Word))])
        
-     (define (make a b v #:mutable? m)
-       (send info make-and-add-terminal a b #:value v #:mutable? m))
+     (define (make a b #:mutable? m)
+       (send info make-and-add-terminal a b #:mutable? m))
 
-     (define word->topic (build-vector 12 (lambda (i) (remainder i 3))))
-     (make 'word->topic word->topic-type word->topic #:mutable? #f)
-     (define num1 (make-vector 3 4))
-     (make 'num1 num1-type num1 #:mutable? #t)
-     (define related-word (build-vector 12 (lambda (i) (make-vector 3 0))))
-     (make 'related-word related-word-type related-word #:mutable? #f)
+     (make 'word->topic word->topic-type #:mutable? #f)
+     (make 'num1 num1-type #:mutable? #t)
+     (make 'related-word related-word-type #:mutable? #f)
 
-     (make 'int1 int 0 #:mutable? #f)
-     (make 'word1 Word 3 #:mutable? #f)
-     (make 'word2 Word 5 #:mutable? #t)
+     (make 'int1 int #:mutable? #f)
+     (make 'word1 Word #:mutable? #f)
+     (make 'word2 Word #:mutable? #t)
 
      ;; TODO: More removing polymorphism tests
      (test-case "Removing polymorphism"

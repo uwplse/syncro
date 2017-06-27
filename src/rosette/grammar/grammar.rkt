@@ -97,7 +97,7 @@
   ;; if it may not be #f
   (define lifted-sym
     (if (and (not (term? subexp)) (false? subexp))
-        (make-lifted-variable sym (Void-type) #:value (void^) #:mutable? #f)
+        (make-lifted-variable sym (Void-type) #:mutable? #f)
         (send terminal-info make-and-add-terminal sym type
               #:mutable? mutable?)))
   (define^ lifted-sym subexp))
@@ -131,7 +131,7 @@
       (define sym (gensym 'constant))
       (define lifted-sym
         (send terminal-info make-and-add-terminal sym (Integer-type)
-              #:value hole #:mutable? #f))
+              #:mutable? #f))
       (define^ lifted-sym hole)))
 
   ;; Choose definitions for each variable
@@ -724,13 +724,8 @@
       (or (hash-has-key? id->terminal id)
           (and parent (send parent has-id? id))))
 
-    (define/public (make-and-add-terminal sym type
-                                          #:value [value (unknown-value)]
-                                          #:mutable? [mutable? #f])
-      (define terminal
-        (if (unknown-value? value)
-            (make-lifted-variable sym type #:mutable? mutable?)
-            (make-lifted-variable sym type #:value value #:mutable? mutable?)))
+    (define/public (make-and-add-terminal sym type #:mutable? [mutable? #f])
+      (define terminal (make-lifted-variable sym type #:mutable? mutable?))
       (add-terminal terminal)
       terminal)
 

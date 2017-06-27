@@ -2,7 +2,7 @@
 
 (require #;"../symhash.rkt" "../util.rkt")
 
-(provide make-environment environment-ref environment-set)
+(provide make-environment environment-ref environment-set environment-define)
 
 ;; We may in the future want an environment ADT that actually does
 ;; lexical scoping, but for now an environment just maps symbols to
@@ -11,19 +11,38 @@
 (define (make-environment [assocs '()])
   assocs)
 
+(define (environment-has-symbol? env sym)
+  (member sym (map car env)))
+
 (define (environment-ref env sym)
-  (unless (member sym (map car env))
-    (internal-error (format "Environment does not contain ~a!" sym)))
-  (for/first ([assoc env] #:when (equal? (car assoc) sym))
-    (cdr assoc)))
+  (when (union? env)
+    (internal-error (format "Environment is symbolic! ~a" sym)))
+  (for/all ([sym sym])
+    (begin
+      (unless (member sym (map car env))
+        (internal-error (format "Environment does not contain ~a!" sym)))
+      (for/first ([p env] #:when (equal? (car p) sym))
+        (cdr p)))))
 
 (define (environment-set env sym value)
-  (if (member sym (map car env))
+  (for/all ([sym sym])
+    (begin
+      (unless (environment-has-symbol? env sym)
+        (internal-error
+         (format "Tried to set! symbol ~a that's not already defined" sym)))
       (for/list ([assoc env])
         (if (equal? (car assoc) sym)
             (cons sym value)
-            assoc))
-      (cons (cons sym value) env)))
+            assoc)))))
+
+(define (environment-define env sym value)
+  (when (or (union? sym) (term? sym))
+    (internal-error
+     (format "Cannot define a symbolic symbol ~a" sym)))
+  (unless (eq? (pc) #t)
+    (internal-error
+     (format "Cannot conditionally define the symbol ~a" sym)))
+  (cons (cons sym value) env))
 
 ;; (define (make-environment [assocs '()])
 ;;   (rhash assocs))

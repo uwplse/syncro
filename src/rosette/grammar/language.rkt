@@ -201,15 +201,13 @@
 
 ;; Almost verbatim from variable.rkt
 (define (make-lifted-variable symbol type
-                              #:value [value (unknown-value)]
                               #:mutable? [mutable? #f]
                               #:expression [expression #f])
-  (lifted-variable symbol type value mutable? expression))
+  (lifted-variable symbol type mutable? expression))
 
 (define (update-lifted-variable var
                                 #:symbol [symbol #f]
                                 #:type [type #f]
-                                #:value [value (unknown-value)]
                                 #:mutable? [mutable? #f]
                                 #:expression [expression #f])
   (unless (lifted-variable? var)
@@ -217,7 +215,6 @@
      (format "update-lifted-variable: Not a lifted variable: ~a" var)))
   (lifted-variable (or symbol (variable-symbol var))
                    (or type (variable-type var))
-                   (if (unknown-value? value) (variable-value var) value)
                    (or mutable? (variable-mutable? var))
                    (or expression (variable-expression var))))
 
@@ -247,6 +244,7 @@
    ;; This would make the code cleaner, though probably would make it
    ;; less flexible and not faster, so probably should not do this.
    (define (eval-lifted self initial-env)
+     ;(displayln (lifted-code self))
      (match-define (list proc env-after-proc)
        (gen-eval-lifted (lifted-apply-proc self) initial-env))
 
@@ -402,9 +400,15 @@
    (define (eval-lifted self initial-env)
      (match-define (list condition-val next-env)
        (gen-eval-lifted (lifted-if-condition self) initial-env))
-     (if condition-val
-         (gen-eval-lifted (lifted-if-then-branch self) next-env)
-         (gen-eval-lifted (lifted-if-else-branch self) next-env)))
+     (when (union? next-env)
+       (printf "Symbolic environment after evaluating the condition of ~a~%" (lifted-code self)))
+     (match-define (list result final-env)
+       (if condition-val
+           (gen-eval-lifted (lifted-if-then-branch self) next-env)
+           (gen-eval-lifted (lifted-if-else-branch self) next-env)))
+     (when (union? final-env)
+       (printf "Symbolic environment after evaluating ~a~%" (lifted-code self)))
+     (list result final-env))
 
    (define (lifted-code self)
      (list 'if
@@ -622,7 +626,7 @@
           (match-define (list result next-env)
             (gen-eval-lifted val initial-env))
           (define sym (variable-symbol var))
-          (list (void) (environment-set next-env sym result)))]))
+          (list (void) (environment-define next-env sym result)))]))
 
    (define (lifted-code self)
      (list 'define
@@ -816,25 +820,25 @@
 
 
 
-(define (lift value var-name type)
+(define (lift var-name type)
   (if (symbol? var-name)
-      (make-lifted-variable var-name type #:value value)
-      (error (format "Cannot lift ~a which has value ~a~%"
-                     var-name value))))
+      (make-lifted-variable var-name type)
+      (internal-error (format "Cannot lift ~a~%" var-name))))
 
 ;; Convenience macro to define many new lifted values at a time.
 ;; See grammar.rkt for an example.
 (define-syntax (define-lifted stx)
   (syntax-case stx ()
-    [(_ [thing new-name type] ...)
+    [(_ env [thing new-name type] ...)
      (syntax/loc stx
-       (define-lifted-using-proc [thing thing new-name type] ...))]))
+       (define-lifted-using-proc env [thing thing new-name type] ...))]))
 
 (define-syntax (define-lifted-using-proc stx)
   (syntax-case stx ()
-    [(_ [thing name-in-code new-name type] ...)
+    [(_ env [thing name-in-code new-name type] ...)
      (syntax/loc stx
-       (begin (define new-name (lift thing 'name-in-code type))
+       (begin (begin (define new-name (lift 'name-in-code type))
+                     (set! env (environment-define env 'name-in-code thing)))
               ...))]))
 
 ;; Removes any temporary variable definitions that are never used.

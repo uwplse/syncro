@@ -119,7 +119,8 @@
           (format "make-lifted -- Not a set type ~a" set-type)))
 
        (define new-info (new Lexical-Terminal-Info% [parent terminal-info]))
-       (send new-info make-and-add-terminal var (Set-content-type set-type))
+       (send new-info make-and-add-terminal var (Set-content-type set-type)
+             #:mutable #f)
        (for-enum-set^ (make-lifted new-info operators var)
                       set
                       (make-lifted new-info operators `(begin ,@body))))]

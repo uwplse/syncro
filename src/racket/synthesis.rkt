@@ -175,7 +175,7 @@
     (define make-env-expr
       (for/fold ([curr-env-code 'global-environment])
                 ([id (cons output-id non-output-ids)])
-        `(environment-set ,curr-env-code ',id ,id)))
+        `(environment-define ,curr-env-code ',id ,id)))
 
     ;; TODO: This is misnamed, constants come before this
     (define define-structures

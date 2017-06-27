@@ -1,5 +1,7 @@
 #lang rosette
 
+(require (only-in racket/exn exn->string))
+
 (provide display-errors? maybe-internal-error internal-error
          display-return
          input-val input-preconditions input?
@@ -9,14 +11,15 @@
 
 (define display-errors? (make-parameter #f))
 (define (maybe-internal-error str)
-  (when (display-errors?)
-    (displayln str))
-  (error str))
+  (if (display-errors?)
+      (internal-error str)
+      (error str)))
 
 (define (internal-error str)
   (display "INTERNAL ERROR: ")
-  (displayln str)
-  (error str))
+  (with-handlers ([exn:fail? (lambda (e) (displayln (exn->string e)))])
+    (error str))
+  (exit))
 
 (define (display-return x)
   (displayln x)

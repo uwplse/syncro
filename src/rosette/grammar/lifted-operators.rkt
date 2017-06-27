@@ -74,7 +74,10 @@
   (Procedure-type (list (DAG-type alpha-any) alpha-any)
                   (Set-type alpha-any)))
 
+(define global-environment (make-environment))
+
 (define-lifted
+  global-environment
   [void void^ void-type] [not not^ not-type] ;; and/or defined below
   [= =^ cmp-type] [< <^ cmp-type] [equal? equal?^ equal?-type]
   [+ +^ arith-type] [- -^ arith-type] [* *^ arith-type] #;[/ /^ arith-type]
@@ -97,31 +100,6 @@
   [vertex-children vertex-children^ graph-get-set-type])
 
 (define-lifted-using-proc
+  global-environment
   [(lambda (x y) (and x y)) and and^ and-or-type]
   [(lambda (x y) (or x y))  or  or^  and-or-type])
-
-(define global-environment
-  (make-environment
-   (list (cons 'void void) (cons 'not not)
-         (cons '= =) (cons '< <) (cons 'equal? equal?)
-         (cons '+ +) (cons '- -) (cons '* *)
-
-         (cons 'vector-increment! vector-increment!)
-         (cons 'vector-decrement! vector-decrement!)
-         (cons 'vector-set!       vector-set!)
-         (cons 'vector-ref        vector-ref)
-
-         (cons 'enum-set-add!      enum-set-add!)
-         (cons 'enum-set-remove!   enum-set-remove!)
-         (cons 'enum-set-contains? enum-set-contains?)
-
-         (cons 'map-ref map-ref) (cons 'map-set! map-set!)
-
-         (cons 'add-edge!    add-edge!)
-         (cons 'remove-edge! remove-edge!)
-         (cons 'has-edge?    has-edge?)
-         (cons 'vertex-parents  vertex-parents)
-         (cons 'vertex-children vertex-children)
-
-         (cons 'and (lambda (x y) (and x y)))
-         (cons 'or  (lambda (x y) (or  x y))))))
