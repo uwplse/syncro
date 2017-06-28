@@ -98,6 +98,25 @@
     (error (format "Invalid type for ~a: Requires ~a, got ~a under mapping ~a"
                    name spec-type given-type mapping))))
 
+(define alpha-any (Type-var))
+(define alpha2-any (Type-var))
+(define alpha-idx (Type-var (Index-type)))
+(define bool (Boolean-type))
+(define int (Integer-type))
+
+(define and-or-type (Procedure-type (list bool bool) bool))
+(define cmp-type (Procedure-type (list int int) bool))
+(define arith-type (Procedure-type (list int int) int))
+(define vec-inc/dec-type
+  (Procedure-type (list (Vector-type alpha-idx int) alpha-idx)
+                  (Void-type) #:write-index 0))
+(define vec-set!-type
+  (Procedure-type (list (Vector-type alpha-idx alpha-any) alpha-idx alpha-any)
+                  (Void-type) #:write-index 0))
+(define vec-ref-type
+  (Procedure-type (list (Vector-type alpha-idx alpha-any) alpha-idx)
+                  alpha-any #:read-index 0))
+
 (define (apply-wrapper self . args)
   (if (ormap lifted-error? (cons self args))
       (lifted-error)
@@ -106,8 +125,18 @@
       (match (length args)
         [0 (lifted-apply-0-args self args)]
         [1 (lifted-apply-1-arg  self args)]
-        [2 (lifted-apply-2-args self args)]
+        [2 (let ([selftype (variable-type self)]) 
+          #;(lifted-apply-2-args self args)
+          (cond
+            [(equal? arith-type selftype) (lifted-apply-arith-args self args)]
+            [(equal? cmp-type selftype) (lifted-apply-cmp-args self args)]
+            [(equal? and-or-type selftype) (lifted-apply-andor-args self args)]
+            [(equal? vec-inc/dec-type selftype) (lifted-apply-vecincdec-args self args)]
+            [(equal? vec-set!-type selftype) (lifted-apply-vecset-args self args)]
+            [(equal? vec-ref-type selftype) (lifted-apply-vecref-args self args)]
+            [else (lifted-apply-2-args self args)]))]
         [_ (lifted-apply self args)])))
+
 
 ;; IMPORTANT: This is only a way to provide a custom write function to
 ;; many of the lifted constructs without having to rewrite it each
@@ -116,15 +145,16 @@
 ;; (defined by define-generics above).
 (struct lifted-writer () #:transparent
   #:property prop:procedure apply-wrapper
-  
-  #:methods gen:custom-write
-  [(define (write-proc self port mode)
-     (display "(lifted " port)
-     (case mode
-       [(#t) (write (lifted-code self) port)]
-       [(#f) (display (lifted-code self) port)]
-       [else (print (lifted-code self) port mode)])
-     (display ")" port))])
+
+  ; #:methods gen:custom-write
+  ; [(define (write-proc self port mode)
+  ;    (display "(lifted " port)
+  ;    (case mode
+  ;      [(#t) (write (lifted-code self) port)]
+  ;      [(#f) (display (lifted-code self) port)]
+  ;      [else (print (lifted-code self) port mode)])
+  ;    (display ")" port))]
+)
 
 
 
@@ -199,6 +229,7 @@
   (make-deserialize-info
    (lambda lst (apply lifted-apply lst))
    (const #f)))
+
 (struct lifted-apply lifted-writer (proc args) #:transparent
   #:property prop:serializable
   (make-serialize-info
@@ -260,7 +291,12 @@
 (struct lifted-apply-0-args lifted-apply () #:transparent)
 (struct lifted-apply-1-arg  lifted-apply () #:transparent)
 (struct lifted-apply-2-args lifted-apply () #:transparent)
-
+(struct lifted-apply-arith-args lifted-apply () #:transparent)
+(struct lifted-apply-cmp-args lifted-apply () #:transparent)
+(struct lifted-apply-andor-args lifted-apply () #:transparent)
+(struct lifted-apply-vecincdec-args lifted-apply () #:transparent)
+(struct lifted-apply-vecset-args lifted-apply () #:transparent)
+(struct lifted-apply-vecref-args lifted-apply () #:transparent)
 
 (define deserialize-lifted-begin
   (make-deserialize-info
