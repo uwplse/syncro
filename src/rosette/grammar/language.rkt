@@ -128,7 +128,7 @@
             [(equal? 'has-edge? op-name) (lifted-apply-graph-has-edge?-type-args self args)]
             [(equal? 'vertex-parent op-name) (lifted-apply-graph-get-set-type-args self args)]
             [(equal? 'vertex-children op-name) (lifted-apply-graph-get-set-type-args self args)]
-            [else (internal-error (format "Unknown procedure: ~a" selftype))]))] ; missed some case
+            [else (internal-error (format "Unknown procedure: ~a" op-name))]))] ; missed some case
             ; Note: This will break for higher-order functions
         [_ (lifted-apply self args)])))
 
