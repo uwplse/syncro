@@ -106,29 +106,30 @@
       (match (length args)
         [0 (lifted-apply-0-args self args)]
         [1 (lifted-apply-1-arg  self args)]
-        [2 (let ([selftype (variable-symbol self)]) 
+        [2 (let ([op-name (variable-symbol self)]) 
           #;(lifted-apply-2-args self args)
           (cond
-            [(equal? '+ selftype) (lifted-apply-arith-args self args)]
-            [(equal? '- selftype) (lifted-apply-arith-args self args)]
-            [(equal? '* selftype) (lifted-apply-arith-args self args)]
-            [(equal? '< selftype) (lifted-apply-cmp-args self args)]
-            [(equal? '= selftype) (lifted-apply-cmp-args self args)]
-            [(equal? 'vector-increment! selftype) (lifted-apply-vecincdec-args self args)]
-            [(equal? 'vector-decrement! selftype) (lifted-apply-vecincdec-args self args)]
-            [(equal? 'vector-set! selftype) (lifted-apply-vecset-args self args)]
-            [(equal? 'vector-ref selftype) (lifted-apply-vecref-args self args)]
-            [(equal? 'enum-set-add! selftype) (lifted-apply-enum-set-modify-type-args self args)]
-            [(equal? 'enum-set-remove! selftype) (lifted-apply-enum-set-modify-type-args self args)]
-            [(equal? 'enum-set-contains? selftype) (lifted-apply-enum-set-contains?-type-args self args)]
-            [(equal? 'map-ref selftype) (lifted-apply-map-ref-type-args self args)]
-            [(equal? 'map-set! selftype) (lifted-apply-map-set!-type-args self args)]
-            [(equal? 'add-edge! selftype) (lifted-apply-graph-modify-type-args self args)]
-            [(equal? 'remove-edge! selftype) (lifted-apply-graph-modify-type-args self args)]
-            [(equal? 'has-edge? selftype) (lifted-apply-graph-has-edge?-type-args self args)]
-            [(equal? 'vertex-parent selftype) (lifted-apply-graph-get-set-type-args self args)]
-            [(equal? 'vertex-children selftype) (lifted-apply-graph-get-set-type-args self args)]
-            [else (lifted-apply-2-args self args)]))]
+            [(equal? '+ op-name) (lifted-apply-arith-args self args)]
+            [(equal? '- op-name) (lifted-apply-arith-args self args)]
+            [(equal? '* op-name) (lifted-apply-arith-args self args)]
+            [(equal? '< op-name) (lifted-apply-cmp-args self args)]
+            [(equal? '= op-name) (lifted-apply-cmp-args self args)]
+            [(equal? 'vector-increment! op-name) (lifted-apply-vecincdec-args self args)]
+            [(equal? 'vector-decrement! op-name) (lifted-apply-vecincdec-args self args)]
+            [(equal? 'vector-set! op-name) (lifted-apply-vecset-args self args)]
+            [(equal? 'vector-ref op-name) (lifted-apply-vecref-args self args)]
+            [(equal? 'enum-set-add! op-name) (lifted-apply-enum-set-modify-type-args self args)]
+            [(equal? 'enum-set-remove! op-name) (lifted-apply-enum-set-modify-type-args self args)]
+            [(equal? 'enum-set-contains? op-name) (lifted-apply-enum-set-contains?-type-args self args)]
+            [(equal? 'map-ref op-name) (lifted-apply-map-ref-type-args self args)]
+            [(equal? 'map-set! op-name) (lifted-apply-map-set!-type-args self args)]
+            [(equal? 'add-edge! op-name) (lifted-apply-graph-modify-type-args self args)]
+            [(equal? 'remove-edge! op-name) (lifted-apply-graph-modify-type-args self args)]
+            [(equal? 'has-edge? op-name) (lifted-apply-graph-has-edge?-type-args self args)]
+            [(equal? 'vertex-parent op-name) (lifted-apply-graph-get-set-type-args self args)]
+            [(equal? 'vertex-children op-name) (lifted-apply-graph-get-set-type-args self args)]
+            [else (internal-error (format "Unknown procedure: ~a" selftype))]))] ; missed some case
+            ; Note: This will break for higher-order functions
         [_ (lifted-apply self args)])))
 
 
@@ -140,14 +141,14 @@
 (struct lifted-writer () #:transparent
   #:property prop:procedure apply-wrapper
 
-  ; #:methods gen:custom-write
-  ; [(define (write-proc self port mode)
-  ;    (display "(lifted " port)
-  ;    (case mode
-  ;      [(#t) (write (lifted-code self) port)]
-  ;      [(#f) (display (lifted-code self) port)]
-  ;      [else (print (lifted-code self) port mode)])
-  ;    (display ")" port))]
+  #:methods gen:custom-write
+  [(define (write-proc self port mode)
+     (display "(lifted " port)
+     (case mode
+       [(#t) (write (lifted-code self) port)]
+       [(#f) (display (lifted-code self) port)]
+       [else (print (lifted-code self) port mode)])
+     (display ")" port))]
 )
 
 

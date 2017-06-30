@@ -96,7 +96,6 @@
 (define grm-set-field!^ 'set-field!)
 
 (define default-operators
-  #;(list +^ vector-ref^)
   (list grm-if^ grm-set!^ grm-get-field^ grm-set-field!^
         void^ not^ and^ or^ =^ <^ equal?^ +^ -^ *^ #;/^
         vector-increment!^ vector-decrement!^ vector-set!^ vector-ref^
