@@ -114,6 +114,7 @@
             [(equal? '* op-name) (lifted-apply-arith-args self args)]
             [(equal? '< op-name) (lifted-apply-cmp-args self args)]
             [(equal? '= op-name) (lifted-apply-cmp-args self args)]
+            [(equal? 'equal? op-name) (lifted-apply-equal-args self args)]
             [(equal? 'vector-increment! op-name) (lifted-apply-vecincdec-args self args)]
             [(equal? 'vector-decrement! op-name) (lifted-apply-vecincdec-args self args)]
             [(equal? 'vector-set! op-name) (lifted-apply-vecset-args self args)]
@@ -126,8 +127,10 @@
             [(equal? 'add-edge! op-name) (lifted-apply-graph-modify-type-args self args)]
             [(equal? 'remove-edge! op-name) (lifted-apply-graph-modify-type-args self args)]
             [(equal? 'has-edge? op-name) (lifted-apply-graph-has-edge?-type-args self args)]
-            [(equal? 'vertex-parent op-name) (lifted-apply-graph-get-set-type-args self args)]
+            [(equal? 'vertex-parents op-name) (lifted-apply-graph-get-set-type-args self args)]
             [(equal? 'vertex-children op-name) (lifted-apply-graph-get-set-type-args self args)]
+            [(equal? 'and op-name) (lifted-apply-andor-args self args)]
+            [(equal? 'or op-name) (lifted-apply-andor-args self args)]
             [else (internal-error (format "Unknown procedure: ~a" op-name))]))] ; missed some case
             ; Note: This will break for higher-order functions
         [_ (lifted-apply self args)])))
@@ -288,6 +291,7 @@
 (struct lifted-apply-2-args lifted-apply () #:transparent)
 (struct lifted-apply-arith-args lifted-apply () #:transparent)
 (struct lifted-apply-cmp-args lifted-apply () #:transparent)
+(struct lifted-apply-equal-args lifted-apply () #:transparent)
 (struct lifted-apply-andor-args lifted-apply () #:transparent)
 (struct lifted-apply-vecincdec-args lifted-apply () #:transparent)
 (struct lifted-apply-vecset-args lifted-apply () #:transparent)
