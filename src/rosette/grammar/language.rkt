@@ -96,7 +96,7 @@
 (define (assert-type given-type spec-type mapping name)
   (unless (unify given-type spec-type mapping)
     (error (format "Invalid type for ~a: Requires ~a, got ~a under mapping ~a"
-                   name spec-type given-type mapping))))
+                   name spec-type given-type mapping)))) 
 
 (define (apply-wrapper self . args)
   (if (ormap lifted-error? (cons self args))
@@ -106,8 +106,35 @@
       (match (length args)
         [0 (lifted-apply-0-args self args)]
         [1 (lifted-apply-1-arg  self args)]
-        [2 (lifted-apply-2-args self args)]
+        [2 (let ([op-name (variable-symbol self)]) 
+          #;(lifted-apply-2-args self args)
+          (cond
+            [(equal? '+ op-name) (lifted-apply-arith-args self args)]
+            [(equal? '- op-name) (lifted-apply-arith-args self args)]
+            [(equal? '* op-name) (lifted-apply-arith-args self args)]
+            [(equal? '< op-name) (lifted-apply-cmp-args self args)]
+            [(equal? '= op-name) (lifted-apply-cmp-args self args)]
+            [(equal? 'equal? op-name) (lifted-apply-equal-args self args)]
+            [(equal? 'vector-increment! op-name) (lifted-apply-vecincdec-args self args)]
+            [(equal? 'vector-decrement! op-name) (lifted-apply-vecincdec-args self args)]
+            [(equal? 'vector-set! op-name) (lifted-apply-vecset-args self args)]
+            [(equal? 'vector-ref op-name) (lifted-apply-vecref-args self args)]
+            [(equal? 'enum-set-add! op-name) (lifted-apply-enum-set-modify-type-args self args)]
+            [(equal? 'enum-set-remove! op-name) (lifted-apply-enum-set-modify-type-args self args)]
+            [(equal? 'enum-set-contains? op-name) (lifted-apply-enum-set-contains?-type-args self args)]
+            [(equal? 'map-ref op-name) (lifted-apply-map-ref-type-args self args)]
+            [(equal? 'map-set! op-name) (lifted-apply-map-set!-type-args self args)]
+            [(equal? 'add-edge! op-name) (lifted-apply-graph-modify-type-args self args)]
+            [(equal? 'remove-edge! op-name) (lifted-apply-graph-modify-type-args self args)]
+            [(equal? 'has-edge? op-name) (lifted-apply-graph-has-edge?-type-args self args)]
+            [(equal? 'vertex-parents op-name) (lifted-apply-graph-get-set-type-args self args)]
+            [(equal? 'vertex-children op-name) (lifted-apply-graph-get-set-type-args self args)]
+            [(equal? 'and op-name) (lifted-apply-andor-args self args)]
+            [(equal? 'or op-name) (lifted-apply-andor-args self args)]
+            [else (internal-error (format "Unknown procedure: ~a" op-name))]))] ; missed some case
+            ; Note: This will break for higher-order functions
         [_ (lifted-apply self args)])))
+
 
 ;; IMPORTANT: This is only a way to provide a custom write function to
 ;; many of the lifted constructs without having to rewrite it each
@@ -116,7 +143,7 @@
 ;; (defined by define-generics above).
 (struct lifted-writer () #:transparent
   #:property prop:procedure apply-wrapper
-  
+
   #:methods gen:custom-write
   [(define (write-proc self port mode)
      (display "(lifted " port)
@@ -124,7 +151,8 @@
        [(#t) (write (lifted-code self) port)]
        [(#f) (display (lifted-code self) port)]
        [else (print (lifted-code self) port mode)])
-     (display ")" port))])
+     (display ")" port))]
+)
 
 
 
@@ -199,6 +227,7 @@
   (make-deserialize-info
    (lambda lst (apply lifted-apply lst))
    (const #f)))
+
 (struct lifted-apply lifted-writer (proc args) #:transparent
   #:property prop:serializable
   (make-serialize-info
@@ -260,7 +289,20 @@
 (struct lifted-apply-0-args lifted-apply () #:transparent)
 (struct lifted-apply-1-arg  lifted-apply () #:transparent)
 (struct lifted-apply-2-args lifted-apply () #:transparent)
-
+(struct lifted-apply-arith-args lifted-apply () #:transparent)
+(struct lifted-apply-cmp-args lifted-apply () #:transparent)
+(struct lifted-apply-equal-args lifted-apply () #:transparent)
+(struct lifted-apply-andor-args lifted-apply () #:transparent)
+(struct lifted-apply-vecincdec-args lifted-apply () #:transparent)
+(struct lifted-apply-vecset-args lifted-apply () #:transparent)
+(struct lifted-apply-vecref-args lifted-apply () #:transparent)
+(struct lifted-apply-enum-set-modify-type-args lifted-apply () #:transparent)
+(struct lifted-apply-enum-set-contains?-type-args lifted-apply () #:transparent)
+(struct lifted-apply-map-ref-type-args lifted-apply () #:transparent)
+(struct lifted-apply-map-set!-type-args lifted-apply () #:transparent)
+(struct lifted-apply-graph-modify-type-args lifted-apply () #:transparent)
+(struct lifted-apply-graph-has-edge?-type-args lifted-apply () #:transparent)
+(struct lifted-apply-graph-get-set-type-args lifted-apply () #:transparent)
 
 (define deserialize-lifted-begin
   (make-deserialize-info
