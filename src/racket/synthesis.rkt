@@ -193,11 +193,11 @@
         ;; Basically the same as for intermediates.
         ,define-output))
 
-    (define (make-grammar-expr stmt expr temps guard type mode)
+    (define (make-grammar-expr stmt expr temps guard type mode sketch?)
       `(grammar terminal-info ,stmt ,expr
                 #:num-temps ,temps #:guard-depth ,guard #:type ,type
-                #:version ',(hash-ref options 'grammar-version)
-                #:choice-version ',(hash-ref options 'grammar-choice)
+                #:version ',(if sketch? 'caching (hash-ref options 'grammar-version))
+                #:choice-version ',(if sketch? 'basic (hash-ref options 'grammar-choice))
                 #:mode ',mode
                 #:print-statistics
                 ,(set-member? (hash-ref options 'logging) 'stats)))
@@ -205,7 +205,7 @@
     (define prederiv-defn-code
       `(,@(log-for-option 'progress '(displayln "Generating the prederivative"))
         (define prederiv
-          ,(timing-code (make-grammar-expr 1 1 0 0 (Any-type) '(tmps 2))
+          ,(timing-code (make-grammar-expr 1 1 0 0 (Any-type) '(tmps 2) #f)
                         "generate the prederivative"))))
     (define prederiv-run-code
       `((define initial-env ,make-env-expr)
@@ -234,11 +234,11 @@
                   ,(timing-code
                     `(force-type program (Void-type)
                                  (lambda (type)
-                                   ,(make-grammar-expr 2 2 0 0 'type 'stmt)))
+                                   ,(make-grammar-expr 2 2 0 0 'type 'stmt #t)))
                     "generate the sketch")))
               `((define program
                   ,(timing-code
-                    (make-grammar-expr 2 2 0 1 '(Void-type) 'stmt)
+                    (make-grammar-expr 2 2 0 1 '(Void-type) 'stmt #f)
                     "generate the postderivative"))))))
     (define program-run-code
       `((define env-for-postderiv

@@ -19,7 +19,7 @@
     (internal-error (format "Environment is symbolic! ~a" sym)))
   (for/all ([sym sym])
     (begin
-      (unless (member sym (map car env))
+      (unless (environment-has-symbol? env sym)
         (internal-error (format "Environment does not contain ~a!" sym)))
       (for/first ([p env] #:when (equal? (car p) sym))
         (cdr p)))))
@@ -29,7 +29,7 @@
     (begin
       (unless (environment-has-symbol? env sym)
         (internal-error
-         (format "Tried to set! symbol ~a that's not already defined" sym)))
+         (format "Tried to set symbol ~a that's not already defined" sym)))
       (for/list ([assoc env])
         (if (equal? (car assoc) sym)
             (cons sym value)

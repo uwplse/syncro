@@ -4,6 +4,7 @@
 (require "../rosette/grammar/lifted-operators.rkt"
          "../rosette/grammar/language.rkt"
          "../rosette/grammar/env.rkt"
+         "../rosette/enum-set.rkt"
          "../rosette/types.rkt")
 
 (provide run-language-tests)
@@ -14,12 +15,19 @@
 (define tests
   (test-suite
    "Tests for language.rkt"
-   (let ([env (make-environment
-               (list (cons '+ +) (cons '- -) (cons '* *)
-                     (cons '< <) (cons '= =)
-                     (cons 'void void)))]
-         [x (make-lifted-variable 'x (Integer-type))]
-         [y (make-lifted-variable 'y (Integer-type))])
+   (let* ([env (make-environment
+                (list (cons '+ +) (cons '- -) (cons '* *)
+                      (cons '< <) (cons '= =)
+                      (cons 'void void)
+                      (cons 'vector-set! vector-set!)
+                      (cons 'evens (build-enum-set 10 even?))
+                      (cons 'my-vec (make-vector 10 -1))))]
+          [x (make-lifted-variable 'x (Integer-type))]
+          [y (make-lifted-variable 'y (Integer-type))]
+          [digit-type (Enum-type 'Digit 10)]
+          [digit-var (make-lifted-variable 'digit digit-type)]
+          [evens (make-lifted-variable 'evens (Set-type digit-type))]
+          [my-vec (make-lifted-variable 'my-vec (Vector-type 10 digit-type))])
 
      (define (lifted-test obj expected-result [env env])
        (match-define (list result _) (eval-lifted obj env))
@@ -49,6 +57,12 @@
                                          (set!^ y x) ;; guaranteed nop
                                          ((if^ (<^ x 5) *^ +^) x y))))
                     9))
+
+     (test-case "for loops"
+       (lifted-test (begin^ (for-enum-set^ digit-var evens
+                              (vector-set!^ my-vec digit-var digit-var))
+                            my-vec)
+                    (vector 0 -1 2 -1 4 -1 6 -1 8 -1)))
 
      (test-case "symbolic examples"
        (define-symbolic* b1 b2 boolean?)

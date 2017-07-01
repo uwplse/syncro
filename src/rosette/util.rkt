@@ -19,7 +19,7 @@
   (display "INTERNAL ERROR: ")
   (with-handlers ([exn:fail? (lambda (e) (displayln (exn->string e)))])
     (error str))
-  (exit))
+  (error str))
 
 (define (display-return x)
   (displayln x)

@@ -736,19 +736,23 @@
            (format "eval-lifted: Number of items in enum set should be concrete, was ~a"
                    num-items)))
 
-        ;; We introduce a new variable into the environment here, but
-        ;; never remove it.
-        ;; In our current model, variables can be introduced but can't
-        ;; be removed. We must manually make sure there are no name
-        ;; conflicts.
-        (let loop ([i 0] [result (void)] [loop-env first-env])
-          (cond [(= i num-items)
-                 (list result loop-env)]
-                [(enum-set-contains? set i)
-                 (let ([new-env (environment-set loop-env sym i)])
-                   (apply loop (+ i 1) (gen-eval-lifted body new-env)))]
-                [else
-                 (loop (+ i 1) result loop-env)]))]))
+        (let ([result (void)]
+              [loop-env (environment-define first-env sym 0)])
+          ;; We use a for loop with mutation here in order to force
+          ;; Rosette to merge state after each iteration of the
+          ;; loop. If we wrote it in the standard recursive loop style
+          ;; with no set! statements, then we would get an O(2^n)
+          ;; branching (it would branch every loop iteration based on
+          ;; the result of (enum-set-contains? set i)) because merging
+          ;; would not happen until the end.
+          (for ([i num-items])
+            (when (enum-set-contains? set i)
+              (let ([new-env (environment-set loop-env sym i)])
+                (match-define (list new-result updated-env)
+                  (gen-eval-lifted body new-env))
+                (set! result new-result)
+                (set! loop-env new-env))))
+          (list result loop-env))]))
 
    (define (lifted-code self)
      (match self

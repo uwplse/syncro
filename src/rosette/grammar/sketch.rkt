@@ -97,6 +97,7 @@
   
   (match code
     ;; Special forms
+    [`(begin ,arg) (recurse arg)]
     [`(begin . ,args) (apply begin^ (map recurse args))]
     [`(if ,x ,y ,z) (apply if^ (map recurse (list x y z)))]
     [`(set! ,var ,val) (apply set!^ (map recurse (list var val)))]
@@ -120,7 +121,7 @@
 
        (define new-info (new Lexical-Terminal-Info% [parent terminal-info]))
        (send new-info make-and-add-terminal var (Set-content-type set-type)
-             #:mutable #f)
+             #:mutable? #f)
        (for-enum-set^ (make-lifted new-info operators var)
                       set
                       (make-lifted new-info operators `(begin ,@body))))]
