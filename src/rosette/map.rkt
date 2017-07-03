@@ -12,7 +12,7 @@
 (struct vec-map (keys values) #:transparent)
 
 (define (build-map capacity input-fn output-fn [varset #f])
-  (when (term? capacity)
+  (when (symbolic? capacity)
     (internal-error
      (format "make-symbolic-map: capacity is not concrete: ~a" capacity)))
 
@@ -42,7 +42,7 @@
              (vector-ref vals i))))))
 
 ;; Requires that the key is already in the map.
-(define (map-set! map key val)
+(define (map-set! vecmap key val)
   ;; This is tricky. You are not supposed to use for/all to do
   ;; imperative stuff.
   ;; Since this is a vector, we can simply walk through the indices in
@@ -53,12 +53,12 @@
   ;; the potential maps, and then do all the indices up to that. This
   ;; may include some invalid indices for some maps, so we would have
   ;; to add a check to make sure the index is valid.
-  (define keys (vec-map-keys map))
-  (define vals (vec-map-values map))
+  (define keys (vec-map-keys vecmap))
+  (define vals (vec-map-values vecmap))
   (define capacity (vector-length keys))
   (define max-capacity
     (if (union? keys)
-        (apply max (map second (union-contents capacity)))
+        (apply max (map (compose vector-length cdr) (union-contents keys)))
         capacity))
 
   (for ([i max-capacity])

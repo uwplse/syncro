@@ -46,8 +46,7 @@
      (check-equal? (length (map-values test-map)) 4)
      (check-exn exn:fail? (thunk (map-set! test-map 'b 2))))
 
-   (test-case "Symbolic operations"
-
+   (let ()
      (define-symbolic b1 b2 boolean?)
      (define (check-all-pcs actual expected)
        (for ([formula (list (and      b1  b2) (and      b1  (not b2))
@@ -59,39 +58,57 @@
                          (format "Got ~a, expected ~a for condition ~a"
                                  eval-actual result formula)))))
 
-     (define test-map (make-map 5))
-     (check-equal? (map-keys test-map) '())
-     (check-equal? (map-values test-map) '())
-     (check-false (map-has-key? test-map 'a))
+     (test-case "Symbolic operations"
 
-     (when (and b1 b2)
-       (map-set! test-map 'a 1))
-     (when (or b1 b2)
-       (map-set! test-map 'b 2))
+       (define test-map (make-map 5))
+       (check-equal? (map-keys test-map) '())
+       (check-equal? (map-values test-map) '())
+       (check-false (map-has-key? test-map 'a))
 
-     (check-all-pcs (map-ref test-map 'a) '(1 #f #f #f))
-     (check-all-pcs (map-ref test-map 'b) '(2 2 2 #f))
+       (when (and b1 b2)
+         (map-set! test-map 'a 1))
+       (when (or b1 b2)
+         (map-set! test-map 'b 2))
 
-     (unless b1
-       (map-set! test-map 'a (if (map-has-key? test-map 'b)
-                                 (map-ref test-map 'b)
-                                 3)))
+       (check-all-pcs (map-ref test-map 'a) '(1 #f #f #f))
+       (check-all-pcs (map-ref test-map 'b) '(2 2 2 #f))
 
-     (check-all-pcs (map-ref test-map 'a) '(1 #f 2 3))
-     (check-all-pcs (map-ref test-map 'b) '(2 2 2 #f)))
+       (unless b1
+         (map-set! test-map 'a (if (map-has-key? test-map 'b)
+                                   (map-ref test-map 'b)
+                                   3)))
 
-   (test-case "check-max"
-     (define test-map (make-map 5))
-     (define-symbolic b boolean?)
-     (when b
-       (map-set! test-map 'a 1)
-       (map-set! test-map 'b 2)
-       (map-set! test-map 'c 3)
-       (map-set! test-map 'd 4)
-       (map-set! test-map 'e 5))
-     ;; list of keys should not be concretely empty
-     (check-equal? (equal? (map-keys test-map) '()) (not b)))
-   ))
+       (check-all-pcs (map-ref test-map 'a) '(1 #f 2 3))
+       (check-all-pcs (map-ref test-map 'b) '(2 2 2 #f)))
+
+     (test-case "check-max"
+       (define test-map (make-map 5))
+       (when b1
+         (map-set! test-map 'a 1)
+         (map-set! test-map 'b 2)
+         (map-set! test-map 'c 3)
+         (map-set! test-map 'd 4)
+         (map-set! test-map 'e 5))
+       ;; list of keys should not be concretely empty
+       (check-all-pcs (equal? (map-keys test-map) '()) '(#f #f #t #t)))
+
+     (test-case "Multiple maps"
+       (define test-map
+         (if b1
+             (make-map 5)
+             (let ([m (make-map 3)])
+               (map-set! m 'original 'value)
+               m)))
+
+       (when (and b1 b2)
+         (map-set! test-map 'a 1))
+       (when (or b1 b2)
+         (map-set! test-map 'b 2))
+
+       (check-all-pcs (map-ref test-map 'original) '(#f #f value value))
+       (check-all-pcs (map-ref test-map 'a) '(1 #f #f #f))
+       (check-all-pcs (map-ref test-map 'b) '(2 2 2 #f)))
+     )))
 
 (define (run-transactional-map-tests)
   (displayln "Running tests for transactional-map.rkt")

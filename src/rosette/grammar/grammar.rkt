@@ -96,7 +96,7 @@
   ;; Don't add the terminal if it is definitely #f, but add it
   ;; if it may not be #f
   (define lifted-sym
-    (if (and (not (term? subexp)) (false? subexp))
+    (if (and (not (symbolic? subexp)) (false? subexp))
         (make-lifted-variable sym (Void-type) #:mutable? #f)
         (send terminal-info make-and-add-terminal sym type
               #:mutable? mutable?)))

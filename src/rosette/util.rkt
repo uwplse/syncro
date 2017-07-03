@@ -3,7 +3,7 @@
 (require (only-in racket/exn exn->string))
 
 (provide display-errors? maybe-internal-error internal-error
-         display-return
+         display-return symbolic?
          input-val input-preconditions input?
          (rename-out [input make-input])
          my-for/sum my-for/or my-for/and coerce-evaluate clone
@@ -24,6 +24,9 @@
 (define (display-return x)
   (displayln x)
   x)
+
+(define (symbolic? x)
+  (or (term? x) (union? x)))
 
 ;; Used wherever we could have a value but don't yet know it.
 (struct unknown-value () #:transparent)

@@ -7,7 +7,7 @@
  (only-in rosette/base/core/reflect symbolics)
  (only-in rosette/query/core eval/asserts)
  rosette/query/eval rosette/query/finitize
- (only-in rosette/base/core/term constant? term-type get-type term? term-cache clear-terms! term<? solvable-default)
+ (only-in rosette/base/core/term constant? term-type get-type term-cache clear-terms! term<? solvable-default)
  (only-in rosette/base/core/equality @equal?)
  (only-in rosette/base/core/bool ! || && => with-asserts-only @boolean?)
  (only-in rosette/base/core/function fv)

@@ -108,33 +108,34 @@
       (match (length args)
         [0 (lifted-apply-0-args self args)]
         [1 (lifted-apply-1-arg  self args)]
-        [2 (let ([op-name (variable-symbol self)]) 
-          #;(lifted-apply-2-args self args)
-          (cond
-            [(equal? '+ op-name) (lifted-apply-arith-args self args)]
-            [(equal? '- op-name) (lifted-apply-arith-args self args)]
-            [(equal? '* op-name) (lifted-apply-arith-args self args)]
-            [(equal? '< op-name) (lifted-apply-cmp-args self args)]
-            [(equal? '= op-name) (lifted-apply-cmp-args self args)]
-            [(equal? 'equal? op-name) (lifted-apply-equal-args self args)]
-            [(equal? 'vector-increment! op-name) (lifted-apply-vecincdec-args self args)]
-            [(equal? 'vector-decrement! op-name) (lifted-apply-vecincdec-args self args)]
-            [(equal? 'vector-set! op-name) (lifted-apply-vecset-args self args)]
-            [(equal? 'vector-ref op-name) (lifted-apply-vecref-args self args)]
-            [(equal? 'enum-set-add! op-name) (lifted-apply-enum-set-modify-type-args self args)]
-            [(equal? 'enum-set-remove! op-name) (lifted-apply-enum-set-modify-type-args self args)]
-            [(equal? 'enum-set-contains? op-name) (lifted-apply-enum-set-contains?-type-args self args)]
-            [(equal? 'map-ref op-name) (lifted-apply-map-ref-type-args self args)]
-            [(equal? 'map-set! op-name) (lifted-apply-map-set!-type-args self args)]
-            [(equal? 'add-edge! op-name) (lifted-apply-graph-modify-type-args self args)]
-            [(equal? 'remove-edge! op-name) (lifted-apply-graph-modify-type-args self args)]
-            [(equal? 'has-edge? op-name) (lifted-apply-graph-has-edge?-type-args self args)]
-            [(equal? 'vertex-parents op-name) (lifted-apply-graph-get-set-type-args self args)]
-            [(equal? 'vertex-children op-name) (lifted-apply-graph-get-set-type-args self args)]
-            [(equal? 'and op-name) (lifted-apply-andor-args self args)]
-            [(equal? 'or op-name) (lifted-apply-andor-args self args)]
-            [else (internal-error (format "Unknown procedure: ~a" op-name))]))] ; missed some case
-            ; Note: This will break for higher-order functions
+        [2 (if (not (lifted-variable? self))
+               (lifted-apply-2-args self args)
+               (for/all ([op-name (variable-symbol self)])
+                 (match op-name
+                   ['+ (lifted-apply-arith-args self args)]
+                   ['- (lifted-apply-arith-args self args)]
+                   ['* (lifted-apply-arith-args self args)]
+                   ['< (lifted-apply-cmp-args self args)]
+                   ['= (lifted-apply-cmp-args self args)]
+                   ['equal? (lifted-apply-equal-args self args)]
+                   ['vector-increment! (lifted-apply-vecincdec-args self args)]
+                   ['vector-decrement! (lifted-apply-vecincdec-args self args)]
+                   ['vector-set! (lifted-apply-vecset-args self args)]
+                   ['vector-ref (lifted-apply-vecref-args self args)]
+                   ['enum-set-add! (lifted-apply-enum-set-modify-type-args self args)]
+                   ['enum-set-remove! (lifted-apply-enum-set-modify-type-args self args)]
+                   ['enum-set-contains? (lifted-apply-enum-set-contains?-type-args self args)]
+                   ['map-ref (lifted-apply-map-ref-type-args self args)]
+                   ['map-set! (lifted-apply-map-set!-type-args self args)]
+                   ['add-edge! (lifted-apply-graph-modify-type-args self args)]
+                   ['remove-edge! (lifted-apply-graph-modify-type-args self args)]
+                   ['has-edge? (lifted-apply-graph-has-edge?-type-args self args)]
+                   ['vertex-parents (lifted-apply-graph-get-set-type-args self args)]
+                   ['vertex-children (lifted-apply-graph-get-set-type-args self args)]
+                   ['and (lifted-apply-andor-args self args)]
+                   ['or (lifted-apply-andor-args self args)]
+                   [_ (internal-error (format "Unknown procedure: ~a" op-name))])))] ; missed some case
+        ; Note: This will break for higher-order functions
         [_ (lifted-apply self args)])))
 
 
@@ -154,7 +155,7 @@
        [(#f) (display (lifted-code self) port)]
        [else (print (lifted-code self) port mode)])
      (display ")" port))]
-)
+  )
 
 
 
@@ -251,11 +252,11 @@
      (let loop ([result '()]
                 [loop-env env-after-proc]
                 [lifted-args (lifted-apply-args self)])
-         (if (null? lifted-args)
-             (list (apply proc (reverse result)) loop-env)
-             (match-let ([(list arg-val new-env)
-                          (gen-eval-lifted (car lifted-args) loop-env)])
-               (loop (cons arg-val result) new-env (cdr lifted-args))))))
+       (if (null? lifted-args)
+           (list (apply proc (reverse result)) loop-env)
+           (match-let ([(list arg-val new-env)
+                        (gen-eval-lifted (car lifted-args) loop-env)])
+             (loop (cons arg-val result) new-env (cdr lifted-args))))))
 
    (define (lifted-code self)
      (cons (gen-lifted-code (lifted-apply-proc self))
@@ -333,7 +334,9 @@
    (define/generic gen-fold-lifted fold-lifted)
    
    (define (eval-lifted self initial-env)
-     ;; TODO: This would be an issue if the number of args is symbolic
+     (when (symbolic? (lifted-begin-args self))
+       (internal-error "Can't have a symbolic number of expressions in begin"))
+
      (let loop ([lifted-args (lifted-begin-args self)]
                 [result (void)]
                 [loop-env initial-env])
@@ -400,13 +403,13 @@
    (define (eval-lifted self initial-env)
      (match-define (list condition-val next-env)
        (gen-eval-lifted (lifted-if-condition self) initial-env))
-     (when (union? next-env)
+     (when (symbolic? next-env)
        (printf "Symbolic environment after evaluating the condition of ~a~%" (lifted-code self)))
      (match-define (list result final-env)
        (if condition-val
            (gen-eval-lifted (lifted-if-then-branch self) next-env)
            (gen-eval-lifted (lifted-if-else-branch self) next-env)))
-     (when (union? final-env)
+     (when (symbolic? final-env)
        (printf "Symbolic environment after evaluating ~a~%" (lifted-code self)))
      (list result final-env))
 
@@ -497,7 +500,7 @@
        (get-record-field-type record-type (lifted-get-field-field-name self))))
 
    (define (force-type-helper self type mapping)
-     (when (union? self)
+     (when (symbolic? self)
        (internal-error (format "get-field: Should not be a union: ~a" self)))
      (match self
        [(lifted-get-field record fname)
@@ -576,7 +579,7 @@
        (Void-type)))
 
    (define (force-type-helper self type mapping)
-     (when (union? self)
+     (when (symbolic? self)
        (internal-error (format "set-field!: Should not be a union: ~a" self)))
 
      (assert-type type (Void-type) mapping "set-field!")
@@ -731,7 +734,7 @@
         ;; This may be an issue. What if the set expression could give
         ;; one of two different sets that have different lengths? The
         ;; type system might prevent this, I'm not sure.
-        (when (term? num-items)
+        (when (symbolic? num-items)
           (internal-error
            (format "eval-lifted: Number of items in enum set should be concrete, was ~a"
                    num-items)))

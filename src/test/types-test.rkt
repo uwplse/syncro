@@ -1,7 +1,7 @@
 #lang rosette
 
 (require rackunit rackunit/text-ui)
-(require "../rosette/types.rkt")
+(require "../rosette/types.rkt" "../rosette/util.rkt")
 
 (provide run-types-tests)
 
@@ -168,11 +168,11 @@
        (check-false (is-supertype? bv5 (Bitvector-type 10)))
        (check-false (is-supertype? (Bitvector-type 10) bv5))
 
-       (check-true (symbolic? int))
+       (check-true (symbolic-creator? int))
        (check-false (has-setters? int))
-       (check-true (symbolic? vec-var))
+       (check-true (symbolic-creator? vec-var))
        (check-true (has-setters? vec-var))
-       (check-false (symbolic? err)))
+       (check-false (symbolic-creator? err)))
 
      (test-case "Recursive supertyping"
        (check-true (is-supertype? (Vector-type int bool)
@@ -241,7 +241,7 @@
              (Set-type enum)))
        
        (define (anywhere-symbolic? lst)
-         (or (union? lst)
+         (or (symbolic? lst)
              (and (list? lst) (ormap anywhere-symbolic? lst))))
        (define (concrete-repr x)
          (define result (repr x))

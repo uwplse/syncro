@@ -15,7 +15,7 @@
   (member sym (map car env)))
 
 (define (environment-ref env sym)
-  (when (union? env)
+  (when (symbolic? env)
     (internal-error (format "Environment is symbolic! ~a" sym)))
   (for/all ([sym sym])
     (begin
@@ -36,7 +36,7 @@
             assoc)))))
 
 (define (environment-define env sym value)
-  (when (or (union? sym) (term? sym))
+  (when (symbolic? sym)
     (internal-error
      (format "Cannot define a symbolic symbol ~a" sym)))
   (unless (eq? (pc) #t)
@@ -56,7 +56,7 @@
 ;;   (rhash-set env sym val))
 
 ;; (define (merge-env env)
-;;   (if (not (union? env))
+;;   (if (not (symbolic? env))
 ;;       env
 ;;       (let* ([gv-pairs (union-contents env)]
 ;;              [guards (map car gv-pairs)]
