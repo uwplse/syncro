@@ -193,8 +193,9 @@
         ;; Basically the same as for intermediates.
         ,define-output))
 
-    (define (make-grammar-expr stmt expr temps guard type mode sketch?)
-      `(grammar terminal-info ,stmt ,expr
+    (define (make-grammar-expr stmt expr temps guard type mode sketch?
+                               #:terminal-info [info-var 'terminal-info])
+      `(grammar ,info-var ,stmt ,expr
                 #:num-temps ,temps #:guard-depth ,guard #:type ,type
                 #:version ',(if sketch? 'caching (hash-ref options 'grammar-version))
                 #:choice-version ',(if sketch? 'basic (hash-ref options 'grammar-choice))
@@ -233,8 +234,9 @@
                     (make-lifted terminal-info all-operators ',sketch))
                   ,(timing-code
                     `(force-type program (Void-type)
-                                 (lambda (type)
-                                   ,(make-grammar-expr 2 2 0 0 'type 'stmt #t)))
+                                 (lambda (info type)
+                                   ,(make-grammar-expr 2 2 0 0 'type 'stmt #t
+                                                       #:terminal-info 'info)))
                     "generate the sketch")))
               `((define program
                   ,(timing-code

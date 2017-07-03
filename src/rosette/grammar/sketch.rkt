@@ -10,7 +10,7 @@
   (make-deserialize-info
    (lambda (val) (lifted-grammar val (and val (infer-type val)) #f))
    (const #f)))
-(struct lifted-grammar lifted-writer ([value #:mutable] [type #:mutable]) #:transparent
+(struct lifted-grammar lifted-writer (terminal-info [value #:mutable] [type #:mutable]) #:transparent
   #:property prop:serializable
   (make-serialize-info
    (lambda (s) (vector (lifted-grammar-value s)))
@@ -56,8 +56,8 @@
 (define (check-grammar-defined x)
   (unless (lifted-grammar-value x)
     (internal-error "Lifted grammar has not performed grammar generation yet!")))
-(define (make-lifted-grammar [type #f])
-  (lifted-grammar #f type))
+(define (make-lifted-grammar terminal-info [type #f])
+  (lifted-grammar terminal-info #f type))
 
 
 ;; Sets the types of any lifted-grammar nodes in lifted such that the
@@ -75,10 +75,11 @@
   ;; Concretize the type and generate the program for lifted-grammars
   (define (handle-node node)
     (when (lifted-grammar? node)
-      (let* ([orig-type (lifted-grammar-type node)]
+      (let* ([info (lifted-grammar-terminal-info node)]
+             [orig-type (lifted-grammar-type node)]
              [new-type (replace-type-vars orig-type mapping #t)])
         (set-lifted-grammar-type! node new-type)
-        (set-lifted-grammar-value! node (grammar-fn new-type)))))
+        (set-lifted-grammar-value! node (grammar-fn info new-type)))))
 
   ;; Call handle-node on all lifted-grammars
   (fold-lifted lifted handle-node (const #t)))
@@ -127,8 +128,8 @@
                       (make-lifted new-info operators `(begin ,@body))))]
 
     ;; Grammar generation
-    [`(??) (make-lifted-grammar)]
-    [`(?? ,type) (make-lifted-grammar type)]
+    [`(??) (make-lifted-grammar terminal-info)]
+    [`(?? ,type) (make-lifted-grammar terminal-info type)]
 
     ;; Procedure application
     [`(,proc . ,args) (apply (recurse proc) (map recurse args))]
