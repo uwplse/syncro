@@ -8,20 +8,20 @@
          enum-set-union enum-set->list for-enum-set)
 
 (define (enum-make-set num-things)
-  (when (term? num-things)
+  (when (symbolic? num-things)
     (internal-error
      (format "enum-make-set: num-things is not concrete: ~a" num-things)))
   (make-vector num-things #f))
 
 (define (build-enum-set num-things fn)
-  (when (term? num-things)
+  (when (symbolic? num-things)
     (internal-error
      (format "build-enum-set: num-things is not concrete: ~a" num-things)))
   (for/vector #:length num-things ([i num-things])
     (fn i)))
 
 (define (enum-make-symbolic-set num-things [varset #f])
-  (when (term? num-things)
+  (when (symbolic? num-things)
     (internal-error
      (format "enum-make-symbolic-set: num-things is not concrete: ~a" num-things)))
   (for/vector #:length num-things ([i num-things])
@@ -92,7 +92,7 @@
   (begin
     (define set set-expr)
     (define num-items (vector-length set))
-    (when (term? num-items)
+    (when (symbolic? num-items)
       (internal-error
        (format "for-enum-set: Number of items in enum set should be concrete, was ~a"
                num-items)))

@@ -43,7 +43,7 @@
  (struct-out tm-pair)
 
  ;; Generic function stuff
- gen:Type Type? gen:symbolic symbolic?
+ gen:Type Type? gen:symbolic-creator symbolic-creator?
 
  ;; General utility functions
  get-parent is-supertype? repr apply-on-symbolic-type
@@ -213,16 +213,16 @@
            (unify-helper t2 t1 mapping)]
           [else #f])))
 
-(define-generics symbolic
+(define-generics symbolic-creator
   ;; Returns #t if it is possible to modify elements in a value of
   ;; this type (eg. Vectors), #f otherwise (eg. Booleans)
   ;; Can be used even when configurables don't have values yet.
-  (has-setters? symbolic)
+  (has-setters? symbolic-creator)
   ;; Returns a symbolic value of this type. If varset is not #f, it
   ;; must be a set, and any symbolic variables created are added to
   ;; varset.
   ;; CANNOT be used if configurables don't have values.
-  (make-symbolic symbolic varset)
+  (make-symbolic symbolic-creator varset)
   ;; For a given kind of update to this type (eg. assignment),
   ;; generates argument names that would be used in the update
   ;; function.
@@ -231,7 +231,7 @@
   ;; Then the update procedure should look like
   ;; (define (assign-v! index1 val2) ...)
   ;; Can be used even when configurables don't have values yet.
-  (generate-update-arg-names symbolic update-type))
+  (generate-update-arg-names symbolic-creator update-type))
 
 (define (make-rosette-val rosette-type varset)
   (define-symbolic* val rosette-type)
@@ -259,7 +259,7 @@
      (list 'Any-type))
 
    (define (unify-helper self other-type mapping)
-      (unless (and (not (term? other-type)) (Any-Type? other-type))
+      (unless (and (not (symbolic? other-type)) (Any-Type? other-type))
         (internal-error "unify-helper requirement not satisfied"))
       other-type)]
 
@@ -286,7 +286,7 @@
      (list 'Bottom-type))
 
    (define (unify-helper self other-type mapping)
-      (unless (and (not (term? other-type)) (Bottom-Type? other-type))
+      (unless (and (not (symbolic? other-type)) (Bottom-Type? other-type))
         (internal-error "unify-helper requirement not satisfied"))
       other-type)])
 
@@ -312,12 +312,12 @@
            (gen-repr (Alias-Type-base-type self))))
 
    (define (unify-helper self other-type mapping)
-      (unless (and (not (term? other-type)) (Alias-Type? other-type))
+      (unless (and (not (symbolic? other-type)) (Alias-Type? other-type))
         (internal-error "unify-helper requirement not satisfied"))
       (and (equal? (Alias-Type-id self) (Alias-Type-id other-type))
            other-type))]
 
-  #:methods gen:symbolic
+  #:methods gen:symbolic-creator
   [(define/generic gen-make-symbolic make-symbolic)
 
    (define (make-symbolic self varset)
@@ -348,12 +348,12 @@
      (list 'Base-type (Base-Type-id self)))
 
    (define (unify-helper self other-type mapping)
-      (unless (and (not (term? other-type)) (Base-Type? other-type))
+      (unless (and (not (symbolic? other-type)) (Base-Type? other-type))
         (internal-error "unify-helper requirement not satisfied"))
       (and (= (Base-Type-id self) (Base-Type-id other-type))
            other-type))]
 
-  #:methods gen:symbolic
+  #:methods gen:symbolic-creator
   [(define (make-symbolic self varset) #f)])
 
 (define Base-type
@@ -380,11 +380,11 @@
      (list 'Boolean-type))
 
    (define (unify-helper self other-type mapping)
-      (unless (and (not (term? other-type)) (Boolean-Type? other-type))
+      (unless (and (not (symbolic? other-type)) (Boolean-Type? other-type))
         (internal-error "unify-helper requirement not satisfied"))
       other-type)]
 
-  #:methods gen:symbolic
+  #:methods gen:symbolic-creator
   [(define (has-setters? self) #f)
 
    (define (make-symbolic self varset)
@@ -417,7 +417,7 @@
      (list 'Index-type))
 
    (define (unify-helper self other-type mapping)
-      (unless (and (not (term? other-type)) (Index-Type? other-type))
+      (unless (and (not (symbolic? other-type)) (Index-Type? other-type))
         (internal-error "unify-helper requirement not satisfied"))
       other-type)])
 
@@ -438,11 +438,11 @@
      (list 'Integer-type))
 
    (define (unify-helper self other-type mapping)
-      (unless (and (not (term? other-type)) (Integer-Type? other-type))
+      (unless (and (not (symbolic? other-type)) (Integer-Type? other-type))
         (internal-error "unify-helper requirement not satisfied"))
       other-type)]
 
-  #:methods gen:symbolic
+  #:methods gen:symbolic-creator
   [(define (has-setters? self) #f)
 
    (define (make-symbolic self varset)
@@ -478,13 +478,13 @@
      (list 'Bitvector-type (repr-configurable (Bitvector-Type-bits self))))
 
    (define (unify-helper self other-type mapping)
-      (unless (and (not (term? other-type)) (Bitvector-Type? other-type))
+      (unless (and (not (symbolic? other-type)) (Bitvector-Type? other-type))
         (internal-error "unify-helper requirement not satisfied"))
       (and (compatible-ints? (Bitvector-Type-bits self)
                              (Bitvector-Type-bits other-type))
            other-type))]
 
-  #:methods gen:symbolic
+  #:methods gen:symbolic-creator
   [(define (has-setters? self) #f)
 
    (define (make-symbolic self varset)
@@ -535,12 +535,12 @@
            (repr-configurable (Enum-Type-num-items self))))
 
    (define (unify-helper self other-type mapping)
-      (unless (and (not (term? other-type)) (Enum-Type? other-type))
+      (unless (and (not (symbolic? other-type)) (Enum-Type? other-type))
         (internal-error "unify-helper requirement not satisfied"))
       (and (equal? (Enum-Type-name self) (Enum-Type-name other-type))
            other-type))]
 
-  #:methods gen:symbolic
+  #:methods gen:symbolic-creator
   [(define (has-setters? self) #f)
 
    (define (make-symbolic self varset)
@@ -607,7 +607,7 @@
    (define (apply-on-symbolic-type-helper self fn)
      (let ([len (Vector-Type-len self)])
        ;; TODO(correctness): What do we do when the length is symbolic?
-       #;(when (term? len)
+       #;(when (symbolic? len)
          (internal-error
           (format "Vector length should not be symbolic: ~a" len)))
 
@@ -620,7 +620,7 @@
              (fn (Vector-Type len c-index-type c-output-type))))))))
    
    (define (unify-helper self other-type mapping)
-     (unless (and (not (term? other-type)) (Vector-Type? other-type))
+     (unless (and (not (symbolic? other-type)) (Vector-Type? other-type))
        (internal-error "unify-helper requirement not satisfied"))
 
      (define my-len (Vector-Type-len self))
@@ -656,7 +656,7 @@
                   (gen-replace-type-vars (Vector-Type-output-type self)
                                          mapping default)))]
 
-  #:methods gen:symbolic
+  #:methods gen:symbolic-creator
   [(define/generic gen-has-setters? has-setters?)
    (define/generic gen-make-symbolic make-symbolic)
    (define/generic gen-generate-update-arg-names generate-update-arg-names)
@@ -741,7 +741,7 @@
       (lambda (concrete-type) (fn (Set-Type concrete-type)))))
 
    (define (unify-helper self other-type mapping)
-     (unless (and (not (term? other-type)) (Set-Type? other-type))
+     (unless (and (not (symbolic? other-type)) (Set-Type? other-type))
        (internal-error "unify-helper requirement not satisfied"))
 
      (let ([new-content (unify (Set-Type-content-type self)
@@ -756,7 +756,7 @@
      (Set-Type (gen-replace-type-vars (Set-Type-content-type self)
                                       mapping default)))]
   
-  #:methods gen:symbolic
+  #:methods gen:symbolic-creator
   [(define/generic gen-make-symbolic make-symbolic)
    (define/generic gen-generate-update-arg-names generate-update-arg-names)
    
@@ -810,7 +810,7 @@
    (define (apply-on-symbolic-type-helper self fn)
      (let ([capacity (Map-Type-capacity self)])
        ;; TODO: What to do if the capacity is symbolic?
-       #;(when (term? capacity)
+       #;(when (symbolic? capacity)
          (internal-error
           (format "Map capacity should not be symbolic: ~a" capacity)))
 
@@ -823,7 +823,7 @@
              (fn (Map-Type capacity c-input-type c-output-type))))))))
    
    (define (unify-helper self other-type mapping)
-     (unless (and (not (term? other-type)) (Map-Type? other-type))
+     (unless (and (not (symbolic? other-type)) (Map-Type? other-type))
        (internal-error "unify-helper requirement not satisfied"))
 
      (define my-cap (Map-Type-capacity self))
@@ -857,7 +857,7 @@
                (gen-replace-type-vars (Map-Type-output-type self)
                                       mapping default)))]
 
-  #:methods gen:symbolic
+  #:methods gen:symbolic-creator
   [(define/generic gen-make-symbolic make-symbolic)
    
    (define (has-setters? self) #t)
@@ -873,7 +873,7 @@
 (define (Map-type capacity input-type output-type)
   (unless (or (equal? capacity 'unknown)
               (configurable? capacity)
-              (and (integer? capacity) (not (term? capacity))))
+              (and (integer? capacity) (not (symbolic? capacity))))
     (error (format "Cannot make a Map-type with capacity ~a~%" capacity)))
   (Map-Type capacity input-type output-type))
 
@@ -910,7 +910,7 @@
       (lambda (concrete-type) (fn (DAG-Type concrete-type)))))
 
    (define (unify-helper self other-type mapping)
-     (unless (and (not (term? other-type)) (DAG-Type? other-type))
+     (unless (and (not (symbolic? other-type)) (DAG-Type? other-type))
        (internal-error "unify-helper requirement not satisfied"))
 
      (let ([new-vertex (unify (DAG-Type-vertex-type self)
@@ -925,7 +925,7 @@
      (DAG-Type (gen-replace-type-vars (DAG-Type-vertex-type self)
                                       mapping default)))]
   
-  #:methods gen:symbolic
+  #:methods gen:symbolic-creator
   [(define/generic gen-has-setters? has-setters?)
    (define/generic gen-make-symbolic make-symbolic)
    (define/generic gen-generate-update-arg-names generate-update-arg-names)
@@ -996,8 +996,8 @@
    ;; This unification is not commutative. It takes the name from
    ;; self and ignores the name of other-type. Same with constant?
    (define (unify-helper self other-type mapping)
-     (when (union? self) (internal-error "Should not get a union here"))
-     (unless (and (not (term? other-type)) (Record-Type? other-type))
+     (when (symbolic? self) (internal-error "Should not get a union here"))
+     (unless (and (not (symbolic? other-type)) (Record-Type? other-type))
        (internal-error "unify-helper requirement not satisfied"))
 
      (for/all ([other-type other-type])
@@ -1027,7 +1027,7 @@
                  (Record-Type-field-types self))))
 
    (define (replace-type-vars self mapping [default #f])
-     (when (union? self) (internal-error "Should not get a union here"))
+     (when (symbolic? self) (internal-error "Should not get a union here"))
      (match self
        [(Record-Type constructor fields field-types field-constant?)
         (Record-type constructor fields
@@ -1036,7 +1036,7 @@
                          (gen-replace-type-vars type mapping default)))
                      field-constant?)]))]
   
-  #:methods gen:symbolic
+  #:methods gen:symbolic-creator
   [(define/generic gen-make-symbolic make-symbolic)
    (define/generic gen-generate-update-arg-names generate-update-arg-names)
    
@@ -1168,7 +1168,7 @@
    ;; range. If we ever construct Procedure types programmatically
    ;; that contain free variables, this will not work.
    (define (repr self)
-     (when (union? self) (internal-error "Should not get a union here"))
+     (when (symbolic? self) (internal-error "Should not get a union here"))
      (match self
        [(Procedure-Type domain-types range-type _ ridx widx)
         (list 'Procedure-type
@@ -1180,7 +1180,7 @@
    (define (apply-on-symbolic-type-helper self fn)
      (let* ([ridx (Procedure-Type-read-index self)]
             [widx (Procedure-Type-write-index self)])
-       (when (or (term? ridx) (term? widx))
+       (when (or (symbolic? ridx) (symbolic? widx))
          (internal-error
           (format "Procedure indexes should not be symbolic: ~a ~a" ridx widx)))
 
@@ -1201,7 +1201,7 @@
 
    ;; TODO: What to do about read and write indexes?
    (define (unify-helper self other-type mapping)
-     (unless (and (not (term? other-type)) (Procedure-Type? other-type))
+     (unless (and (not (symbolic? other-type)) (Procedure-Type? other-type))
        (internal-error "unify-helper requirement not satisfied"))
 
      (define copy (make-fresh self))
@@ -1224,7 +1224,7 @@
                                     #:write-index copy-widx))))]))
 
    (define (get-free-type-vars self)
-     (when (union? self) (internal-error "Should not get a union here"))
+     (when (symbolic? self) (internal-error "Should not get a union here"))
      
      (match self
        [(Procedure-Type domain range bound-vars _ _)
@@ -1234,7 +1234,7 @@
 
    ;; TODO: Handle procedure types with free variables
    (define (replace-type-vars self mapping [default #f])
-     (when (union? self) (internal-error "Should not be a union"))
+     (when (symbolic? self) (internal-error "Should not be a union"))
      (match self
        [(Procedure-Type domain range bound-vars ridx widx)
         (Procedure-type
@@ -1268,10 +1268,9 @@
   ;; Use #f as default so free type variables don't get replaced.
   (replace-type-vars proc-type mapping #f))
 
-;; TODO: We could get unions of ids, what do we do in such cases?
 (define (checked-gensym id)
-  (when (union? id)
-    (internal-error (format "Called gensym on a symbolic union: ~a" id)))
+  (when (symbolic? id)
+    (internal-error (format "Called gensym on a symbolic id: ~a" id)))
   (gensym id))
 
 (define (apply-type proc-type arg-types)
@@ -1320,7 +1319,7 @@
      (list 'Error-type))
 
    (define (unify-helper self other-type mapping)
-     (unless (and (not (term? other-type)) (Error-Type? other-type))
+     (unless (and (not (symbolic? other-type)) (Error-Type? other-type))
        (internal-error "unify-helper requirement not satisfied"))
      other-type)])
 
@@ -1341,7 +1340,7 @@
      (list 'Void-type))
 
    (define (unify-helper self other-type mapping)
-     (unless (and (not (term? other-type)) (Void-Type? other-type))
+     (unless (and (not (symbolic? other-type)) (Void-Type? other-type))
        (internal-error "unify-helper requirement not satisfied"))
      other-type)])
 
@@ -1371,7 +1370,7 @@
 
    (define (apply-on-symbolic-type-helper self fn)
      (let ([id (Type-Var-id self)])
-       (when (term? id)
+       (when (symbolic? id)
          (internal-error
           (format "Type var id should not be symbolic: ~a" id)))
 
@@ -1382,7 +1381,7 @@
             (fn (Type-Var id c-default)))))))
    
    (define (unify-helper self other-type mapping)
-     (unless (not (term? other-type))
+     (unless (not (symbolic? other-type))
        (internal-error "unify-helper requirement not satisfied"))
 
      (if (equal? self other-type)

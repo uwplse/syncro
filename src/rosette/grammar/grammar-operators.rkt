@@ -13,6 +13,9 @@
  make-operator
  ;; Lists of operators that can be used
  default-operators extra-operators all-operators
+ ;; An environment that defines the values of the operators (from
+ ;; lifted-operators.rkt)
+ global-environment
 
  ;; The actual operators
  grm-if^ grm-set!^ grm-get-field^ grm-set-field!^)

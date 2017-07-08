@@ -1,9 +1,10 @@
 #lang rosette
 
-(require "../enum-set.rkt" "../graph.rkt" "../map.rkt"
+(require "env.rkt" "../enum-set.rkt" "../graph.rkt" "../map.rkt"
          "../operators.rkt" "../types.rkt" "language.rkt")
 
 (provide
+ global-environment
  ;; Operators that construct lifted AST nodes
  void^ not^ and^ or^ =^ <^ equal?^ +^ -^ *^ #;/^
  vector-increment!^ vector-decrement!^ vector-set!^ vector-ref^
@@ -73,18 +74,21 @@
   (Procedure-type (list (DAG-type alpha-any) alpha-any)
                   (Set-type alpha-any)))
 
+(define global-environment (make-environment))
+
 (define-lifted
+  global-environment
   [void void^ void-type] [not not^ not-type] ;; and/or defined below
   [= =^ cmp-type] [< <^ cmp-type] [equal? equal?^ equal?-type]
   [+ +^ arith-type] [- -^ arith-type] [* *^ arith-type] #;[/ /^ arith-type]
 
   [vector-increment! vector-increment!^ vec-inc/dec-type]
   [vector-decrement! vector-decrement!^ vec-inc/dec-type]
-  [vector-set! vector-set!^ vec-set!-type]
-  [vector-ref vector-ref^ vec-ref-type]
+  [vector-set!       vector-set!^       vec-set!-type]
+  [vector-ref        vector-ref^        vec-ref-type]
 
-  [enum-set-add! enum-set-add!^ enum-set-modify-type]
-  [enum-set-remove! enum-set-remove!^ enum-set-modify-type]
+  [enum-set-add!      enum-set-add!^      enum-set-modify-type]
+  [enum-set-remove!   enum-set-remove!^   enum-set-modify-type]
   [enum-set-contains? enum-set-contains?^ enum-set-contains?-type]
 
   [map-ref map-ref^ map-ref-type] [map-set! map-set!^ map-set!-type]
@@ -96,5 +100,6 @@
   [vertex-children vertex-children^ graph-get-set-type])
 
 (define-lifted-using-proc
+  global-environment
   [(lambda (x y) (and x y)) and and^ and-or-type]
-  [(lambda (x y) (or x y)) or or^ and-or-type])
+  [(lambda (x y) (or x y))  or  or^  and-or-type])

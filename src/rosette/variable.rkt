@@ -3,7 +3,7 @@
 (require "util.rkt")
 
 (provide (struct-out variable) make-variable
-         variable-has-type? variable-has-value? variable-has-expression?
+         variable-has-type? variable-has-expression?
          variable-has-definition? variable-definition variable-set!-code
 
          (struct-out constant) make-constant config-constant?)
@@ -16,22 +16,18 @@
 ;; mutable?: Whether or not this variable can be changed using set!
 ;; Note that we depend on equality doing the right thing, which only
 ;; happens because of #:transparent
-(struct variable (symbol type [value #:mutable] mutable? expression)
+(struct variable (symbol type mutable? expression)
   #:transparent)
 
 ;; This is copied in language.rkt for lifted variables.
 (define (make-variable symbol
                        #:type [type #f]
-                       #:value [value (unknown-value)]
                        #:mutable? [mutable? #f]
                        #:expression [expression #f])
-  (variable symbol type value mutable? expression))
+  (variable symbol type mutable? expression))
 
 (define variable-has-type?
   (compose not false? variable-type))
-
-(define variable-has-value?
-  (compose not unknown-value? variable-value))
 
 (define variable-has-expression?
   (compose not false? variable-expression))
@@ -50,14 +46,13 @@
 (struct constant variable (configs for-types?) #:transparent)
 (define (make-constant symbol
                        #:type [type #f]
-                       #:value [value (unknown-value)]
                        #:mutable? [mutable? #f]
                        #:expression [expression #f]
                        #:configs [configs #f]
                        #:for-types? [for-types? #f])
   (when (and expression configs)
     (internal-error "Cannot have a constant with both #:expression and #:configs!"))
-  (constant symbol type value mutable? expression configs for-types?))
+  (constant symbol type mutable? expression configs for-types?))
 
 (define (config-constant? c)
   (not (false? (constant-configs c))))

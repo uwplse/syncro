@@ -74,6 +74,15 @@
       (??)
       (for-enum-set ([other-parent (vertex-parents graph child)])
         (??))))])
+;; Expected result for add-child!:
+;; (let ()
+;;   (define mb-parent (vector-ref mb parent))
+;;   (enum-set-add! mb-parent child)
+;;   (enum-set-add! (vector-ref mb child) parent)
+;;   (for-enum-set ([other-parent (vertex-parents graph child)])
+;;     (unless (equal? parent other-parent)
+;;       (enum-set-add! (vector-ref mb other-parent) parent)
+;;       (enum-set-add! mb-parent other-parent))))
 
 ;; Alternatively, a set theoretic definition:
 ;; parents + children +

@@ -2,7 +2,8 @@
 ;; once synthesis is complete.
 #lang rosette
 
-(require "../enum-set.rkt" "../record.rkt"
+(require "env.rkt"
+         "../enum-set.rkt" "../record.rkt"
          "../types.rkt" "../util.rkt" "../variable.rkt"
          racket/serialize)
 
@@ -47,8 +48,9 @@
 ;; Currently a lot of copy pasted code
 
 (define-generics lifted
-  ;; Evaluates the lifted expression to produce a value.
-  (eval-lifted lifted)
+  ;; Evaluates the lifted expression in the given environment env to
+  ;; produce a value and a new environment.
+  (eval-lifted lifted env)
   ;; Produces Racket code that represents the lifted expression.
   (lifted-code lifted)
   ;; Fold
@@ -56,11 +58,11 @@
 
   #:defaults
   ([integer?
-    (define (eval-lifted x) x)
+    (define (eval-lifted x env) (list x env))
     (define (lifted-code x) x)
     (define (fold-lifted x mapper reducer) (mapper x))]
    [boolean?
-    (define (eval-lifted x) x)
+    (define (eval-lifted x env) (list x env))
     (define (lifted-code x) x)
     (define (fold-lifted x mapper reducer) (mapper x))]))
 
@@ -106,33 +108,34 @@
       (match (length args)
         [0 (lifted-apply-0-args self args)]
         [1 (lifted-apply-1-arg  self args)]
-        [2 (let ([op-name (variable-symbol self)]) 
-          #;(lifted-apply-2-args self args)
-          (cond
-            [(equal? '+ op-name) (lifted-apply-arith-args self args)]
-            [(equal? '- op-name) (lifted-apply-arith-args self args)]
-            [(equal? '* op-name) (lifted-apply-arith-args self args)]
-            [(equal? '< op-name) (lifted-apply-cmp-args self args)]
-            [(equal? '= op-name) (lifted-apply-cmp-args self args)]
-            [(equal? 'equal? op-name) (lifted-apply-equal-args self args)]
-            [(equal? 'vector-increment! op-name) (lifted-apply-vecincdec-args self args)]
-            [(equal? 'vector-decrement! op-name) (lifted-apply-vecincdec-args self args)]
-            [(equal? 'vector-set! op-name) (lifted-apply-vecset-args self args)]
-            [(equal? 'vector-ref op-name) (lifted-apply-vecref-args self args)]
-            [(equal? 'enum-set-add! op-name) (lifted-apply-enum-set-modify-type-args self args)]
-            [(equal? 'enum-set-remove! op-name) (lifted-apply-enum-set-modify-type-args self args)]
-            [(equal? 'enum-set-contains? op-name) (lifted-apply-enum-set-contains?-type-args self args)]
-            [(equal? 'map-ref op-name) (lifted-apply-map-ref-type-args self args)]
-            [(equal? 'map-set! op-name) (lifted-apply-map-set!-type-args self args)]
-            [(equal? 'add-edge! op-name) (lifted-apply-graph-modify-type-args self args)]
-            [(equal? 'remove-edge! op-name) (lifted-apply-graph-modify-type-args self args)]
-            [(equal? 'has-edge? op-name) (lifted-apply-graph-has-edge?-type-args self args)]
-            [(equal? 'vertex-parents op-name) (lifted-apply-graph-get-set-type-args self args)]
-            [(equal? 'vertex-children op-name) (lifted-apply-graph-get-set-type-args self args)]
-            [(equal? 'and op-name) (lifted-apply-andor-args self args)]
-            [(equal? 'or op-name) (lifted-apply-andor-args self args)]
-            [else (internal-error (format "Unknown procedure: ~a" op-name))]))] ; missed some case
-            ; Note: This will break for higher-order functions
+        [2 (if (not (lifted-variable? self))
+               (lifted-apply-2-args self args)
+               (for/all ([op-name (variable-symbol self)])
+                 (match op-name
+                   ['+ (lifted-apply-arith-args self args)]
+                   ['- (lifted-apply-arith-args self args)]
+                   ['* (lifted-apply-arith-args self args)]
+                   ['< (lifted-apply-cmp-args self args)]
+                   ['= (lifted-apply-cmp-args self args)]
+                   ['equal? (lifted-apply-equal-args self args)]
+                   ['vector-increment! (lifted-apply-vecincdec-args self args)]
+                   ['vector-decrement! (lifted-apply-vecincdec-args self args)]
+                   ['vector-set! (lifted-apply-vecset-args self args)]
+                   ['vector-ref (lifted-apply-vecref-args self args)]
+                   ['enum-set-add! (lifted-apply-enum-set-modify-type-args self args)]
+                   ['enum-set-remove! (lifted-apply-enum-set-modify-type-args self args)]
+                   ['enum-set-contains? (lifted-apply-enum-set-contains?-type-args self args)]
+                   ['map-ref (lifted-apply-map-ref-type-args self args)]
+                   ['map-set! (lifted-apply-map-set!-type-args self args)]
+                   ['add-edge! (lifted-apply-graph-modify-type-args self args)]
+                   ['remove-edge! (lifted-apply-graph-modify-type-args self args)]
+                   ['has-edge? (lifted-apply-graph-has-edge?-type-args self args)]
+                   ['vertex-parents (lifted-apply-graph-get-set-type-args self args)]
+                   ['vertex-children (lifted-apply-graph-get-set-type-args self args)]
+                   ['and (lifted-apply-andor-args self args)]
+                   ['or (lifted-apply-andor-args self args)]
+                   [_ (internal-error (format "Unknown procedure: ~a" op-name))])))] ; missed some case
+        ; Note: This will break for higher-order functions
         [_ (lifted-apply self args)])))
 
 
@@ -152,7 +155,7 @@
        [(#f) (display (lifted-code self) port)]
        [else (print (lifted-code self) port mode)])
      (display ")" port))]
-)
+  )
 
 
 
@@ -173,11 +176,8 @@
    (or (current-load-relative-directory) (current-directory)))
   
   #:methods gen:lifted
-  [(define (eval-lifted self)
-     (if (variable-has-value? self)
-         (variable-value self)
-         (error (format "Called eval-lifted on ~a before defining it"
-                        (variable-symbol self)))))
+  [(define (eval-lifted self env)
+     (list (environment-ref env (variable-symbol self)) env))
 
    (define (lifted-code self)
      (variable-symbol self))
@@ -202,22 +202,20 @@
 
 ;; Almost verbatim from variable.rkt
 (define (make-lifted-variable symbol type
-                              #:value [value (unknown-value)]
                               #:mutable? [mutable? #f]
                               #:expression [expression #f])
-  (lifted-variable symbol type value mutable? expression))
+  (lifted-variable symbol type mutable? expression))
 
 (define (update-lifted-variable var
                                 #:symbol [symbol #f]
                                 #:type [type #f]
-                                #:value [value (unknown-value)]
                                 #:mutable? [mutable? #f]
                                 #:expression [expression #f])
   (unless (lifted-variable? var)
-    (error (format "update-lifted-variable: Not a lifted variable: ~a" var)))
+    (internal-error
+     (format "update-lifted-variable: Not a lifted variable: ~a" var)))
   (lifted-variable (or symbol (variable-symbol var))
                    (or type (variable-type var))
-                   (if (unknown-value? value) (variable-value var) value)
                    (or mutable? (variable-mutable? var))
                    (or expression (variable-expression var))))
 
@@ -240,10 +238,25 @@
   [(define/generic gen-eval-lifted eval-lifted)
    (define/generic gen-lifted-code lifted-code)
    (define/generic gen-fold-lifted fold-lifted)
-   
-   (define (eval-lifted self)
-     (apply (gen-eval-lifted (lifted-apply-proc self))
-            (map gen-eval-lifted (lifted-apply-args self))))
+
+   ;; Perhaps we could disallow changes to the environment inside of
+   ;; an expression, and then we don't have to thread around updated
+   ;; environments so much?
+   ;; This would make the code cleaner, though probably would make it
+   ;; less flexible and not faster, so probably should not do this.
+   (define (eval-lifted self initial-env)
+     ;(displayln (lifted-code self))
+     (match-define (list proc env-after-proc)
+       (gen-eval-lifted (lifted-apply-proc self) initial-env))
+
+     (let loop ([result '()]
+                [loop-env env-after-proc]
+                [lifted-args (lifted-apply-args self)])
+       (if (null? lifted-args)
+           (list (apply proc (reverse result)) loop-env)
+           (match-let ([(list arg-val new-env)
+                        (gen-eval-lifted (car lifted-args) loop-env)])
+             (loop (cons arg-val result) new-env (cdr lifted-args))))))
 
    (define (lifted-code self)
      (cons (gen-lifted-code (lifted-apply-proc self))
@@ -320,10 +333,18 @@
    (define/generic gen-lifted-code lifted-code)
    (define/generic gen-fold-lifted fold-lifted)
    
-   (define (eval-lifted self)
-     ;; TODO: This would be an issue if the number of args is symbolic
-     (for/last ([arg (lifted-begin-args self)])
-       (gen-eval-lifted arg)))
+   (define (eval-lifted self initial-env)
+     (when (symbolic? (lifted-begin-args self))
+       (internal-error "Can't have a symbolic number of expressions in begin"))
+
+     (let loop ([lifted-args (lifted-begin-args self)]
+                [result (void)]
+                [loop-env initial-env])
+       (if (null? lifted-args)
+           (list result loop-env)
+           (apply loop
+                  (cdr lifted-args)
+                  (gen-eval-lifted (car lifted-args) loop-env)))))
 
    (define (lifted-code self)
      (cons 'let (cons '() (map gen-lifted-code (lifted-begin-args self)))))
@@ -379,10 +400,18 @@
    (define/generic gen-lifted-code lifted-code)
    (define/generic gen-fold-lifted fold-lifted)
 
-   (define (eval-lifted self)
-     (if (gen-eval-lifted (lifted-if-condition self))
-         (gen-eval-lifted (lifted-if-then-branch self))
-         (gen-eval-lifted (lifted-if-else-branch self))))
+   (define (eval-lifted self initial-env)
+     (match-define (list condition-val next-env)
+       (gen-eval-lifted (lifted-if-condition self) initial-env))
+     (when (symbolic? next-env)
+       (printf "Symbolic environment after evaluating the condition of ~a~%" (lifted-code self)))
+     (match-define (list result final-env)
+       (if condition-val
+           (gen-eval-lifted (lifted-if-then-branch self) next-env)
+           (gen-eval-lifted (lifted-if-else-branch self) next-env)))
+     (when (symbolic? final-env)
+       (printf "Symbolic environment after evaluating ~a~%" (lifted-code self)))
+     (list result final-env))
 
    (define (lifted-code self)
      (list 'if
@@ -442,9 +471,11 @@
    (define/generic gen-lifted-code lifted-code)
    (define/generic gen-fold-lifted fold-lifted)
 
-   (define (eval-lifted self)
-     (get-field (gen-eval-lifted (lifted-get-field-record self))
-                (lifted-get-field-field-name self)))
+   (define (eval-lifted self initial-env)
+     (match-define (list record-value next-env)
+       (gen-eval-lifted (lifted-get-field-record self) initial-env))
+     (list (get-field record-value (lifted-get-field-field-name self))
+           next-env))
 
    (define (lifted-code self)
      (list 'get-field
@@ -469,7 +500,7 @@
        (get-record-field-type record-type (lifted-get-field-field-name self))))
 
    (define (force-type-helper self type mapping)
-     (when (union? self)
+     (when (symbolic? self)
        (internal-error (format "get-field: Should not be a union: ~a" self)))
      (match self
        [(lifted-get-field record fname)
@@ -508,10 +539,14 @@
    (define/generic gen-lifted-code lifted-code)
    (define/generic gen-fold-lifted fold-lifted)
 
-   (define (eval-lifted self)
-     (set-field! (gen-eval-lifted (lifted-set-field!-record self))
-                 (lifted-set-field!-field-name self)
-                 (gen-eval-lifted (lifted-set-field!-value self))))
+   (define (eval-lifted self initial-env)
+     (match-define (list record-value first-env)
+       (gen-eval-lifted (lifted-set-field!-record self) initial-env))
+     (match-define (list field-value final-env)
+       (gen-eval-lifted (lifted-set-field!-value self) first-env))
+
+     (set-field! record-value (lifted-set-field!-field-name self) field-value)
+     (list (void) final-env))
 
    (define (lifted-code self)
      (list 'set-field!
@@ -544,7 +579,7 @@
        (Void-type)))
 
    (define (force-type-helper self type mapping)
-     (when (union? self)
+     (when (symbolic? self)
        (internal-error (format "set-field!: Should not be a union: ~a" self)))
 
      (assert-type type (Void-type) mapping "set-field!")
@@ -587,11 +622,14 @@
    (define/generic gen-lifted-code lifted-code)
    (define/generic gen-fold-lifted fold-lifted)
 
-   (define (eval-lifted self)
+   (define (eval-lifted self initial-env)
      (match self
        [(lifted-define var val)
-        (let ([result (gen-eval-lifted val)])
-          (set-variable-value! var result))]))
+        (let ()
+          (match-define (list result next-env)
+            (gen-eval-lifted val initial-env))
+          (define sym (variable-symbol var))
+          (list (void) (environment-define next-env sym result)))]))
 
    (define (lifted-code self)
      (list 'define
@@ -620,30 +658,6 @@
       (lifted-error)
       (lifted-define var val)))
 
-;; var is syntax containing a symbol
-;; expr is syntax containing an expression that evaluates to a lifted
-;; expression
-;; This currently is difficult to implement well. The syntax we want
-;; is something like
-;; (begin^ (define^ x 3)
-;;         (*^ x 2))
-;; However, this requires that x be defined to the lifted-variable
-;; that is created for defines. This can't be done with a macro,
-;; because define^ is in an expression context, so it can't expand to
-;; defines. We could make begin^ also be a macro, and then arrange it
-;; so that any define^s in the begin^ are evaluated in the surrounding
-;; context (which could not be an expression context), and somehow
-;; stitch together the results. However, then dynamically generating
-;; define^s is more complicated -- it would have to be done with a
-;; macro.
-;; (define-syntax-rule (define^ var expr)
-;;   (begin
-;;     (define lifted-val expr)
-;;     (define var
-;;       (make-lifted-variable 'var (infer-type lifted-val)))
-;;     (lifted-define var lifted-val)))
-
-
 
 (define deserialize-lifted-set!
   (make-deserialize-info
@@ -660,10 +674,12 @@
   [(define/generic gen-eval-lifted eval-lifted)
    (define/generic gen-lifted-code lifted-code)
    (define/generic gen-fold-lifted fold-lifted)
-   (define (eval-lifted self)
-     (set-variable-value! (lifted-set!-var self)
-                          (gen-eval-lifted (lifted-set!-val self)))
-     (void))
+
+   (define (eval-lifted self initial-env)
+     (define sym (variable-symbol (lifted-set!-var self)))
+     (match-define (list value next-env)
+       (gen-eval-lifted (lifted-set!-val self) initial-env))
+     (list (void) (environment-set next-env sym value)))
 
    (define (lifted-code self)
      (list 'set!
@@ -707,23 +723,39 @@
   [(define/generic gen-eval-lifted eval-lifted)
    (define/generic gen-lifted-code lifted-code)
    (define/generic gen-fold-lifted fold-lifted)
-   (define (eval-lifted self)
+   (define (eval-lifted self initial-env)
      (match self
        [(lifted-for-enum-set var set-expr body)
-        (define set (gen-eval-lifted set-expr))
+        (match-define (list set first-env)
+          (gen-eval-lifted set-expr initial-env))
+        (define sym (variable-symbol var))
         (define num-items (vector-length set))
 
-        (when (term? num-items)
+        ;; This may be an issue. What if the set expression could give
+        ;; one of two different sets that have different lengths? The
+        ;; type system might prevent this, I'm not sure.
+        (when (symbolic? num-items)
           (internal-error
            (format "eval-lifted: Number of items in enum set should be concrete, was ~a"
                    num-items)))
 
-        (for ([i num-items])
-          (when (enum-set-contains? set i)
-            (set-variable-value! var i)
-            (gen-eval-lifted body)))
-
-        (void)]))
+        (let ([result (void)]
+              [loop-env (environment-define first-env sym 0)])
+          ;; We use a for loop with mutation here in order to force
+          ;; Rosette to merge state after each iteration of the
+          ;; loop. If we wrote it in the standard recursive loop style
+          ;; with no set! statements, then we would get an O(2^n)
+          ;; branching (it would branch every loop iteration based on
+          ;; the result of (enum-set-contains? set i)) because merging
+          ;; would not happen until the end.
+          (for ([i num-items])
+            (when (enum-set-contains? set i)
+              (let ([new-env (environment-set loop-env sym i)])
+                (match-define (list new-result updated-env)
+                  (gen-eval-lifted body new-env))
+                (set! result new-result)
+                (set! loop-env new-env))))
+          (list result loop-env))]))
 
    (define (lifted-code self)
      (match self
@@ -775,7 +807,7 @@
    #f
    (or (current-load-relative-directory) (current-directory)))
   #:methods gen:lifted
-  [(define (eval-lifted self)
+  [(define (eval-lifted self env)
      (error "Default error -- LIFTED-ERROR"))
 
    (define (lifted-code self)
@@ -795,25 +827,25 @@
 
 
 
-(define (lift value var-name type)
+(define (lift var-name type)
   (if (symbol? var-name)
-      (make-lifted-variable var-name type #:value value)
-      (error (format "Cannot lift ~a which has value ~a~%"
-                     var-name value))))
+      (make-lifted-variable var-name type)
+      (internal-error (format "Cannot lift ~a~%" var-name))))
 
 ;; Convenience macro to define many new lifted values at a time.
 ;; See grammar.rkt for an example.
 (define-syntax (define-lifted stx)
   (syntax-case stx ()
-    [(_ [thing new-name type] ...)
+    [(_ env [thing new-name type] ...)
      (syntax/loc stx
-       (define-lifted-using-proc [thing thing new-name type] ...))]))
+       (define-lifted-using-proc env [thing thing new-name type] ...))]))
 
 (define-syntax (define-lifted-using-proc stx)
   (syntax-case stx ()
-    [(_ [thing name-in-code new-name type] ...)
+    [(_ env [thing name-in-code new-name type] ...)
      (syntax/loc stx
-       (begin (define new-name (lift thing 'name-in-code type))
+       (begin (begin (define new-name (lift 'name-in-code type))
+                     (set! env (environment-define env 'name-in-code thing)))
               ...))]))
 
 ;; Removes any temporary variable definitions that are never used.

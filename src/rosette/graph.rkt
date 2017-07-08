@@ -20,7 +20,7 @@
 (define (make-symbolic-graph num-vars [varset #f]
                              #:no-self-edges? [no-self-edges? #t]
                              #:acyclic? [acyclic? #f])
-  (when (term? num-vars)
+  (when (symbolic? num-vars)
     (internal-error
      (format "make-symbolic-graph: num-vars is not concrete: ~a" num-vars)))
 

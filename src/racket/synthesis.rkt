@@ -107,8 +107,6 @@
 (define (add-terminal-to-info-code info-sym var-sym type [mutable? #f])
   `(send ,info-sym make-and-add-terminal ',var-sym ,(repr type)
          #:mutable? ,mutable?))
-(define (set-terminal-in-info-code info-sym var-sym)
-  `(send ,info-sym set-value ',var-sym ,var-sym))
 
 ;; Creates the necessary Rosette code for synthesis, runs it, and
 ;; creates the relevant update functions.
@@ -164,7 +162,6 @@
       (datumify (symbolic-delta-code input-node delta-name 'inputs-set)))
 
     (define add-terminal-code (curry add-terminal-to-info-code 'terminal-info))
-    (define set-terminal-code (curry set-terminal-in-info-code 'terminal-info))
 
     (define non-output-ids
       (cons input-id
@@ -175,8 +172,10 @@
     (define add-terminal-stmts
       (cons (add-terminal-code output-id output-type #t)
             (map add-terminal-code non-output-ids non-output-types)))
-    (define set-terminal-stmts
-      (map set-terminal-code (cons output-id non-output-ids)))
+    (define make-env-expr
+      (for/fold ([curr-env-code 'global-environment])
+                ([id (cons output-id non-output-ids)])
+        `(environment-define ,curr-env-code ',id ,id)))
 
     ;; TODO: This is misnamed, constants come before this
     (define define-structures
@@ -194,11 +193,12 @@
         ;; Basically the same as for intermediates.
         ,define-output))
 
-    (define (make-grammar-expr stmt expr temps guard type mode)
-      `(grammar terminal-info ,stmt ,expr
+    (define (make-grammar-expr stmt expr temps guard type mode sketch?
+                               #:terminal-info [info-var 'terminal-info])
+      `(grammar ,info-var ,stmt ,expr
                 #:num-temps ,temps #:guard-depth ,guard #:type ,type
-                #:version ',(hash-ref options 'grammar-version)
-                #:choice-version ',(hash-ref options 'grammar-choice)
+                #:version ',(if sketch? 'caching (hash-ref options 'grammar-version))
+                #:choice-version ',(if sketch? 'basic (hash-ref options 'grammar-choice))
                 #:mode ',mode
                 #:print-statistics
                 ,(set-member? (hash-ref options 'logging) 'stats)))
@@ -206,12 +206,18 @@
     (define prederiv-defn-code
       `(,@(log-for-option 'progress '(displayln "Generating the prederivative"))
         (define prederiv
-          ,(timing-code (make-grammar-expr 1 1 0 0 (Any-type) '(tmps 2))
+          ,(timing-code (make-grammar-expr 1 1 0 0 (Any-type) '(tmps 2) #f)
                         "generate the prederivative"))))
     (define prederiv-run-code
-      `(,@set-terminal-stmts
-        ,(timing-code '(for-each eval-lifted prederiv)
-                      "run the prederivative")))
+      `((define initial-env ,make-env-expr)
+        (define env-after-prederiv
+          ,(timing-code
+            '(let loop ([code-lst prederiv] [loop-env initial-env])
+               (if (null? code-lst)
+                   loop-env
+                   (let ([new-env (second (eval-lifted (car code-lst) loop-env))])
+                     (loop (cdr code-lst) new-env))))
+            "run the prederivative"))))
 
     ;; Example: (set! num2helper (build-vector ...))
     ;; Taken straight from the user program, but operates on
@@ -220,11 +226,6 @@
     ;; TODO: For now, we have to define intermediates before
     ;; the delta in case the output relation depends on
     ;; them. So here, we should use a set!
-    (define update-intermediate-stmts
-      (map (lambda (code)
-             `(send terminal-info set-value ',(cadr code) ,@(cddr code)))
-           define-intermediates))
-
     (define program-definition
       `(,@(log-for-option 'progress '(displayln "Creating symbolic program"))
         ,@(if (send output-node has-sketch? delta-name)
@@ -233,21 +234,28 @@
                     (make-lifted terminal-info all-operators ',sketch))
                   ,(timing-code
                     `(force-type program (Void-type)
-                                 (lambda (type)
-                                   ,(make-grammar-expr 2 2 0 0 'type 'stmt)))
+                                 (lambda (info type)
+                                   ,(make-grammar-expr 2 2 0 0 'type 'stmt #t
+                                                       #:terminal-info 'info)))
                     "generate the sketch")))
               `((define program
                   ,(timing-code
-                    (make-grammar-expr 2 2 0 1 '(Void-type) 'stmt)
+                    (make-grammar-expr 2 2 0 1 '(Void-type) 'stmt #f)
                     "generate the postderivative"))))))
     (define program-run-code
-      `(,@set-terminal-stmts
-        ,(timing-code '(eval-lifted program)
-                      "run the postderivative")))
+      `((define env-for-postderiv
+          ,(for/fold ([curr-env-code `(environment-set env-after-prederiv ',input-id ,input-id)])
+                     ([def define-intermediates])
+             `(environment-set ,curr-env-code ',(cadr def) (begin ,@(cddr def)))))
+        (define final-env
+          ,(timing-code '(second (eval-lifted program env-for-postderiv))
+                        "run the postderivative"))))
 
     (define postcondition-expr
-      `(equal? (eval-lifted (send terminal-info get-terminal-by-id ',output-id))
-               ,output-expr))
+      `(let ([output-terminal (send terminal-info get-terminal-by-id ',output-id)])
+         (define output-value
+           (first (eval-lifted output-terminal final-env)))
+         (equal? output-value ,output-expr)))
 
     (define (get-code-for-config i)
       `(let ()
@@ -267,7 +275,6 @@
          ,@prederiv-run-code
          ,delta-code
          (define input-assertion-after-delta ,input-invariant)
-         ,@update-intermediate-stmts
 
          ;; Symbolically run the sampled program
          ,@(log-for-option
@@ -292,8 +299,9 @@
          ;; necessarily the same as the value in ,output-id.
          ;; Example: (assert (equal? (... get-by-id 'num2) (build-vector ...)))
          (define new-output
-           (eval-lifted
-            (send terminal-info get-terminal-by-id ',output-id)))
+           (first
+            (eval-lifted
+             (send terminal-info get-terminal-by-id ',output-id) final-env)))
          (define expected-result ,output-expr)
          (define postcondition (equal? new-output expected-result))
 
@@ -330,7 +338,7 @@
            (current-bitwidth ,(hash-ref options 'bitwidth))
            ,@(map constant-initialization-code constants)
            (define configurables (list ,@config-terminal-ids))
-           (define terminal-info (new Terminal-Info%))
+           (define terminal-info (new Lexical-Terminal-Info%))
            ,@add-terminal-stmts
            ,@prederiv-defn-code
            ,@program-definition
@@ -411,7 +419,6 @@
           ,@prederiv-defn-code
           ,@prederiv-run-code
           ,delta-code
-          ,@update-intermediate-stmts
           ,@(add-reset-fn 'reset-state!)
           (define metasketch
             (grammar-metasketch terminal-info

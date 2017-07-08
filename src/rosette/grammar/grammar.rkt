@@ -6,7 +6,8 @@
          "lifted-operators.rkt" "language.rkt"
          "../types.rkt" "../variable.rkt" "../util.rkt")
 
-(provide grammar Terminal-Info% eval-lifted lifted-code eliminate-dead-code
+(provide grammar Lexical-Terminal-Info%
+         eval-lifted lifted-code eliminate-dead-code
          ;; For testing
          remove-polymorphism)
 
@@ -15,7 +16,7 @@
 ;; Grammar construction ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-;; terminal-info: A Terminal-Info object
+;; terminal-info: A Lexical-Terminal-Info% object
 ;; num-stmts:     Number of statements to allow
 ;; depth:         Expression depth to allow
 ;; #:num-temps:   Number of temporary variables to add to the sketch
@@ -95,8 +96,8 @@
   ;; Don't add the terminal if it is definitely #f, but add it
   ;; if it may not be #f
   (define lifted-sym
-    (if (and (not (term? subexp)) (false? subexp))
-        (make-lifted-variable sym (Void-type) #:value (void^) #:mutable? #f)
+    (if (and (not (symbolic? subexp)) (false? subexp))
+        (make-lifted-variable sym (Void-type) #:mutable? #f)
         (send terminal-info make-and-add-terminal sym type
               #:mutable? mutable?)))
   (define^ lifted-sym subexp))
@@ -130,7 +131,7 @@
       (define sym (gensym 'constant))
       (define lifted-sym
         (send terminal-info make-and-add-terminal sym (Integer-type)
-              #:value hole #:mutable? #f))
+              #:mutable? #f))
       (define^ lifted-sym hole)))
 
   ;; Choose definitions for each variable
@@ -498,7 +499,7 @@
       (define subexp (expr-grammar (Any-type) 1))
       (define lifted-sym
         (send terminal-info make-and-add-terminal sym (infer-type subexp)
-              #:value (eval-lifted subexp) #:mutable? #f))
+              #:mutable? #f))
       (define^ lifted-sym subexp)))
 
   ;; Build the program
@@ -712,39 +713,37 @@
 ;; separate keyword. This is because different flags have to be
 ;; handled differently in the grammar. For now it works because we
 ;; only care about "mutable".
-(define Terminal-Info%
+(define Lexical-Terminal-Info%
   (class object%
     (super-new)
 
-    (field [symbol->terminal (make-hash)])
+    (init-field [parent #f])
+    (field [id->terminal (make-hash)])
 
-    (define/public (make-and-add-terminal sym type
-                                          #:value [value (unknown-value)]
-                                          #:mutable? [mutable? #f])
-      (define terminal
-        (if (unknown-value? value)
-            (make-lifted-variable sym type #:mutable? mutable?)
-            (make-lifted-variable sym type #:value value #:mutable? mutable?)))
+    (define/public (has-id? id)
+      (or (hash-has-key? id->terminal id)
+          (and parent (send parent has-id? id))))
+
+    (define/public (make-and-add-terminal sym type #:mutable? [mutable? #f])
+      (define terminal (make-lifted-variable sym type #:mutable? mutable?))
       (add-terminal terminal)
       terminal)
 
     (define/public (add-terminal terminal)
-      (define symbol (variable-symbol terminal))
-      (when (hash-has-key? symbol->terminal symbol)
-        (error (format "Terminal ~a is already present!~%" symbol)))
-      (hash-set! symbol->terminal symbol terminal))
+      (define id (variable-symbol terminal))
+      (when (has-id? id)
+        (error (format "Terminal ~a is already present!~%" id)))
+      (hash-set! id->terminal id terminal))
 
     (define/public (all-terminals)
-      (hash-values symbol->terminal))
-
-    (define/public (has-terminal? id)
-      (hash-has-key? symbol->terminal id))
+      (if (not parent)
+          (hash-values id->terminal)
+          (append (hash-values id->terminal) (send parent all-terminals))))
 
     (define/public (get-terminal-by-id id)
-      (hash-ref symbol->terminal id))
-
-    (define/public (set-value id new-val)
-      (set-variable-value! (get-terminal-by-id id) new-val))
+      (if (hash-has-key? id->terminal id)
+          (hash-ref id->terminal id)
+          (send parent get-terminal-by-id id)))
 
     ;; Returns the terminals which are instances of subtypes of the argument
     ;; type, and which have the associated flags.
@@ -754,10 +753,4 @@
                 (and (unify-types type (variable-type terminal))
                      (or (not mutable?)
                          (variable-mutable? terminal))))
-              (hash-values symbol->terminal)))))
-
-
-  ;; (define result (lifted-define var val))
-  ;; (when info
-  ;;   (send info add-terminal var (eval-lifted subexp) (infer-type subexp)
-  ;;         #:mutable #f)
+              (all-terminals)))))

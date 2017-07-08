@@ -22,7 +22,7 @@
   (vec-map 0 (make-vector capacity #f) (make-vector capacity #f)))
 
 (define (make-symbolic-map capacity input-fn output-fn varset)
-  (when (term? capacity)
+  (when (symbolic? capacity)
     (internal-error
      (format "make-symbolic-map: capacity is not concrete: ~a" capacity)))
 
@@ -56,7 +56,7 @@
                (equal? key (vector-ref keys index))
                (vector-ref vals index)))))))
 
-(define (map-set! map key val)
+(define (map-set! vecmap key val)
   ;; This is tricky. You are not supposed to use for/all to do
   ;; imperative stuff.
   ;; Potential method: Figure out (an overapproximation of) all
@@ -65,13 +65,14 @@
   ;; and so on.
   ;; Here, num-operations can be between 0 and max capacity - 1. (If
   ;; it's equal to the capacity, then map-set! should error.)
-  (let* ([num-ops (vec-map-num-operations map)]
-         [keys (vec-map-keys map)]
-         [vals (vec-map-values map)]
+  (let* ([num-ops (vec-map-num-operations vecmap)]
+         [keys (vec-map-keys vecmap)]
+         [vals (vec-map-values vecmap)]
          [capacity (vector-length keys)]
          [max-capacity
-          (if (union? capacity)
-              (apply max (map second (union-contents capacity)))
+          (if (union? keys)
+              (apply max (map (compose vector-length cdr)
+                              (union-contents keys)))
               capacity)])
 
     (define (set-at-location! index)
@@ -81,23 +82,24 @@
       (vector-set! keys index key)
       (vector-set! vals index val))
 
-    (if (term? num-ops)
+    (if (symbolic? num-ops)
         (for ([possible-num-ops (+ 1 max-capacity)])
           (when (= possible-num-ops num-ops)
             (set-at-location! possible-num-ops)))
         (set-at-location! num-ops))
 
     ;; This is within safe Rosette so works fine
-    (set-vec-map-num-operations! map (+ num-ops 1))))
+    (set-vec-map-num-operations! vecmap (+ num-ops 1))))
 
-(define (map-keys map)
+(define (map-keys vecmap)
   ;; Use the same trick as in map-set!
-  (let* ([num-ops (vec-map-num-operations map)]
-         [keys (vec-map-keys map)]
+  (let* ([num-ops (vec-map-num-operations vecmap)]
+         [keys (vec-map-keys vecmap)]
          [capacity (vector-length keys)]
          [max-capacity
-          (if (union? capacity)
-              (apply max (map second (union-contents capacity)))
+          (if (union? keys)
+              (apply max (map (compose vector-length cdr)
+                              (union-contents keys)))
               capacity)])
 
     ;; We deal with duplicates at the end
@@ -106,7 +108,7 @@
         (vector-ref keys i)))
 
     (define result
-      (if (term? num-ops)
+      (if (symbolic? num-ops)
           (my-for/or ([possible-num-ops (+ max-capacity 1)])
             (and (= num-ops possible-num-ops)
                  (concrete-map-keys keys possible-num-ops)))

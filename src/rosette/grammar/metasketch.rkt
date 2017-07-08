@@ -117,7 +117,7 @@
     (define-values (_ assertions)
       ;; If the program would just raise an error, don't run it and
       ;; just add the assertion #f to make it immediately UNSAT.
-      (if (and (not (union? sym-prog)) (lifted-error? sym-prog))
+      (if (and (not (symbolic? sym-prog)) (lifted-error? sym-prog))
           (values #f (list #f))
           ;; Run the symbolic program, collecting assertions
           (with-asserts (eval-lifted (get-program sketch)))))
