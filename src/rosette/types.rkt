@@ -242,9 +242,10 @@
 
 (define (make-bounded-val low high rosette-type varset)
   (define-symbolic* bounded-val rosette-type)
-  (when varset
-    (define assertions (list (>= bounded-val low) (< bounded-val high)))
-    (set-add! varset (make-input bounded-val assertions)))
+  (define assertions (list (>= bounded-val low) (< bounded-val high)))
+  (if varset
+      (set-add! varset (make-input bounded-val assertions))
+      (for ([a assertions]) (assert a)))
   bounded-val)
 
 (struct Any-Type () #:transparent
@@ -743,7 +744,7 @@
        ;; TODO(correctness): What do we do when the length is symbolic?
        #;(when (term? len)
          (internal-error
-          (format "Vector length should not be symbolic: ~a" len)))
+          (format "List length should not be symbolic: ~a" len)))
        (apply-on-symbolic-type
         (List-Type-content-type self)
         (lambda (c-content-type)
@@ -777,7 +778,7 @@
                 (gen-replace-type-vars (List-Type-content-type self)
                                        mapping default)))]
 
-  #:methods gen:symbolic
+  #:methods gen:symbolic-creator
   [(define/generic gen-has-setters? has-setters?)
    (define/generic gen-make-symbolic make-symbolic)
    (define/generic gen-generate-update-arg-names generate-update-arg-names)
@@ -859,7 +860,12 @@
    (define (has-setters? self) #t)
    
    (define (make-symbolic self varset)
-     (define num-items (Enum-num-items (Set-Type-content-type self)))
+     (define content-type (Set-Type-content-type self))
+     (unless (Enum-type? content-type)
+       (internal-error
+        (format "Can only make a symbolic Set-type if it contains Enums, not ~a"
+                content-type)))
+     (define num-items (Enum-num-items content-type))
      (enum-make-symbolic-set num-items varset))
 
    (define (generate-update-arg-names self update-type)

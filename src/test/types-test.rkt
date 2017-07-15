@@ -1,7 +1,9 @@
 #lang rosette
 
 (require rackunit rackunit/text-ui)
-(require "../rosette/types.rkt" "../rosette/util.rkt")
+(require "../rosette/types.rkt" "../rosette/util.rkt"
+         "../rosette/enum-set.rkt" "../rosette/graph.rkt"
+         "../rosette/record.rkt")
 
 (provide run-types-tests)
 
@@ -445,7 +447,59 @@
           (check-equal? (Vector-index-type vec-type) alpha-type)
           (check-equal? (Vector-output-type vec-type) int)])
        (check-equal? (get-domain-given-range vector-ref-type int #t)
-                     (list (Vector-type idx int) idx))))))
+                     (list (Vector-type idx int) idx)))
+
+     (test-case "make-symbolic"
+       (define (check-symbolic type allowed-values disallowed-values)
+         (define sym-value (make-symbolic type #f))
+
+         (for ([val allowed-values])
+           (define sym-model (solve (assert (equal? sym-value val))))
+           (check-true (sat? sym-model)
+                       (format "It should be possible to have value ~a for a symbolic value of type ~a"
+                               val type))
+           (check-equal? (evaluate sym-value sym-model) val
+                         (format "Solver found value ~a which is not equal to ~a"
+                                 (evaluate sym-value sym-model) val)))
+
+         (for ([val disallowed-values])
+           (define condition (equal? sym-value val))
+           (check-true (or (and (not (term? condition)) (false? condition))
+                           (unsat? (solve (assert condition))))
+                       (format "It should not be possible to have value ~a for a symbolic value of type ~a"
+                               val type))))
+
+       (check-symbolic bool (list #t #f) (list 3 '(#t)))
+       (check-symbolic int (list -1 14) (list #t '()))
+       (check-symbolic enum (list 0 11) (list -1 12 #t))
+
+       (check-symbolic vec
+                       (list (make-vector 10 #t))
+                       (list (make-vector 5 #t) (make-vector 10 0) 5 #t))
+       (check-symbolic lst
+                       (list (range 3) '(1 1) '() '(-3))
+                       (list (range 4) 5 (list #t)))
+       (check-symbolic (Set-type enum)
+                       (list (enum-make-set 12) (build-enum-set 12 even?))
+                       (list (enum-make-set 3) (enum-make-set 15) #t 3))
+       (check-symbolic (DAG-type enum)
+                       (list (make-graph 12)
+                             (let ([result (make-graph 12)])
+                               (add-edge! result 1 3)
+                               (add-edge! result 2 3)
+                               result))
+                       (list (make-graph 2) (enum-make-set 12) #t 3))
+       (check-symbolic rec
+                       (list (make-record '(a b)
+                                          (list 3 (make-vector 10 #t))))
+                       (list (make-record '(a c)
+                                          (list 3 (make-vector 10 #t)))
+                             (make-record '(a b)
+                                          (list 3 (make-vector 5 #t)))
+                             (make-record '(a b)
+                                          (list #t (make-vector 10 #t)))
+                             (make-record '(a b) (list 3 3)))))
+     )))
 
 ;; TODO: Tests for the symbolic code generation
 
