@@ -14,3 +14,11 @@
   ;; use member #t, which is semantically equivalent
   #:value (vector-map (lambda (lst) (not (member #t lst))) r1)
   #:depends (r1))
+
+;; Expected result:
+;; (vector-set! ψ i (and (not formula) (vector-ref ψ i)))
+;; Synthesized result:
+;; (define tmp10481 (not formula))
+;; (if (equal? tmp10481 #t) (void) (vector-set! ψ i tmp10481))
+;; Or equivalently:
+;; (if formula (vector-set! ψ i #f) (void))

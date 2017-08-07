@@ -248,6 +248,23 @@
       (for ([a assertions]) (assert a)))
   bounded-val)
 
+;; Copied with modifications from rosette/lib/angelic
+(define choose*-varset
+  (case-lambda
+    [(varset x) x]
+    [(varset x y)
+     (define-symbolic* x? boolean?)
+     (set-add! varset (make-input x? '()))
+     (if x? x y)]
+    [(varset . xs)
+     (define-symbolic* xi? boolean? [(sub1 (length xs))])
+     (for-each (lambda (var) (set-add! varset (make-input var '())))
+               xi?)
+     (let loop ([xi? xi?][xs xs])
+       (if (or (null? xi?) (car xi?)) 
+           (car xs)
+           (loop (cdr xi?) (cdr xs))))]))
+
 (struct Any-Type () #:transparent
   #:methods gen:Type
   [(define (get-parent self)
@@ -790,7 +807,7 @@
             [content-type (List-Type-content-type self)]
             [vals (for/list ([i len])
                     (gen-make-symbolic content-type varset))])
-       (apply choose* (for/list ([i (add1 len)]) (take vals i)))))
+       (apply choose*-varset varset (for/list ([i (add1 len)]) (take vals i)))))
 
    (define (generate-update-arg-names self update-type)
      (error (format "Unknown List update type: ~a~%"
