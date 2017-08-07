@@ -450,22 +450,43 @@
                      (list (Vector-type idx int) idx)))
 
      (test-case "make-symbolic"
+       (define (restrict-model synth varset)
+         (define model-hash (model synth))
+         (sat (for/hash ([var (map input-val (set->list varset))]
+                         #:when (hash-has-key? model-hash var))
+                (values var (hash-ref model-hash var)))))
+
        (define (check-symbolic type allowed-values disallowed-values)
-         (define sym-value (make-symbolic type #f))
+         (define varset (mutable-set))
+         (define sym-value (make-symbolic type varset))
+         (define input-asserts
+           (for*/list ([input varset]
+                       [assertion (input-preconditions input)])
+             assertion))
 
          (for ([val allowed-values])
-           (define sym-model (solve (assert (equal? sym-value val))))
+           (define sym-model
+             (solve (begin (for-each (lambda (x) (assert x)) input-asserts)
+                           (assert (equal? sym-value val)))))
            (check-true (sat? sym-model)
                        (format "It should be possible to have value ~a for a symbolic value of type ~a"
                                val type))
-           (check-equal? (evaluate sym-value sym-model) val
-                         (format "Solver found value ~a which is not equal to ~a"
-                                 (evaluate sym-value sym-model) val)))
+           ;; All of the variables needed to concretize the value
+           ;; should be in varset. Check this by only providing values
+           ;; for the variables in varset and see if evaluate fully
+           ;; concretizes the value.
+           (define restricted-model (restrict-model sym-model varset))
+           (define evaluated-val (evaluate sym-value restricted-model))
+           (check-equal? evaluated-val val
+                         (format "Solver found value ~a for type ~a which is not equal to ~a"
+                                 evaluated-val type val)))
 
          (for ([val disallowed-values])
            (define condition (equal? sym-value val))
            (check-true (or (and (not (term? condition)) (false? condition))
-                           (unsat? (solve (assert condition))))
+                           (unsat? (solve (for-each (lambda (x) (assert x))
+                                                    input-asserts)
+                                          (assert condition))))
                        (format "It should not be possible to have value ~a for a symbolic value of type ~a"
                                val type))))
 
