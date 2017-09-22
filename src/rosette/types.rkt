@@ -13,7 +13,7 @@
  ;; Constructors
  Any-type Bottom-type define-type-alias define-base-type
  Boolean-type Index-type Integer-type Bitvector-type Enum-type
- Vector-type Set-type Map-type DAG-type Record-type define-record
+ Vector-type List-type Set-type Map-type DAG-type Record-type define-record
  Procedure-type Error-type Void-type Type-var
  ;; The repr method for type variables must use Type-Var
  Type-Var
@@ -21,12 +21,13 @@
  ;; Predicates on types
  Any-type? Bottom-type? Alias-type? Base-type?
  Boolean-type? Index-type? Integer-type? Bitvector-type? Enum-type?
- Vector-type? Set-type? DAG-type? Record-type? Procedure-type?
+ Vector-type? List-type? Set-type? DAG-type? Record-type? Procedure-type?
  Error-type? Void-type? (rename-out [Type-Var? Type-var?])
 
  ;; Selectors (for some types)
  (rename-out [Vector-Type-index-type Vector-index-type]
              [Vector-Type-output-type Vector-output-type]
+             [List-Type-content-type List-content-type]
              [Set-Type-content-type Set-content-type]
              [DAG-Type-vertex-type DAG-vertex-type]
              [Record-Type-constructor Record-constructor]
@@ -119,7 +120,8 @@
  [Boolean-Type? Boolean-type?] [Index-Type? Index-type?]
  [Integer-Type? Integer-type?] [Bitvector-Type? Bitvector-type?]
  [Enum-Type? Enum-type?]
- [Vector-Type? Vector-type?] [Set-Type? Set-type?] [Map-Type? Map-type?]
+ [Vector-Type? Vector-type?] [List-Type? List-type?]
+ [Set-Type? Set-type?] [Map-Type? Map-type?]
  [DAG-Type? DAG-type?] [Record-Type? Record-type?]
  [Procedure-Type? Procedure-type?]
  [Error-Type? Error-type?] [Void-Type? Void-type?])
@@ -240,10 +242,28 @@
 
 (define (make-bounded-val low high rosette-type varset)
   (define-symbolic* bounded-val rosette-type)
-  (when varset
-    (define assertions (list (>= bounded-val low) (< bounded-val high)))
-    (set-add! varset (make-input bounded-val assertions)))
+  (define assertions (list (>= bounded-val low) (< bounded-val high)))
+  (if varset
+      (set-add! varset (make-input bounded-val assertions))
+      (for ([a assertions]) (assert a)))
   bounded-val)
+
+;; Copied with modifications from rosette/lib/angelic
+(define choose*-varset
+  (case-lambda
+    [(varset x) x]
+    [(varset x y)
+     (define-symbolic* x? boolean?)
+     (set-add! varset (make-input x? '()))
+     (if x? x y)]
+    [(varset . xs)
+     (define-symbolic* xi? boolean? [(sub1 (length xs))])
+     (for-each (lambda (var) (set-add! varset (make-input var '())))
+               xi?)
+     (let loop ([xi? xi?][xs xs])
+       (if (or (null? xi?) (car xi?)) 
+           (car xs)
+           (loop (cdr xi?) (cdr xs))))]))
 
 (struct Any-Type () #:transparent
   #:methods gen:Type
@@ -712,6 +732,100 @@
   (define result (Vector-Type-len vec-type))
   (if (configurable? result) (get-configurable-value result) result))
 
+(struct List-Type Any-Type (len content-type) #:transparent
+  #:methods gen:Type
+  [(define/generic gen-is-supertype? is-supertype?)
+   (define/generic gen-repr repr)
+   (define/generic gen-get-free-type-vars get-free-type-vars)
+   (define/generic gen-replace-type-vars replace-type-vars)
+   
+   (define (get-parent self)
+     (struct-copy Any-Type self))
+
+   (define (typeof-predicate self) List-Type?)
+
+   ;; TODO: The output type has to be both co- and contra-variant
+   (define (is-supertype? self other-type)
+     (or (Bottom-Type? other-type)
+         (and (List-Type? other-type)
+              (gen-is-supertype? (List-Type-content-type self)
+                                 (List-Type-content-type other-type)))))
+
+   (define (repr self)
+     (list 'List-type
+           (repr-configurable (List-Type-len self))
+           (gen-repr (List-Type-content-type self))))
+
+   (define (apply-on-symbolic-type-helper self fn)
+     (let ([len (List-Type-len self)])
+       ;; TODO(correctness): What do we do when the length is symbolic?
+       #;(when (term? len)
+         (internal-error
+          (format "List length should not be symbolic: ~a" len)))
+       (apply-on-symbolic-type
+        (List-Type-content-type self)
+        (lambda (c-content-type)
+          (fn (List-Type len c-content-type))))))
+   
+   (define (unify-helper self other-type mapping)
+     (unless (and (not (term? other-type)) (List-Type? other-type))
+       (internal-error "unify-helper requirement not satisfied"))
+
+     (define my-len (List-Type-len self))
+     (define other-len (List-Type-len other-type))
+     (define compatible-lengths? (compatible-ints? my-len other-len))
+
+     ;; For unification, we want to find a type that is
+     ;; simultaneously self and other-type, so contravariance
+     ;; does not apply. (Contravariance happens if you want to
+     ;; find something that can be *substituted*.)
+     (define new-content
+       (and compatible-lengths?
+            (unify (List-Type-content-type self)
+                   (List-Type-content-type other-type)
+                   mapping)))
+     
+     (and new-content (List-Type my-len new-content)))
+
+   (define (get-free-type-vars self)
+     (gen-get-free-type-vars (List-Type-content-type self)))
+
+   (define (replace-type-vars self mapping [default #f])
+     (List-Type (List-Type-len self)
+                (gen-replace-type-vars (List-Type-content-type self)
+                                       mapping default)))]
+
+  #:methods gen:symbolic-creator
+  [(define/generic gen-has-setters? has-setters?)
+   (define/generic gen-make-symbolic make-symbolic)
+   (define/generic gen-generate-update-arg-names generate-update-arg-names)
+   
+   (define (has-setters? self) #t)
+   
+   (define (make-symbolic self varset)
+     (let* ([len (List-len self)]
+            [content-type (List-Type-content-type self)]
+            [vals (for/list ([i len])
+                    (gen-make-symbolic content-type varset))])
+       (apply choose*-varset varset (for/list ([i (add1 len)]) (take vals i)))))
+
+   (define (generate-update-arg-names self update-type)
+     (error (format "Unknown List update type: ~a~%"
+                    update-type)))])
+
+(define (List-type len content)
+  (unless (and (or (and (integer? len) (>= len 0))
+                   (configurable? len))
+               (Type? content))
+    (error (format "Invalid arguments to List-type: ~a and ~a~%"
+                   len content)))
+
+  (List-Type len content))
+
+(define (List-len vec-type)
+  (define result (List-Type-len vec-type))
+  (if (configurable? result) (get-configurable-value result) result))
+
 ;; content-type must be an Enum type, Any-type, or a type variable
 (struct Set-Type Any-Type (content-type) #:transparent
   #:methods gen:Type
@@ -763,7 +877,12 @@
    (define (has-setters? self) #t)
    
    (define (make-symbolic self varset)
-     (define num-items (Enum-num-items (Set-Type-content-type self)))
+     (define content-type (Set-Type-content-type self))
+     (unless (Enum-type? content-type)
+       (internal-error
+        (format "Can only make a symbolic Set-type if it contains Enums, not ~a"
+                content-type)))
+     (define num-items (Enum-num-items content-type))
      (enum-make-symbolic-set num-items varset))
 
    (define (generate-update-arg-names self update-type)

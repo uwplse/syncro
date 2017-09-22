@@ -1,7 +1,9 @@
 #lang rosette
 
 (require rackunit rackunit/text-ui)
-(require "../rosette/types.rkt" "../rosette/util.rkt")
+(require "../rosette/types.rkt" "../rosette/util.rkt"
+         "../rosette/enum-set.rkt" "../rosette/graph.rkt"
+         "../rosette/record.rkt")
 
 (provide run-types-tests)
 
@@ -28,6 +30,7 @@
           [int (Integer-type)]
           [bv5 (Bitvector-type 5)]
           [vec (Vector-type 10 (Boolean-type))]
+          [lst (List-type 3 (Integer-type))]
           [sett (Set-type (Any-type))]
           [dag (DAG-type (Any-type))]
           [rec (Record-type 'foo '(a b) (list int vec))]
@@ -36,8 +39,8 @@
           [wproc (Procedure-type (list (Vector-type 3 int)) int #:write-index 0)]
           [err (Error-type)]
           [void (Void-type)]
-          [all-no-enum-var (list any bot idx bool int bv5 vec sett dag rec
-                                 proc rproc wproc err void)]
+          [all-no-enum-var (list any bot idx bool int bv5 vec lst sett
+                                 dag rec proc rproc wproc err void)]
           [enum (Enum-type 'Word 12)]
           [set-enum (Set-type enum)]
           [all-no-var (append all-no-enum-var (list enum set-enum))]
@@ -61,6 +64,7 @@
        (check-equal? int (Vector-index-type vec))
        (check-equal? bv5 (Bitvector-type 5))
        (check-equal? vec (Vector-type 10 bool))
+       (check-equal? lst (List-type 3 (Integer-type)))
        (check-equal? sett (Set-type (Any-type)))
        (check-equal? dag (DAG-type (Any-type)))
        (check-equal? proc (Procedure-type (list (Vector-type 3 (Integer-type)))
@@ -73,6 +77,7 @@
        (check-not-equal? idx int)
        (check-not-equal? proc (Procedure-type (list int bool) (Integer-type)))
        (check-not-equal? vec (Vector-type 10 int))
+       (check-not-equal? lst (List-type 3 bv5))
        ;; Enums are only equal to themselves
        (check-equal? enum (Enum-type 'Word 12))
        (check-not-equal? enum (Enum-type 'Foo 12))
@@ -93,6 +98,7 @@
        (check-equal? (get-parent int) idx)
        (check-equal? (get-parent bv5) idx)
        (check-equal? (get-parent vec) any)
+       (check-equal? (get-parent lst) any)
        (check-equal? (get-parent sett) any)
        (check-equal? (get-parent dag) any)
        (check-equal? (get-parent proc) any)
@@ -122,6 +128,7 @@
                Bitvector-type? bv5
                Enum-type? enum
                Vector-type? vec
+               List-type? lst
                Set-type? sett
                DAG-type? dag
                Record-type? rec
@@ -137,6 +144,7 @@
                Bitvector-type? (set bot bv5)
                Enum-type? (set bot enum)
                Vector-type? (set bot vec vec-var)
+               List-type? (set bot lst)
                Set-type? (set bot sett set-enum)
                DAG-type? (set bot dag)
                Record-type? (set bot rec rec-var)
@@ -439,7 +447,80 @@
           (check-equal? (Vector-index-type vec-type) alpha-type)
           (check-equal? (Vector-output-type vec-type) int)])
        (check-equal? (get-domain-given-range vector-ref-type int #t)
-                     (list (Vector-type idx int) idx))))))
+                     (list (Vector-type idx int) idx)))
+
+     (test-case "make-symbolic"
+       (define (restrict-model synth varset)
+         (define model-hash (model synth))
+         (sat (for/hash ([var (map input-val (set->list varset))]
+                         #:when (hash-has-key? model-hash var))
+                (values var (hash-ref model-hash var)))))
+
+       (define (check-symbolic type allowed-values disallowed-values)
+         (define varset (mutable-set))
+         (define sym-value (make-symbolic type varset))
+         (define input-asserts
+           (for*/list ([input varset]
+                       [assertion (input-preconditions input)])
+             assertion))
+
+         (for ([val allowed-values])
+           (define sym-model
+             (solve (begin (for-each (lambda (x) (assert x)) input-asserts)
+                           (assert (equal? sym-value val)))))
+           (check-true (sat? sym-model)
+                       (format "It should be possible to have value ~a for a symbolic value of type ~a"
+                               val type))
+           ;; All of the variables needed to concretize the value
+           ;; should be in varset. Check this by only providing values
+           ;; for the variables in varset and see if evaluate fully
+           ;; concretizes the value.
+           (define restricted-model (restrict-model sym-model varset))
+           (define evaluated-val (evaluate sym-value restricted-model))
+           (check-equal? evaluated-val val
+                         (format "Solver found value ~a for type ~a which is not equal to ~a"
+                                 evaluated-val type val)))
+
+         (for ([val disallowed-values])
+           (define condition (equal? sym-value val))
+           (check-true (or (and (not (term? condition)) (false? condition))
+                           (unsat? (solve (for-each (lambda (x) (assert x))
+                                                    input-asserts)
+                                          (assert condition))))
+                       (format "It should not be possible to have value ~a for a symbolic value of type ~a"
+                               val type))))
+
+       (check-symbolic bool (list #t #f) (list 3 '(#t)))
+       (check-symbolic int (list -1 14) (list #t '()))
+       (check-symbolic enum (list 0 11) (list -1 12 #t))
+
+       (check-symbolic vec
+                       (list (make-vector 10 #t))
+                       (list (make-vector 5 #t) (make-vector 10 0) 5 #t))
+       (check-symbolic lst
+                       (list (range 3) '(1 1) '() '(-3))
+                       (list (range 4) 5 (list #t)))
+       (check-symbolic (Set-type enum)
+                       (list (enum-make-set 12) (build-enum-set 12 even?))
+                       (list (enum-make-set 3) (enum-make-set 15) #t 3))
+       (check-symbolic (DAG-type enum)
+                       (list (make-graph 12)
+                             (let ([result (make-graph 12)])
+                               (add-edge! result 1 3)
+                               (add-edge! result 2 3)
+                               result))
+                       (list (make-graph 2) (enum-make-set 12) #t 3))
+       (check-symbolic rec
+                       (list (make-record '(a b)
+                                          (list 3 (make-vector 10 #t))))
+                       (list (make-record '(a c)
+                                          (list 3 (make-vector 10 #t)))
+                             (make-record '(a b)
+                                          (list 3 (make-vector 5 #t)))
+                             (make-record '(a b)
+                                          (list #t (make-vector 10 #t)))
+                             (make-record '(a b) (list 3 3)))))
+     )))
 
 ;; TODO: Tests for the symbolic code generation
 
