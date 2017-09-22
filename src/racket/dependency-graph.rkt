@@ -25,7 +25,7 @@
 
 ;; Creates a new, empty dep-graph
 (define (make-dependency-graph)
-  (let ([g (undirected-graph '())])
+  (let ([g (directed-graph '())])
     (define-vertex-property g id->node)
     (dep-graph g id->node id->node-set! '())))
 
@@ -44,7 +44,7 @@
 ;; dg: dep-graph
 ;; parent, child: symbols, names of variable to create a dependency for
 (define (add-dependency! dg parent child)
-  (add-edge! (dep-graph-graph dg) parent child))
+  (add-directed-edge! (dep-graph-graph dg) parent child))
 
 ;; dg: dep-graph
 ;; id: symbol (variable name)
@@ -61,10 +61,10 @@
 ;; Returns a lambda that takes an argument and check if it belongs in the path
 (define (check-path? dg from-id)
   (define-values (dist _) (bfs (dep-graph-graph dg) from-id))
-  (define res (lambda (to-id)
+  (lambda (to-id)
     (and (not (eq? to-id from-id))
-      (and (hash-has-key? dist to-id) (not (= (hash-ref dist to-id) +inf.0))))))
-  res)
+         (and (hash-has-key? dist to-id)
+              (not (= (hash-ref dist to-id) +inf.0))))))
 
 ;;;;;;;;;;;
 ;; Nodes ;;
