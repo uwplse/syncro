@@ -98,7 +98,8 @@
 
     ;; Maps each delta name to its incremental delta function
     ;; (represented as an S-expression as a nested list).
-    (define delta-fns (make-hash))
+    (define delta->prederiv (make-hash))
+    (define delta->postderiv (make-hash))
 
     (define/public (custom-write port)
       (display (format "#<structure%:~a>" id) port))
@@ -136,24 +137,32 @@
         (unless (equal? old-names names)
           (error (format "For the ~a delta to ~a, there are two different sets of names: ~a and ~a"
                          delta-name id old-names names)))))
+
+    (define/private (get-appropriate-delta-deriv-map deriv-type)
+      (match deriv-type
+        ['pre delta->prederiv]
+        ['post delta->postderiv]))
     
-    (define/public (get-delta-code delta-name)
-      (if (or (equal? delta-name 'recompute)
-              (not (hash-has-key? delta-fns delta-name)))
-          (begin (when (not (equal? delta-name 'recompute))
-                   (printf "Warning: Using recomputation instead of delta ~a to ~a~%" delta-name id))
-                 (if (eq? (get-fn-code) #f) `()
-                 `(set! ,id ,(get-fn-code))))
-          (hash-ref delta-fns delta-name)))
+    (define/public (get-delta-deriv delta-name [deriv-type 'post])
+      (define delta->deriv (get-appropriate-delta-deriv-map deriv-type))
+      (when (and (not (hash-has-key? delta->deriv delta-name))
+                 (not (equal? delta-name 'recompute)))
+        (printf "Warning: Using recomputation instead of delta ~a to ~a~%"
+                delta-name id))
+
+      (cond [(hash-has-key? delta->deriv delta-name)
+             (hash-ref delta->deriv delta-name)]
+            [(eq? (get-fn-code) #f)
+             (error "No update function present, and no recomputation to fall back to")]
+            [else `(set! ,id ,(get-fn-code))]))
 
     ;; Appends the given code to the delta function for the given
     ;; delta name, or creates the delta function if it does not
     ;; exist yet.
-    (define/public (add-delta-code delta-name code)
-      (if (hash-has-key? delta-fns delta-name)
-          (hash-set! delta-fns delta-name
-                     (append (hash-ref delta-fns delta-name) (list code)))
-          (hash-set! delta-fns delta-name (list 'begin code))))))
+    (define/public (add-delta-deriv-stmts delta-name stmts [deriv-type 'post])
+      (define delta->deriv (get-appropriate-delta-deriv-map deriv-type))
+      (hash-set! delta->deriv delta-name
+                 (append (hash-ref delta->deriv delta-name '()) stmts)))))
 
 ;;;;;;;;;;;;;;;;;;;;;
 ;; Delta functions ;;

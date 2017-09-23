@@ -355,15 +355,18 @@
                     (for/list ([i num-configs])
                       (get-code-for-config i))))
 
-           (define (get-code model)
+           (define (get-derivs model)
              (let* ([pre-result (coerce-evaluate prederiv model)]
                     [post-result (coerce-evaluate program model)])
-               (let-values ([(cleaned-prederiv cleaned-postderiv)
-                             (eliminate-dead-code pre-result post-result)])
-                 (append '(let ())
-                         (map lifted-code cleaned-prederiv)
-                         (list ',delta-code
-                               (lifted-code cleaned-postderiv))))))
+               (eliminate-dead-code pre-result post-result)))
+
+           (define (get-code model)
+             (let-values ([(cleaned-prederiv cleaned-postderiv)
+                           (get-derivs model)])
+               (append '(let ())
+                       (map lifted-code cleaned-prederiv)
+                       (list ',delta-code
+                             (lifted-code cleaned-postderiv)))))
 
            (define (print-program model)
              (displayln "Found a potential program:")
@@ -393,9 +396,9 @@
                 ,@(log-for-option
                    'progress
                    '(displayln "Solution found! Generating code:"))
-                (let ([code (get-code synth)])
-                  ,@(log-for-option 'progress '(pretty-print code))
-                  code))))
+                ,@(log-for-option 'progress '(pretty-print (get-code synth)))
+                (let-values ([(pre post) (get-derivs synth)])
+                  (list (map lifted-code pre) (lifted-code post))))))
 
       (when (logging-enabled? 'debug) (pretty-print rosette-code))
       (run-in-rosette rosette-code))
@@ -462,18 +465,18 @@
     ;; Results ;;
     ;;;;;;;;;;;;;
 
-    (define result
-      (if (hash-ref options 'metasketch?)
-          (run-metasketch)
-          (run-synthesis)))
+    (define result (run-synthesis))
     (if result
-        (send input-node add-delta-code delta-name result)
+        (match-let ([(list pre-list post) result])
+          (send input-node add-delta-deriv-stmts delta-name pre-list 'pre)
+          (send input-node add-delta-deriv-stmts delta-name (list post) 'post))
         (begin
           (displayln
            (format "No program found to update ~a upon delta ~a to ~a"
                    output-id delta-name input-id))
-          (send input-node add-delta-code delta-name
-                (send output-node get-delta-code 'recompute)))))
+          (send input-node add-delta-deriv-stmts delta-name
+                (list (send output-node get-delta-code 'recompute))
+                'post))))
 
   ;;;;;;;;;;;;;;;;;
   ;; Outer loops ;;
@@ -491,10 +494,12 @@
     (match-define (list delta-args _ delta-code _)
       (datumify (symbolic-delta-code input-node delta-name 'inputs-set)))
 
-    (let ([synthesized-code (send input-node get-delta-code delta-name)])
+    (let ([all-prederivs (send input-node get-delta-deriv delta-name 'pre)]
+          [all-postderivs (send input-node get-delta-deriv delta-name 'post)])
       `(define (,delta-name ,@delta-args)
+         ,@all-prederivs
          ,delta-code
-         ,synthesized-code)))
+         ,@all-postderivs)))
 
   (for/fold ([result null]) ([input-id (get-ids graph)])
     (define input-node (get-node graph input-id))
