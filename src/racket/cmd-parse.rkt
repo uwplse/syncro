@@ -12,20 +12,19 @@
 (define (cmd-parse [args (current-command-line-arguments)])
   (define valid-print-flags '(cegis debug progress stats))
   (define options
-    (make-hash (list (cons 'logging (mutable-set 'cegis 'progress))
-                     (cons 'metasketch? #f)
-                     (cons 'bitwidth 10)
-                     (cons 'timeout 3600)
-                     (cons 'module-file "metasketch-module-file.rkt")
-                     ;; grammar-version can be 'basic, 'general,
-                     ;; 'caching, or '(ssa n), where n is a
-                     ;; non-negative integer (use '(ssa 1) by
-                     ;; default).
-                     (cons 'grammar-version '(ssa 1))
-                     ;; grammar-choice can be 'basic or 'sharing.
-                     ;; 'sharing only works with 'basic and 'general
-                     ;; grammars.
-                     (cons 'grammar-choice 'basic))))
+    (make-hash
+     (list (cons 'logging (mutable-set 'cegis 'progress))
+           (cons 'metasketch? #f)
+           (cons 'bitwidth 10)
+           (cons 'timeout 3600)
+           (cons 'module-file "metasketch-module-file.rkt")
+           ;; grammar-version can be 'basic, 'general, 'caching, or
+           ;; '(ssa n), where n is a non-negative integer (use '(ssa
+           ;; 1) by default).
+           (cons 'grammar-version '(ssa 1))
+           ;; grammar-choice can be 'basic or 'sharing. 'sharing only
+           ;; works with 'basic and 'general grammars.
+           (cons 'grammar-choice 'basic))))
   (command-line
    #:argv args
    #:once-each

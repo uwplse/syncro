@@ -40,9 +40,9 @@
 ;; generic functions on those structs.
 
 ;; Serialization: We should be able to use serializable-struct, but it
-;; doesn't work. So, for now we'll serialize just enough that
-;; lifted-code works, since that's all we need.
-;; TODO: Use serializable-struct once it is fixed.
+;; doesn't work (Rosette doesn't lift it). So, for now we'll serialize
+;; just enough that lifted-code works, since that's all we need.
+;; TODO: Use serializable-struct once it is added to Rosette.
 
 ;; TODO: Write a macro that will generate each of the structs?
 ;; Currently a lot of copy pasted code

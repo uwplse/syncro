@@ -76,11 +76,19 @@
         [expr (send node get-fn-code)])
     (if expr `(define ,id ,expr) (symbolic-code node set-id))))
 
-(define (get-node-info node set-id)
+(define (get-assignment node set-id)
   (let ([id (send node get-id)]
         [expr (send node get-fn-code)])
-    (list node id (send node get-type) expr (get-definition node set-id)
-          (send node get-invariant-code))))
+    (if expr `(set! ,id ,expr) '(void))))
+
+(define (get-node-info node set-id)
+  (let ([id (send node get-id)]
+        [type (send node get-type)]
+        [expr (send node get-fn-code)]
+        [definition (get-definition node set-id)]
+        [assignment (get-assignment node set-id)]
+        [invariant (send node get-invariant-code)])
+    (list node id type expr definition assignment invariant)))
 
 ;; Transposes a list of lists.
 ;; eg. (transpose '((1 2 3) (4 5 6)) 3) gives '((1 4) (2 5) (3 6))
@@ -150,11 +158,11 @@
               output-id delta-name input-id))
 
     ;; Relevant information about the input, intermediates, and output
-    (match-define (list input-node _ input-type _ define-input input-invariant)
+    (match-define (list input-node _ input-type _ define-input _ input-invariant)
       (get-id-info input-id))
-    (match-define (list _ _ intermediate-types _ define-intermediates _)
-      (transpose (map get-id-info intermediate-ids) 6))
-    (match-define (list output-node _ output-type output-expr define-output _)
+    (match-define (list _ _ intermediate-types _ define-intermediates set-intermediates _)
+      (transpose (map get-id-info intermediate-ids) 7))
+    (match-define (list output-node _ output-type output-expr define-output _ _)
       (get-id-info output-id))
     
     ;; Relevant information for performing symbolic computation on the input
@@ -177,7 +185,6 @@
                 ([id (cons output-id non-output-ids)])
         `(environment-define ,curr-env-code ',id ,id)))
 
-    ;; TODO: This is misnamed, constants come before this
     (define define-structures
       `(;; Example: (define word->topic (build-vector 12 ...))
         ;; The resulting data structure contains symbolic variables.
@@ -275,6 +282,7 @@
          ,@prederiv-run-code
          ,delta-code
          (define input-assertion-after-delta ,input-invariant)
+         ,@set-intermediates
 
          ;; Symbolically run the sampled program
          ,@(log-for-option
@@ -347,15 +355,18 @@
                     (for/list ([i num-configs])
                       (get-code-for-config i))))
 
-           (define (get-code model)
+           (define (get-derivs model)
              (let* ([pre-result (coerce-evaluate prederiv model)]
                     [post-result (coerce-evaluate program model)])
-               (let-values ([(cleaned-prederiv cleaned-postderiv)
-                             (eliminate-dead-code pre-result post-result)])
-                 (append '(let ())
-                         (map lifted-code cleaned-prederiv)
-                         (list ',delta-code
-                               (lifted-code cleaned-postderiv))))))
+               (eliminate-dead-code pre-result post-result)))
+
+           (define (get-code model)
+             (let-values ([(cleaned-prederiv cleaned-postderiv)
+                           (get-derivs model)])
+               (append '(let ())
+                       (map lifted-code cleaned-prederiv)
+                       (list ',delta-code
+                             (lifted-code cleaned-postderiv)))))
 
            (define (print-program model)
              (displayln "Found a potential program:")
@@ -385,9 +396,9 @@
                 ,@(log-for-option
                    'progress
                    '(displayln "Solution found! Generating code:"))
-                (let ([code (get-code synth)])
-                  ,@(log-for-option 'progress '(pretty-print code))
-                  code))))
+                ,@(log-for-option 'progress '(pretty-print (get-code synth)))
+                (let-values ([(pre post) (get-derivs synth)])
+                  (list (map lifted-code pre) (lifted-code post))))))
 
       (when (logging-enabled? 'debug) (pretty-print rosette-code))
       (run-in-rosette rosette-code))
@@ -454,36 +465,45 @@
     ;; Results ;;
     ;;;;;;;;;;;;;
 
-    (define result
-      (if (hash-ref options 'metasketch?)
-          (run-metasketch)
-          (run-synthesis)))
+    (define result (run-synthesis))
     (if result
-        (send input-node add-delta-code delta-name result)
+        (match-let ([(list pre-list post) result])
+          (send input-node add-delta-deriv-stmts delta-name pre-list 'pre)
+          (send input-node add-delta-deriv-stmts delta-name (list post) 'post))
         (begin
           (displayln
            (format "No program found to update ~a upon delta ~a to ~a"
                    output-id delta-name input-id))
-          (send input-node add-delta-code delta-name
-                (send output-node get-delta-code 'recompute)))))
+          (send input-node add-delta-deriv-stmts delta-name
+                (list (send output-node get-delta-code 'recompute))
+                'post))))
 
   ;;;;;;;;;;;;;;;;;
   ;; Outer loops ;;
   ;;;;;;;;;;;;;;;;;
 
-  (for/fold ([result null]) ([input-id (get-ids graph)])  
+  (define (updates-for-input-and-delta input-id delta-name)
     (define input-node (get-node graph input-id))
     (define check-path-fn (check-path? graph input-id))
-    (append (for/list ([delta-name (send input-node get-delta-names)])
-      (define intermediate-ids '())
-      (for ([output-id (get-ids graph)] #:when (check-path-fn output-id))
-        (perform-synthesis input-id delta-name intermediate-ids output-id)
-        (set! intermediate-ids (append intermediate-ids (list output-id))))
+    (define intermediate-ids '())
+    (for ([output-id (get-ids graph)] #:unless (equal? input-id output-id))
+      (when (check-path-fn output-id)
+        (perform-synthesis input-id delta-name intermediate-ids output-id))
+      (set! intermediate-ids (append intermediate-ids (list output-id))))
 
-      (match-define (list delta-args _ delta-code _)
-        (datumify (symbolic-delta-code input-node delta-name 'inputs-set)))
+    (match-define (list delta-args _ delta-code _)
+      (datumify (symbolic-delta-code input-node delta-name 'inputs-set)))
 
-      (let ([synthesized-code (send input-node get-delta-code delta-name)])
-        `(define (,delta-name ,@delta-args)
-           ,delta-code
-           ,synthesized-code))) result)))
+    (let ([all-prederivs (send input-node get-delta-deriv delta-name 'pre)]
+          [all-postderivs (send input-node get-delta-deriv delta-name 'post)])
+      `(define (,delta-name ,@delta-args)
+         ,@all-prederivs
+         ,delta-code
+         ,@all-postderivs)))
+
+  (for/fold ([result null]) ([input-id (get-ids graph)])
+    (define input-node (get-node graph input-id))
+    (define updates
+      (for/list ([delta-name (send input-node get-delta-names)])
+        (updates-for-input-and-delta input-id delta-name)))
+    (append updates result)))
