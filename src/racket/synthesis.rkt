@@ -76,11 +76,19 @@
         [expr (send node get-fn-code)])
     (if expr `(define ,id ,expr) (symbolic-code node set-id))))
 
-(define (get-node-info node set-id)
+(define (get-assignment node set-id)
   (let ([id (send node get-id)]
         [expr (send node get-fn-code)])
-    (list node id (send node get-type) expr (get-definition node set-id)
-          (send node get-invariant-code))))
+    (if expr `(set! ,id ,expr) '(void))))
+
+(define (get-node-info node set-id)
+  (let ([id (send node get-id)]
+        [type (send node get-type)]
+        [expr (send node get-fn-code)]
+        [definition (get-definition node set-id)]
+        [assignment (get-assignment node set-id)]
+        [invariant (send node get-invariant-code)])
+    (list node id type expr definition assignment invariant)))
 
 ;; Transposes a list of lists.
 ;; eg. (transpose '((1 2 3) (4 5 6)) 3) gives '((1 4) (2 5) (3 6))
@@ -150,11 +158,11 @@
               output-id delta-name input-id))
 
     ;; Relevant information about the input, intermediates, and output
-    (match-define (list input-node _ input-type _ define-input input-invariant)
+    (match-define (list input-node _ input-type _ define-input _ input-invariant)
       (get-id-info input-id))
-    (match-define (list _ _ intermediate-types _ define-intermediates _)
-      (transpose (map get-id-info intermediate-ids) 6))
-    (match-define (list output-node _ output-type output-expr define-output _)
+    (match-define (list _ _ intermediate-types _ define-intermediates set-intermediates _)
+      (transpose (map get-id-info intermediate-ids) 7))
+    (match-define (list output-node _ output-type output-expr define-output _ _)
       (get-id-info output-id))
     
     ;; Relevant information for performing symbolic computation on the input
@@ -177,7 +185,6 @@
                 ([id (cons output-id non-output-ids)])
         `(environment-define ,curr-env-code ',id ,id)))
 
-    ;; TODO: This is misnamed, constants come before this
     (define define-structures
       `(;; Example: (define word->topic (build-vector 12 ...))
         ;; The resulting data structure contains symbolic variables.
@@ -275,6 +282,7 @@
          ,@prederiv-run-code
          ,delta-code
          (define input-assertion-after-delta ,input-invariant)
+         ,@set-intermediates
 
          ;; Symbolically run the sampled program
          ,@(log-for-option
