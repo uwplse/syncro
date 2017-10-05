@@ -421,8 +421,12 @@
                        [subexp (cached-grammar type #:mutable? #f (- depth 1)
                                                cache cache #f)])
                   (and subexp (set!^ variable subexp)))))))
-  
+
+  ;; Returns a lifted? object that applies the given operator to some
+  ;; arguments. The return value must satisfy the constraints implied
+  ;; by desired-type, mutable? and depth.
   (define (make-subexp-operator operator cache desired-type mutable? depth)
+    ;; Get the type information for the arguments
     (let ([domain-pairs
            (and (can-use-operator? operator orig-params depth desired-type)
                 (operator-domain-with-mutability operator desired-type mutable?))]
@@ -441,8 +445,10 @@
                    [rest (and first (special-andmap fn (cdr lst)))])
               (and rest (cons first rest)))))
 
+      ;; Generate subtrees for the arguments
       (let* ([result (and domain-pairs
                           (special-andmap get-or-make-subexp domain-pairs))])
+        ;; Build the final tree
         (and result (operator-make-lifted operator result)))))
 
   ;; special-andmap above creates weird symbolic terms because of
@@ -454,7 +460,8 @@
   ;; (and result (not (member #f result)) result)))
   (define special-form->proc
     (hash 'set! make-subexp-set!))
-  
+
+  ;; Dispatches to the appropriate make-subexp helper
   (define (make-subexp operator cache desired-type mutable? depth)
     (cond [(grammar-operator? operator)
            (make-subexp-operator operator cache desired-type mutable? depth)]
@@ -464,10 +471,9 @@
           [else
            (error (format "Unknown special form: ~a" operator))]))
 
-  ;; Type can be symbolic. This may make things tricky.
-  ;; TODO: Is this sound? There may be some programs that we should
-  ;; generate but don't, specifically when the desired-type is
-  ;; symbolic and so we have too much sharing.
+  ;; Generates all of the possible productions and chooses from all of
+  ;; them. Returns a lifted? tree that satisfies the constraints
+  ;; implied by desired-type, mutable? and depth.
   (define (grammar-general-helper desired-type depth #:mutable? [mutable? #f])
     (define cache (and cache? (make-hash)))
 
@@ -502,6 +508,7 @@
     (define all-args (append terminals integer-hole boolean-constants recurse))
     (apply my-choose* all-args))
 
+  ;; Different ways in which the grammar might be used.
   (cond [(and (equal? mode 'stmt) (equal? start-type (Void-type)))
          (build-grammar terminal-info num-stmts expr-depth num-temps guard-depth
                         grammar-general-helper
@@ -518,6 +525,9 @@
             (lambda ()
               (grammar-general-helper start-type expr-depth #:mutable? mutable?))))]))
 
+;; Basic grammar, which creates a lifted? object by generating a tree
+;; using code similar in structure to a recursive descent parser. Each
+;; new function requires another production and an edit to the code.
 (define (grammar-basic terminal-info operators num-stmts depth chooser
                        #:num-temps [num-temps 0]
                        #:guard-depth [guard-depth 0]
@@ -656,6 +666,28 @@
   (build-grammar terminal-info num-stmts depth num-temps guard-depth
                  expr-grammar stmt-grammar))
 
+;; Adds bells and whistles to the simple "create a nested AST"
+;; grammars that are defined above.
+;; terminal-info: Lexical-Terminal-Info% object
+;; num-stmts:     Number of statements the AST can have
+;; depth:         Maximum allowed expression depth
+;; num-temps:     The number of temporary variables to create. These
+;;                are different from the temporary variables in the
+;;                SSA grammar, because these are untyped.
+;; guard-depth:   Depth of the guard expression. Zero means there
+;;                should be no guard.
+;; expr-grammar:  A function for generating symbolic expressions.
+;; stmt-grammar:  A function for generating symbolic statements.
+;; Generates a program of the following form:
+;; (if <guard-expression>
+;;     (void)
+;;     (let ()
+;;       (define temp-variable-1 (expr-??))
+;;       ...
+;;       (define temp-variable-%num-temps% (expr-??))
+;;       (stmt-??)
+;;       ...
+;;       (stmt-??)))
 (define (build-grammar terminal-info num-stmts depth num-temps guard-depth
                        expr-grammar stmt-grammar)
   ;; Choose guard
