@@ -3,19 +3,17 @@
 (require "../src/rosette/namespace-requires.rkt"
          "../src/rosette/grammar/lifted-operators.rkt")
 
+;; NOTE: Normally all except num2 would have mutable? set to #f, but we set it
+;; to #t here to have a fair comparison with Bonsai
 (define terminal-info (new Lexical-Terminal-Info%))
-(send terminal-info make-and-add-terminal
-      'inverse-permutation
+(send terminal-info make-and-add-terminal 'inverse-permutation
       (Vector-type 5 (Integer-type))
-      #:mutable?
-      #t)
-(send terminal-info make-and-add-terminal
-      'permutation
+      #:mutable? #t)
+(send terminal-info make-and-add-terminal 'permutation
       (Vector-type 5 (Integer-type))
-      #:mutable?
-      #f)
-(send terminal-info make-and-add-terminal 'i (Integer-type) #:mutable? #f)
-(send terminal-info make-and-add-terminal 'j (Integer-type) #:mutable? #f)
+      #:mutable? #t)
+(send terminal-info make-and-add-terminal 'i (Integer-type) #:mutable? #t)
+(send terminal-info make-and-add-terminal 'j (Integer-type) #:mutable? #t)
 
 
 (displayln "Time for symbolic program generation")
@@ -64,5 +62,7 @@
       (assert (equal? result resinv))))))
 
 (if (sat? synth)
-    (pretty-print (lifted-code (coerce-evaluate program synth)))
+    (let-values ([(_ cleaned-code)
+                  (eliminate-dead-code '() (coerce-evaluate program synth))])
+      (pretty-print (lifted-code cleaned-code)))
     (displayln "No program found"))
