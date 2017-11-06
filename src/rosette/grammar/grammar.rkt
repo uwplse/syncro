@@ -38,6 +38,8 @@
 ;; #:guard-depth: Depth of the guard expression. If this is #f, no
 ;;                guard is inserted.
 ;; #:type:        The output type of the expression to be generated.
+;; #:disable-types?: Whether to disable the type analysis. Does not
+;;                affect the basic grammar.
 ;; #:operators:   A list of operators to use. Each operator is either
 ;;                a grammar-operator? or a symbol (like 'set!)
 ;; #:version:     Which grammar to use (basic, general, caching, ssa)
@@ -60,12 +62,15 @@
                  #:num-temps [num-temps 0]
                  #:guard-depth [guard-depth 0]
                  #:type [type (Void-type)]
+                 #:disable-types? [disable-types? #f]
                  #:mutable? [mutable? #f]
                  #:operators [operator-info default-operators]
                  #:version [version 'basic]
                  #:choice-version [choice-version 'basic]
+                 #:cache? [cache? #t]
                  #:mode [mode 'stmt]
                  #:print-statistics [print-statistics #f])
+  (when disable-types? (set! type (Any-type)))
   (define-values (new-pairs-set all-pairs-set operators)
     (remove-polymorphism operator-info terminal-info))
   (define chooser (make-chooser choice-version))
@@ -78,15 +83,6 @@
                           #:num-temps num-temps
                           #:guard-depth guard-depth
                           #:type type)]
-          ['caching
-           (grammar-general terminal-info operators num-stmts depth chooser
-                            #:num-temps num-temps
-                            #:guard-depth guard-depth
-                            #:use-constants? #t
-                            #:type type
-                            #:mutable? mutable?
-                            #:cache? #t
-                            #:mode mode)]
           ['general
            (grammar-general terminal-info operators num-stmts depth chooser
                             #:num-temps num-temps
@@ -94,7 +90,8 @@
                             #:use-constants? #t
                             #:type type
                             #:mutable? mutable?
-                            #:cache? #f
+                            #:cache? cache?
+                            #:disable-types? disable-types?
                             #:mode mode)]
           [`(ssa ,(? integer? num-constants))
            (grammar-ssa terminal-info operators num-stmts depth chooser
@@ -104,7 +101,8 @@
                         #:type type
                         #:mutable? mutable?
                         #:new-pairs-set new-pairs-set
-                        #:cache? #t
+                        #:cache? cache?
+                        #:disable-types? disable-types?
                         #:mode mode)]
           [_
            (error (format "Unknown grammar type: ~a" version))])))
@@ -167,6 +165,7 @@
                      #:mutable? [mutable? #f]
                      #:new-pairs-set new-pairs-set
                      #:cache? cache?
+                     #:disable-types? [disable-types? #f]
                      #:mode mode)
   (when mutable?
     (error "Unsupported grammar option: SSA grammar does not enforce top level mutability constraint"))
@@ -178,6 +177,7 @@
     (grammar-general terminal-info operators stmts depth chooser
                      #:num-temps 0 #:guard-depth 0
                      #:use-constants? #f #:cache? cache?
+                     #:disable-types? disable-types?
                      #:type type #:mutable? mutable?
                      #:mode 'stmt))
 
@@ -219,10 +219,13 @@
         expr-depth
         (* expr-depth (second mode))))
   (define definitions
-    (for*/list ([i num-defns]
-                [tmp-pair new-pairs-set]
-                #:unless (equal? (tm-pair-type tmp-pair) (Void-type)))
-      (create-ssa-temporary tmp-pair)))
+    (if disable-types?
+        (for/list ([i num-defns])
+          (create-ssa-temporary (tm-pair (Any-type) #t)))
+        (for*/list ([i num-defns]
+                    [tmp-pair new-pairs-set]
+                    #:unless (equal? (tm-pair-type tmp-pair) (Void-type)))
+          (create-ssa-temporary tmp-pair))))
 
   ;; Build the program
   (if (equal? mode 'stmt)
@@ -244,6 +247,7 @@
                          #:type [start-type (Void-type)]
                          #:mutable? [mutable? #f]
                          #:cache? cache?
+                         #:disable-types? [disable-types? #f]
                          #:mode mode)
   (define orig-params
     (hash 'terminal-info terminal-info
@@ -256,6 +260,7 @@
           'type start-type
           'mutable? mutable?
           'cache? cache?
+          'disable-types? disable-types?
           'mode mode))
 
   (define (my-choose* . args)
@@ -363,6 +368,7 @@
   ;;          implied by desired-type, mutable? and depth, or #f.
   (define (cached-grammar desired-type #:mutable? mutable? depth
                           lookup-cache true-cache remove?)
+    (when disable-types? (set! desired-type (Any-type)))
     (apply-on-symbolic-type
      desired-type
      (lambda (concrete-type)
@@ -400,6 +406,7 @@
   ;; cache: The true cache. See description of caching algorithm above
   ;;        cached-grammar.
   (define (make-subexp-set! cache desired-type mutable? depth)
+    (when disable-types? (set! desired-type (Any-type)))
     (and (unify-types (Void-type) desired-type)
          (not mutable?)
          ;; We only need to get one item out of cache, so no need to
@@ -426,6 +433,7 @@
   ;; arguments. The return value must satisfy the constraints implied
   ;; by desired-type, mutable? and depth.
   (define (make-subexp-operator operator cache desired-type mutable? depth)
+    (when disable-types? (set! desired-type (Any-type)))
     ;; Get the type information for the arguments
     (let ([domain-pairs
            (and (can-use-operator? operator orig-params depth desired-type)
@@ -463,6 +471,7 @@
 
   ;; Dispatches to the appropriate make-subexp helper
   (define (make-subexp operator cache desired-type mutable? depth)
+    (when disable-types? (set! desired-type (Any-type)))
     (cond [(grammar-operator? operator)
            (make-subexp-operator operator cache desired-type mutable? depth)]
           [(hash-has-key? special-form->proc operator)
@@ -475,6 +484,7 @@
   ;; them. Returns a lifted? tree that satisfies the constraints
   ;; implied by desired-type, mutable? and depth.
   (define (grammar-general-helper desired-type depth #:mutable? [mutable? #f])
+    (when disable-types? (set! desired-type (Any-type)))
     (define cache (and cache? (make-hash)))
 
     ;; Base case: Terminals
@@ -509,7 +519,7 @@
     (apply my-choose* all-args))
 
   ;; Different ways in which the grammar might be used.
-  (cond [(and (equal? mode 'stmt) (equal? start-type (Void-type)))
+  (cond [(and (equal? mode 'stmt) (unify-types start-type (Void-type)))
          (build-grammar terminal-info num-stmts expr-depth num-temps guard-depth
                         grammar-general-helper
                         (lambda (num-stmts depth)

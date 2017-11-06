@@ -14,7 +14,10 @@
   (define options
     (make-hash
      (list (cons 'logging (mutable-set 'cegis 'progress))
-           (cons 'metasketch? #f)
+           ;(cons 'metasketch? #f)
+           (cons 'no-type-analysis? #f)
+           (cons 'no-mutability-analysis? #f)
+           (cons 'cache? #t)
            (cons 'bitwidth 10)
            (cons 'timeout 3600)
            (cons 'module-file "metasketch-module-file.rkt")
@@ -47,7 +50,19 @@
    
    #;[("-m" "--use-metasketch")
     "Use metasketches during synthesis."
-    (hash-set! options 'metasketch? #t)]
+      (hash-set! options 'metasketch? #t)]
+
+   [("--no-types")
+    "Do not use the type analysis."
+    (hash-set! options 'no-type-analysis? #t)]
+
+   [("--no-mutability")
+    "Do not use the mutability analysis."
+    (hash-set! options 'no-mutability-analysis? #t)]
+
+   [("--no-cache")
+    "Do not use caching."
+    (hash-set! options 'cache? #f)]
    
    [("-b" "--bitwidth")
     bits
@@ -68,9 +83,9 @@
    [("-g" "--grammar")
     grammar
     ("Which type of grammar to use."
-     "Either basic, general, caching, or (ssa n).")
+     "Either basic, general, or (ssa n).")
     (let ([grammar-type (call-with-input-string grammar read)])
-      (unless (or (member grammar-type '(basic general caching))
+      (unless (or (member grammar-type '(basic general))
                   (ssa-spec? grammar-type))
         (error (format "Invalid option to -g or --grammar: ~a" grammar-type)))
 
