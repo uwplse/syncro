@@ -1,7 +1,7 @@
 #lang rosette
 
-(require "../src/rosette/namespace-requires.rkt"
-         "../src/rosette/grammar/lifted-operators.rkt")
+(require "../../src/rosette/namespace-requires.rkt"
+         "../../src/rosette/grammar/lifted-operators.rkt")
 
 ;; NOTE: Normally all except num2 would have mutable? set to #f, but we set it
 ;; to #t here to have a fair comparison with Bonsai
