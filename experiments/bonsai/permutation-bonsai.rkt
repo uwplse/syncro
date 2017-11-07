@@ -14,6 +14,7 @@
           ((vector-ref . vec-name) . term)             ; vector ref operation
           (op-type . (term . term))               ; see op-type
           name                                    ; variable
+          int-hole                                ; integer hole
     ]
     [type int           ; integer
           vector        ; vector
@@ -58,6 +59,9 @@
         'one
         (λ () INT)
 
+        'int-hole
+        (λ () INT)
+
         '(((vector-set! . _) . _) . _)
         (λ (vec x y)
             (define vec+ (type-expr vec env))
@@ -97,6 +101,10 @@
 
         'one
         (λ () 1)
+
+        'int-hole
+        (λ () (define-symbolic new-int integer?)
+            new-int)
 
         '(((vector-set! . _) . _) . _)
         (λ (vec x y)
