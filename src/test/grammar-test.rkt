@@ -166,16 +166,16 @@
      ;;;;;;;;;;;;;;;;;;;;
      
      (define configs
-       (list '(basic basic #t)
-             '(basic sharing #t)
-             '(general basic #t)
-             '(general sharing #t)
-             '(caching basic #t)
+       (list '(basic basic #f #t)
+             '(basic sharing #f #t)
+             '(general basic #f #t)
+             '(general sharing #f #t)
+             '(general basic #t #t)
              #;'(synthax-deep basic #f)))
 
      ;; Grammar types to be combined with the mock chooser
      (define concrete-configs
-       (list 'basic 'general 'caching '(ssa 2)))
+       (list 'basic 'general '(ssa 2)))
 
      ;;;;;;;;;;;;;;;;;;;
      ;; Running tests ;;
@@ -193,9 +193,9 @@
      (test-case "Basic, General, and Caching Grammars"
        (for ([config configs])
          (time
-          (match-define (list grammar-version choice-version test-medium?) config)
-          (printf "Testing the ~a grammar with choice version ~a~%"
-                  grammar-version choice-version)
+          (match-define (list grammar-version choice-version cache? test-medium?) config)
+          (printf "Testing the ~a grammar with choice version ~a ~a caching~%"
+                  grammar-version choice-version (if cache? "with" "without"))
           (clear-state!)
           (define simple-grmr (grammar info 2 2
                                        #:version grammar-version

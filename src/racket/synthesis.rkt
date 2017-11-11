@@ -205,7 +205,7 @@
                                #:terminal-info [info-var 'terminal-info])
       `(grammar ,info-var ,stmt ,expr
                 #:num-temps ,temps #:guard-depth ,guard #:type ,type
-                #:version ',(if sketch? 'caching (hash-ref options 'grammar-version))
+                #:version ',(if sketch? 'general (hash-ref options 'grammar-version))
                 #:choice-version ',(if sketch? 'basic (hash-ref options 'grammar-choice))
                 #:cache? ,(hash-ref options 'cache?)
                 #:mode ',mode
