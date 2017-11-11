@@ -9,7 +9,7 @@ generator int genInt(ref int[N] permutation, ref int[N] inverse_perm, ref int i,
   } else {
     int n1 = genInt(permutation, inverse_perm, i, j, bnd - 1);
     int n2 = genInt(permutation, inverse_perm, i, j, bnd - 1);
-    return {| i | j | permutation[n1] | inverse_perm[n1] | n1 + n2 | n1 - n2 | n1 * n2 |};
+    return {| ?? | i | j | permutation[n1] | inverse_perm[n1] | n1 + n2 | n1 - n2 | n1 * n2 |};
   }
 }
 
