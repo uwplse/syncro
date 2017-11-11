@@ -396,7 +396,7 @@
              ;; cache. In particular, values of #f (which mean that
              ;; no program can satisfy the tm-pair) will be reused.
              (let ([result (car cache-val-list)])
-               (when (and remove? (symbolic? result))
+               (when (and remove? (or (symbolic? result) result))
                  (hash-set! lookup-cache key (cdr cache-val-list)))
                result))))))
 
