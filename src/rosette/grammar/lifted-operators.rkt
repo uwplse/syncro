@@ -4,9 +4,9 @@
          "../operators.rkt" "../types.rkt" "language.rkt")
 
 (provide
- global-environment
+ global-environment extend-environment
  ;; Operators that construct lifted AST nodes
- void^ not^ and^ or^ =^ <^ equal?^ +^ -^ *^ #;/^
+ void^ not^ and^ or^ =^ <^ equal?^ +^ -^ *^ #;/^ min^ max^
  vector-increment!^ vector-decrement!^ vector-set!^ vector-ref^
  enum-set-add!^ enum-set-remove!^ enum-set-contains?^
  map-ref^ map-set!^
@@ -75,12 +75,19 @@
                   (Set-type alpha-any)))
 
 (define global-environment (make-environment))
+(define-syntax (extend-environment stx)
+  (syntax-case stx ()
+    [(_ env) (syntax/loc stx env)]
+    [(_ env var rest ...)
+     (syntax/loc stx
+       (extend-environment (environment-define env 'var var) rest ...))]))
 
 (define-lifted
   global-environment
   [void void^ void-type] [not not^ not-type] ;; and/or defined below
   [= =^ cmp-type] [< <^ cmp-type] [equal? equal?^ equal?-type]
   [+ +^ arith-type] [- -^ arith-type] [* *^ arith-type] #;[/ /^ arith-type]
+  [min min^ arith-type] [max max^ arith-type]
 
   [vector-increment! vector-increment!^ vec-inc/dec-type]
   [vector-decrement! vector-decrement!^ vec-inc/dec-type]

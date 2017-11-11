@@ -81,28 +81,10 @@
     (time
      (solve
       (for ([parameters input-output-examples])
-        (match-define (list num2helper word old-topic new-topic old-num2 new-num2)
+        (match-define (list num2helper word old-topic new-topic num2 new-num2)
           parameters)
         (define initial-env
-          (environment-define
-           (environment-define
-            (environment-define
-             (environment-define
-              (environment-define
-               (environment-define
-                global-environment
-                'num2
-                old-num2)
-               'num2helper
-               num2helper)
-              'word
-              word)
-             'old-topic
-             old-topic)
-            'new-topic
-            new-topic)
-           'word->document
-           word->document))
+          (extend-environment global-environment num2 num2helper word old-topic new-topic word->document))
 
         (define final-env (second (eval-lifted program initial-env)))
         

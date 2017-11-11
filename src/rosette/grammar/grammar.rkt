@@ -231,7 +231,7 @@
   (if (equal? mode 'stmt)
       (apply begin^
              (append integer-holes definitions
-                     (list (generate (Void-type) #f num-stmts 2))))
+                     (list (generate start-type mutable? num-stmts 2))))
       (append integer-holes definitions)))
 
 

@@ -60,22 +60,15 @@
   (define synth
     (time
      (solve
-      (for ([perm perms] [initinv init-inv-perms] [resinv res-inv-perms]
-            [i i-list] [j j-list])
+      (for ([permutation perms]
+            [inverse-permutation init-inv-perms]
+            [resinv res-inv-perms]
+            [i i-list]
+            [j j-list])
+        ;; In order to use the extend-environment macro, the names of the
+        ;; variables must match the names in the Lexical-Terminal-Info% object.
         (define initial-env
-          (environment-define
-           (environment-define
-            (environment-define
-             (environment-define
-              global-environment
-              'inverse-permutation
-              initinv)
-             'permutation
-             perm)
-            'i
-            i)
-           'j
-           j))
+          (extend-environment global-environment inverse-permutation permutation i j))
 
         (define final-env (second (eval-lifted program initial-env)))
         
