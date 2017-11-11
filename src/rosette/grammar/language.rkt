@@ -115,6 +115,8 @@
                    ['+ (lifted-apply-arith-args self args)]
                    ['- (lifted-apply-arith-args self args)]
                    ['* (lifted-apply-arith-args self args)]
+                   ['min (lifted-apply-arith-args self args)]
+                   ['max (lifted-apply-arith-args self args)]
                    ['< (lifted-apply-cmp-args self args)]
                    ['= (lifted-apply-cmp-args self args)]
                    ['equal? (lifted-apply-equal-args self args)]

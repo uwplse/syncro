@@ -231,7 +231,7 @@
   (if (equal? mode 'stmt)
       (apply begin^
              (append integer-holes definitions
-                     (list (generate (Void-type) #f num-stmts 2))))
+                     (list (generate start-type mutable? num-stmts 2))))
       (append integer-holes definitions)))
 
 
@@ -396,7 +396,7 @@
              ;; cache. In particular, values of #f (which mean that
              ;; no program can satisfy the tm-pair) will be reused.
              (let ([result (car cache-val-list)])
-               (when (and remove? (symbolic? result))
+               (when (and remove? (or (symbolic? result) result))
                  (hash-set! lookup-cache key (cdr cache-val-list)))
                result))))))
 
