@@ -21,9 +21,8 @@
            (cons 'bitwidth 10)
            (cons 'timeout 3600)
            (cons 'module-file "metasketch-module-file.rkt")
-           ;; grammar-version can be 'basic, 'general, 'caching, or
-           ;; '(ssa n), where n is a non-negative integer (use '(ssa
-           ;; 1) by default).
+           ;; grammar-version can be 'basic, 'general, or '(ssa n), where n is a
+           ;; non-negative integer (use '(ssa 1) by default).
            (cons 'grammar-version '(ssa 1))
            ;; grammar-choice can be 'basic or 'sharing. 'sharing only
            ;; works with 'basic and 'general grammars.
@@ -134,11 +133,8 @@
 
    #:args () (void))
 
-  (let ([version (hash-ref options 'grammar-version)]
+  (let ([cache? (hash-ref options 'cache?)]
         [choice (hash-ref options 'grammar-choice)])
-    (when (and (or (equal? version 'caching) (ssa-spec? version))
-               (equal? choice 'sharing))
-      (error
-       (format "Cannot combine grammar choice 'sharing with grammar type '~a"
-               version))))
+    (when (and cache? (equal? choice 'sharing))
+      (error "Cannot combine grammar choice 'sharing with caching")))
   options)
