@@ -7,7 +7,8 @@
  global-environment extend-environment
  ;; Operators that construct lifted AST nodes
  void^ not^ and^ or^ =^ <^ equal?^ +^ -^ *^ #;/^ min^ max^
- vector-increment!^ vector-decrement!^ vector-set!^ vector-ref^
+ vector-increment!^ vector-decrement!^ vector-set!^
+ vector-ref^ vector-ref-default^
  enum-set-add!^ enum-set-remove!^ enum-set-contains?^
  map-ref^ map-set!^
  add-edge!^ remove-edge!^ has-edge?^ vertex-parents^ vertex-children^)
@@ -41,6 +42,9 @@
                   (Void-type) #:write-index 0))
 (define vec-ref-type
   (Procedure-type (list (Vector-type alpha-idx alpha-any) alpha-idx)
+                  alpha-any #:read-index 0))
+(define vec-ref-default-type
+  (Procedure-type (list (Vector-type alpha-idx alpha-any) alpha-idx alpha-any)
                   alpha-any #:read-index 0))
 
 
@@ -89,10 +93,11 @@
   [+ +^ arith-type] [- -^ arith-type] [* *^ arith-type] #;[/ /^ arith-type]
   [min min^ arith-type] [max max^ arith-type]
 
-  [vector-increment! vector-increment!^ vec-inc/dec-type]
-  [vector-decrement! vector-decrement!^ vec-inc/dec-type]
-  [vector-set!       vector-set!^       vec-set!-type]
-  [vector-ref        vector-ref^        vec-ref-type]
+  [vector-increment!  vector-increment!^  vec-inc/dec-type]
+  [vector-decrement!  vector-decrement!^  vec-inc/dec-type]
+  [vector-set!        vector-set!^        vec-set!-type]
+  [vector-ref         vector-ref^         vec-ref-type]
+  [vector-ref-default vector-ref-default^ vec-ref-default-type]
 
   [enum-set-add!      enum-set-add!^      enum-set-modify-type]
   [enum-set-remove!   enum-set-remove!^   enum-set-modify-type]

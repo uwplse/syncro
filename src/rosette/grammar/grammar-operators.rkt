@@ -18,7 +18,7 @@
  global-environment
 
  ;; The actual operators
- grm-if^ grm-set!^ grm-get-field^ grm-set-field!^)
+ grm-if^ if-expr^ grm-set!^ grm-get-field^ grm-set-field!^)
 
 ;;;;;;;;;;;;;;;;;;;;;;;
 ;; Grammar Operators ;;
@@ -91,6 +91,13 @@
   (let ([if-type (Procedure-type (list (Boolean-type) (Void-type) (Void-type))
                                  (Void-type))])
     (make-operator 'if if-type if^ 'toplevel)))
+
+(define if-expr^
+  ;; A version of if that can be used for statements and expressions
+  (let* ([alpha (Type-var)]
+         [if-type (Procedure-type (list (Boolean-type) alpha alpha) alpha)])
+    (make-operator 'if if-type if^)))
+  
 
 ;; Some ASTs need to be handled specially by the grammar. These must
 ;; be represented as symbols.
