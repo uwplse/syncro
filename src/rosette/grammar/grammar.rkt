@@ -415,7 +415,7 @@
          (let ([variable
                 (apply my-choose*
                        (send terminal-info get-terminals #:mutable? #t))])
-           (and variable
+           (and (or (symbolic? variable) variable)
                 (let* ([type (infer-type variable)]
                        ;; TODO: This may be wrong. Consider, if num1
                        ;; is mutable and num2 is not:
@@ -427,7 +427,8 @@
                        ;; num1 and num2 were aliased to begin with?
                        [subexp (cached-grammar type #:mutable? #f (- depth 1)
                                                cache cache #f)])
-                  (and subexp (set!^ variable subexp)))))))
+                  (and (or (symbolic? subexp) subexp)
+                       (set!^ variable subexp)))))))
 
   ;; Returns a lifted? object that applies the given operator to some
   ;; arguments. The return value must satisfy the constraints implied
@@ -450,14 +451,17 @@
         (if (null? lst)
             lst
             (let* ([first (fn (car lst))]
-                   [rest (and first (special-andmap fn (cdr lst)))])
-              (and rest (cons first rest)))))
+                   [rest (and (or (symbolic? first) first)
+                              (special-andmap fn (cdr lst)))])
+              (and (or (symbolic? rest) rest)
+                   (cons first rest)))))
 
       ;; Generate subtrees for the arguments
       (let* ([result (and domain-pairs
                           (special-andmap get-or-make-subexp domain-pairs))])
         ;; Build the final tree
-        (and result (operator-make-lifted operator result)))))
+        (and (or (symbolic? result) result)
+             (operator-make-lifted operator result)))))
 
   ;; special-andmap above creates weird symbolic terms because of
   ;; the complicated recursion. An alternative below.

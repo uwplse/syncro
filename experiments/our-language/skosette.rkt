@@ -20,11 +20,11 @@
     (displayln "Turning off the type analysis"))
 
   (define terminal-info (new Lexical-Terminal-Info%))
-  (send terminal-info make-and-add-terminal 'r1
-        (Vector-type 2 (List-type 3 (Boolean-type)))
-        #:mutable? #t)
   (send terminal-info make-and-add-terminal 'ψ
-        (Vector-type 2 (Boolean-type))
+        (Vector-type (Integer-type) (Boolean-type))
+        #:mutable? #t)
+  (send terminal-info make-and-add-terminal 'r1
+        (Vector-type (Integer-type) (List-type 3 (Boolean-type)))
         #:mutable? always-mutable?)
   (send terminal-info make-and-add-terminal 'i
         (Integer-type)
@@ -36,10 +36,9 @@
   (displayln "Time for symbolic program generation")
   (define program
     (time
-     (grammar terminal-info 2 3
-              #:num-temps 0 #:guard-depth 1 #:type (Void-type)
-              #:operators (list vector-set!^ vector-ref^
-                                grm-if^ void^)
+     (grammar terminal-info 1 2
+              #:num-temps 0 #:guard-depth 0 #:type (Void-type)
+              #:operators (list vector-set!^ vector-ref^ grm-if^ void^)
               #:version (hash-ref options 'grammar-version)
               #:choice-version (hash-ref options 'grammar-choice)
               #:cache? (hash-ref options 'cache?)
@@ -48,20 +47,26 @@
 
   (displayln "Synthesizing update rule for ψ from examples")
   (define input-output-examples
-    (list (list (vector '(#f #f) '(#t)) 0 #t (vector #t #f) (vector #f #f))
+    (list (list (vector '(#f #f)) 0 #t (vector #t) (vector #f))
+          (list (vector '(#f #f)) 0 #f (vector #t) (vector #t))
+          (list (vector '(#f #f) '(#t)) 0 #t (vector #t #f) (vector #f #f))
+          (list (vector '(#f #t #t) '(#f)) 1 #f (vector #f #t) (vector #f #t))
           (list (vector '(#f #t #t) '(#f)) 1 #t (vector #f #t) (vector #f #f))
           (list (vector '(#t #t #f) '(#t)) 1 #t (vector #f #f) (vector #f #f))
           (list (vector '(#f #f #f) '(#f)) 0 #f (vector #t #t) (vector #t #t))
-          (list (vector '(#f #f #f) '(#f)) 1 #f (vector #t #t) (vector #t #t))))
+          (list (vector '(#f #f #f) '(#f)) 1 #f (vector #t #t) (vector #t #t))
+          (list (vector '(#f) '(#f) '(#f #f)) 2 #f (vector #t #t #t) (vector #t #t #t))
+          (list (vector '(#f) '(#f) '(#f #f)) 2 #t (vector #t #t #t) (vector #t #t #f))))
 
   (define synth
     (time
      (solve
       (for ([parameters input-output-examples])
-        (match-define (list r1 i form old-ψ new-ψ)
-            parameters)
+        (match-define (list r1 i formula ψ new-ψ)
+          parameters)
+
         (define initial-env
-          (extend-environment global-environment r1 old-ψ i form))
+          (extend-environment global-environment ψ r1 i formula))
 
         (define final-env (second (eval-lifted program initial-env)))
         
@@ -70,6 +75,7 @@
            (eval-lifted
             (send terminal-info get-terminal-by-id 'ψ)
             final-env)))
+
         (assert (equal? result new-ψ))))))
 
   (if (sat? synth)
