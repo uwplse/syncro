@@ -49,6 +49,8 @@
   (define input-output-examples
     (list (list (vector '(#f #f)) 0 #t (vector #t) (vector #f))
           (list (vector '(#f #f)) 0 #f (vector #t) (vector #t))
+          (list (vector '(#t)) 0 #t (vector #f) (vector #f))
+          (list (vector '(#t #f #f)) 0 #f (vector #f) (vector #f))
           (list (vector '(#f #f) '(#t)) 0 #t (vector #t #f) (vector #f #f))
           (list (vector '(#f #t #t) '(#f)) 1 #f (vector #f #t) (vector #f #t))
           (list (vector '(#f #t #t) '(#f)) 1 #t (vector #f #t) (vector #f #f))
