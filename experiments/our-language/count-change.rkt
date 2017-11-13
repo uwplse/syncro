@@ -74,7 +74,7 @@
   (define program
     (time
      (grammar terminal-info 1 3
-              #:num-temps 0 #:guard-depth 0 #:type (Integer-type) ;; TODO:change
+              #:num-temps 0 #:guard-depth 0 #:type (Integer-type)
               #:operators (list vector-set!^ vector-ref^ vector-ref-default^ +^ -^)
               #:version (hash-ref options 'grammar-version)
               #:choice-version (hash-ref options 'grammar-choice)
@@ -126,6 +126,6 @@
   (if (sat? synth)
       (let-values ([(_ cleaned-code)
                     (eliminate-dead-code '() (coerce-evaluate program synth))])
-        (pretty-print (lifted-code (coerce-evaluate program synth))) ;; HERE
+        (pretty-print (lifted-code (coerce-evaluate program synth)))
         (pretty-print (lifted-code cleaned-code)))
       (displayln "No program found")))
