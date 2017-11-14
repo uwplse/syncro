@@ -67,6 +67,9 @@
         (match-define (list r1 i formula ψ new-ψ)
           parameters)
 
+        ;; Apply the update
+        (vector-set! r1 i (cons formula (vector-ref r1 i)))
+
         (define initial-env
           (extend-environment global-environment ψ r1 i formula))
 

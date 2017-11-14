@@ -46,8 +46,8 @@
 
   (displayln "Time for synthesis by examples")
   (define perms
-    (list (vector 0 1 3 4 2) (vector 1 2 0 3 4) (vector 0 4 1 2 3)
-          (vector 4 1 2 0 3) (vector 4 3 1 2 0)))
+    (list (vector 0 2 3 4 1) (vector 4 2 0 3 1) (vector 4 0 1 2 3)
+          (vector 4 0 2 1 3) (vector 4 3 2 1 0)))
   (define init-inv-perms
     (list (vector 0 4 1 2 3) (vector 2 4 1 3 0) (vector 1 2 3 4 0)
           (vector 1 3 2 4 0) (vector 4 3 2 1 0)))
@@ -65,6 +65,11 @@
             [resinv res-inv-perms]
             [i i-list]
             [j j-list])
+        ;; Apply the update
+        (let ([tmp (vector-ref permutation i)])
+          (vector-set! permutation i (vector-ref permutation j))
+          (vector-set! permutation j tmp))
+
         ;; In order to use the extend-environment macro, the names of the
         ;; variables must match the names in the Lexical-Terminal-Info% object.
         (define initial-env

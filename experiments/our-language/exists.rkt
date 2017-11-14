@@ -83,6 +83,10 @@
       (for ([parameters input-output-examples])
         (match-define (list num2helper word old-topic new-topic num2 new-num2)
           parameters)
+        ;; Apply the update
+        (define doc (vector-ref word->document word))
+        (vector-increment! (vector-ref num2helper doc) new-topic)
+        (vector-decrement! (vector-ref num2helper doc) old-topic)
         (define initial-env
           (extend-environment global-environment num2 num2helper word old-topic new-topic word->document))
 
