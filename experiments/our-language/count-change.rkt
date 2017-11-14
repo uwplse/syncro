@@ -33,6 +33,10 @@
   (send terminal-info make-and-add-terminal 'coins
         (Vector-type (Integer-type) (Integer-type))
         #:mutable? always-mutable?)
+  (send terminal-info make-and-add-terminal 'zero (Integer-type)
+        #:mutable? always-mutable?)
+  (send terminal-info make-and-add-terminal 'one (Integer-type)
+        #:mutable? always-mutable?)
 
   (define (vector-ref-default vec i default)
     (if (or (< i 0) (>= i (vector-length vec)))
@@ -46,6 +50,8 @@
         (vector-ref (vector-ref matrix i) j)))
   (define (matrix-set! matrix i j val)
     (vector-set! (vector-ref matrix i) j val))
+  (define zero 0)
+  (define one 1)
 
   (define (count-change coins total-amount)
     (define num-cache-coins (+ (vector-length coins) 1))
@@ -61,7 +67,7 @@
     (for* ([coin-num (range (- (vector-length coins) 1) -1 -1)]
            [amount (range 1 num-cache-amounts)])
       (define env
-        (extend-environment global-environment cache amount coin-num coins))
+        (extend-environment global-environment cache amount coin-num coins zero one))
       (matrix-set! cache coin-num amount
                    (first (eval-lifted program env))
                    #;(+ (matrix-ref cache coin-num (- amount (vector-ref coins coin-num)) 0)
@@ -80,6 +86,7 @@
               #:choice-version (hash-ref options 'grammar-choice)
               #:cache? (hash-ref options 'cache?)
               #:disable-types? (hash-ref options 'no-type-analysis?)
+              #:use-constants? #f
               #:mode 'stmt #:print-statistics #t)))
 
   (displayln "Time for synthesis by examples")
@@ -102,19 +109,15 @@
      (solve
       (begin
         (define constraints (make-hash))
-        ;; Note: Using this assertion requires you to pass -g "(ssa 2)" on the
-        ;; command line.
-        #;(assert (wild-equal? (lifted-code program)
+        (assert (wild-equal? (lifted-code program)
                              '(let ()
-                                (define (wild 0) 0)
-                                (define (wild 1) 1)
                                 (define (wild 2) (vector-ref cache coin-num))
                                 (define (wild 3) (+ coin-num (wild)))
                                 (define (wild 4) (vector-ref cache (wild)))
                                 (define (wild 5) (vector-ref coins coin-num))
                                 (define (wild 6) (wild))
                                 (define (wild 7) (- amount (wild)))
-                                (wild) #;(+ (vector-ref (wild) amount)
+                                (+ (vector-ref (wild) amount)
                                    (vector-ref-default (wild) (wild) (wild))))
                              constraints))
         #;(for ([constraint (hash-values constraints)])

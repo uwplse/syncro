@@ -64,6 +64,7 @@
                  #:type [type (Void-type)]
                  #:disable-types? [disable-types? #f]
                  #:mutable? [mutable? #f]
+                 #:use-constants? [use-constants? #t]
                  #:operators [operator-info default-operators]
                  #:version [version 'basic]
                  #:choice-version [choice-version 'basic]
@@ -87,7 +88,7 @@
            (grammar-general terminal-info operators num-stmts depth chooser
                             #:num-temps num-temps
                             #:guard-depth guard-depth
-                            #:use-constants? #t
+                            #:use-constants? use-constants?
                             #:type type
                             #:mutable? mutable?
                             #:cache? cache?
@@ -97,7 +98,7 @@
            (grammar-ssa terminal-info operators num-stmts depth chooser
                         #:num-temps num-temps
                         #:guard-depth guard-depth
-                        #:num-constants num-constants
+                        #:num-constants (if use-constants? num-constants 0)
                         #:type type
                         #:mutable? mutable?
                         #:new-pairs-set new-pairs-set
