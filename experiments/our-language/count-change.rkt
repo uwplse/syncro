@@ -109,7 +109,7 @@
      (solve
       (begin
         (define constraints (make-hash))
-        (assert (wild-equal? (lifted-code program)
+        #;(assert (wild-equal? (lifted-code program)
                              '(let ()
                                 (define (wild 2) (vector-ref cache coin-num))
                                 (define (wild 3) (+ coin-num (wild)))
