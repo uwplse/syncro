@@ -5,7 +5,8 @@
 (provide enum-make-set build-enum-set enum-make-symbolic-set
          enum-set-add! enum-set-remove! enum-set-contains?
          enum-set-empty? enum-set-size
-         enum-set-union enum-set->list for-enum-set)
+         enum-set-union enum-set-diff enum-set-intersect
+         enum-set->list for-enum-set)
 
 (define (enum-make-set num-things)
   (when (symbolic? num-things)
@@ -72,7 +73,7 @@
           (enum-set-add! result elem)))
       result)))
 
-(define (enum-set-subtract set1 set2)
+(define (enum-set-diff set1 set2)
   ;; set subtraction of two sets
   (for/all ([set1 set1])
     (let* ([num-items (vector-length set1)]
