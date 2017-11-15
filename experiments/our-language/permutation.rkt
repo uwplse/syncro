@@ -48,6 +48,9 @@
   (define perms
     (list (vector 0 2 3 4 1) (vector 4 2 0 3 1) (vector 4 0 1 2 3)
           (vector 4 0 2 1 3) (vector 4 3 2 1 0)))
+  (define perms-after-update
+    (list (vector 0 1 3 4 2) (vector 1 2 0 3 4) (vector 0 4 1 2 3)
+          (vector 4 1 2 0 3) (vector 4 3 1 2 0)))
   (define init-inv-perms
     (list (vector 0 4 1 2 3) (vector 2 4 1 3 0) (vector 1 2 3 4 0)
           (vector 1 3 2 4 0) (vector 4 3 2 1 0)))
@@ -61,6 +64,7 @@
     (time
      (solve
       (for ([permutation perms]
+            [perm-after-update perms-after-update]
             [inverse-permutation init-inv-perms]
             [resinv res-inv-perms]
             [i i-list]
@@ -76,7 +80,15 @@
           (extend-environment global-environment inverse-permutation permutation i j))
 
         (define final-env (second (eval-lifted program initial-env)))
-        
+
+        (define new-perm
+          (first
+           (eval-lifted
+            (send terminal-info get-terminal-by-id 'permutation)
+            final-env)))
+        ;; Frame condition
+        (assert (equal? new-perm perm-after-update))
+
         (define result
           (first
            (eval-lifted

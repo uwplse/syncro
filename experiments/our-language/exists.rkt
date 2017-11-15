@@ -69,19 +69,26 @@
   (define word->document (vector 0 0 0 0 0 1 1 1 1 1 1 1))
   ;; Each input is of the form num2helper, word, old-topic, new-topic, old num2, expected new num2
   (define input-output-examples
-    (list (list (matrixify '((2 2 1) (5 2 0))) 3 0 1 (vector 3 2) (vector 3 2))
-          (list (matrixify '((2 2 1) (5 2 0))) 1 2 1 (vector 3 2) (vector 2 2))
-          (list (matrixify '((2 2 1) (5 2 0))) 9 1 0 (vector 3 2) (vector 3 2))
-          (list (matrixify '((2 2 1) (5 2 0))) 7 0 2 (vector 3 2) (vector 3 3))
-          (list (matrixify '((0 1 4) (5 2 0))) 0 1 0 (vector 2 2) (vector 2 2))
-          (list (matrixify '((0 1 4) (5 2 0))) 4 1 2 (vector 2 2) (vector 1 2))
-          (list (matrixify '((0 1 4) (5 2 0))) 8 0 2 (vector 2 2) (vector 2 3))))
+    (list (list (matrixify '((2 2 1) (5 2 0))) (matrixify '((1 3 1) (5 2 0)))
+                3 0 1 (vector 3 2) (vector 3 2))
+          (list (matrixify '((2 2 1) (5 2 0))) (matrixify '((2 3 0) (5 2 0)))
+                1 2 1 (vector 3 2) (vector 2 2))
+          (list (matrixify '((2 2 1) (5 2 0))) (matrixify '((2 2 1) (6 1 0)))
+                9 1 0 (vector 3 2) (vector 3 2))
+          (list (matrixify '((2 2 1) (5 2 0))) (matrixify '((2 2 1) (4 2 1)))
+                7 0 2 (vector 3 2) (vector 3 3))
+          (list (matrixify '((0 1 4) (5 2 0))) (matrixify '((1 0 4) (5 2 0)))
+                0 1 0 (vector 2 2) (vector 2 2))
+          (list (matrixify '((0 1 4) (5 2 0))) (matrixify '((0 0 5) (5 2 0)))
+                4 1 2 (vector 2 2) (vector 1 2))
+          (list (matrixify '((0 1 4) (5 2 0))) (matrixify '((0 1 4) (4 2 1)))
+                8 0 2 (vector 2 2) (vector 2 3))))
 
   (define synth
     (time
      (solve
       (for ([parameters input-output-examples])
-        (match-define (list num2helper word old-topic new-topic num2 new-num2)
+        (match-define (list num2helper num2helper-after-update word old-topic new-topic num2 new-num2)
           parameters)
         ;; Apply the update
         (define doc (vector-ref word->document word))
@@ -91,6 +98,14 @@
           (extend-environment global-environment num2 num2helper word old-topic new-topic word->document))
 
         (define final-env (second (eval-lifted program initial-env)))
+
+        (define new-num2helper
+          (first
+           (eval-lifted
+            (send terminal-info get-terminal-by-id 'num2helper)
+            final-env)))
+        ;; Frame condition
+        (assert (equal? new-num2helper num2helper-after-update))
         
         (define result
           (first
