@@ -9,12 +9,15 @@
 ; The syntax of our Syncro language, in BNF
 ; TODO: Improve incrementally to get all the benchmarks through
 (define syncro-stx
-  '([term one                                     ; integer literal
-          (((vector-set! . vec-name) . term) . term)   ; vector set operation
-          ((vector-ref . vec-name) . term)             ; vector ref operation
-          (op-type . (term . term))               ; see op-type
-          name                                    ; variable
-          int-hole                                ; integer hole
+  '([stmt 
+          (((vector-set! . vec-name) . int-term) . int-term)   ; vector set operation
+          void-stmt
+    ]
+    [int-term 
+        ((vector-ref . vec-name) . int-term)             ; vector ref operation
+        (op-type . (int-term . int-term))                ; see op-type
+        name                                    ; variable
+        int-hole                                ; integer hole
     ]
     [type int           ; integer
           vector        ; vector
@@ -56,8 +59,8 @@
 (define (type-expr t env)
     (tree-match t
 
-        'one
-        (λ () INT)
+        'void-stmt
+        (λ () VEC)
 
         'int-hole
         (λ () INT)
@@ -99,8 +102,8 @@
 (define (eval-expr t env)
     (tree-match t
 
-        'one
-        (λ () 1)
+        'void-stmt
+        (λ () #())
 
         'int-hole
         (λ () (define-symbolic new-int integer?)
@@ -167,7 +170,7 @@
 
 
 (displayln "stx  test...")
-(assert (syntax-matches? syncro-stx 'term test-expr) "Test stx")
+(assert (syntax-matches? syncro-stx 'stmt test-expr) "Test stx")
 
 (displayln "type test...")
 (define init-type-env '())
@@ -192,9 +195,9 @@
 (displayln "Generating program from IO examples ...")
 
 (displayln "Time for constructing tree for statement 1 ...")
-(define stmt1* (time (make! syncro-stx 'term 5)))
+(define stmt1* (time (make! syncro-stx 'stmt 5)))
 (displayln "Time for constructing tree for statement 2 ...")
-(define stmt2* (time (make! syncro-stx 'term 5)))
+(define stmt2* (time (make! syncro-stx 'stmt 5)))
 (displayln "Time for typechecking statement 1 ...")
 (define typecheck1 (time (type-expr stmt1* init-type-env)))
 (displayln "Time for typechecking statement 2 ...")
