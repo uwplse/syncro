@@ -9,18 +9,18 @@
 ; The syntax of our Syncro language, in BNF
 (define syncro-stx
   '([stmt 
+          void-stmt
           (((vector-set! . vecb-term) . int-term) . bool-term)
           (((vector-set! . vecl-term) . int-term) . list-term)
-          void-stmt
           (((if . bool-term) . stmt) . stmt)
     ]
     [listb-term 
-        ((vector-ref . vecl-term) . int-term)
         null
         ((cons . bool-term) . listb-term)
+        ((vector-ref . vecl-term) . int-term)
     ]
     [int-term
-        one
+        int-hole
         int-names
     ]
     [bool-term 
@@ -30,10 +30,10 @@
         ((list-ref . listb-term) . int-term)
         ((vector-ref . vecb-term) . int-term)
     ]
-    [vecl-term r1]
-    [vecb-term ψ]
-    [int-names i]
     [bool-names formula]
+    [int-names i]
+    [vecb-term ψ]
+    [vecl-term r1]
     [type int           ; integer
           vecb          ; vector of bools
           vecl          ; vector of lists
@@ -85,7 +85,7 @@
         'void-stmt
         (λ () INT)
 
-        'one
+        'int-hole
         (λ () INT)
 
         'true
@@ -154,9 +154,10 @@
         'void-stmt
         (λ () 0)
 
-        'one
-        (λ () 1)
-
+        'int-hole
+        (λ () (define-symbolic new-int integer?)
+            new-int)
+        
         'true
         (λ () #t)
 
