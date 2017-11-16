@@ -24,7 +24,7 @@
         (Vector-type (Integer-type) (Boolean-type))
         #:mutable? #t)
   (send terminal-info make-and-add-terminal 'r1
-        (Vector-type (Integer-type) (List-type 3 (Boolean-type)))
+        (Vector-type (Integer-type) (List-type 4 (Boolean-type)))
         #:mutable? always-mutable?)
   (send terminal-info make-and-add-terminal 'i
         (Integer-type)

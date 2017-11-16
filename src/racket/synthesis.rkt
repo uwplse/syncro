@@ -477,7 +477,7 @@
            (format "No program found to update ~a upon delta ~a to ~a"
                    output-id delta-name input-id))
           (send input-node add-delta-deriv-stmts delta-name
-                (list (send output-node get-delta-code 'recompute))
+                (list (send output-node get-delta-deriv 'recompute))
                 'post))))
 
   ;;;;;;;;;;;;;;;;;
