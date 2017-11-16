@@ -1,0 +1,69 @@
+// When running this through Sketch 1.7.4, I get an out of memory error and the machine then hangs.
+// In many small variants, I can get synthesis to work vs. not work. For example, currently we hardcode 4 as the coin_num. If we put that back to coin_num, and hardcode amount instead, then synthesis succeeds if hardcode amount to 3 or 6, but fails if we hardcode it to 4 or 5. It also succeeds if we remove amount from the regex in the bnd == 0 case (which should strictly reduce the program space).
+
+// Rohin's note: I think I screwed up the pragma line somehow, but it isn't important
+// pragma  --fe-output-code --fe-output-test skosette_test.sk
+
+int NUM_LISTS = 3;
+
+generator int genInt(int N, int AMT, ref int[N+1,AMT+1] cache, int amount, int coin_num, ref int[N] coins, int bnd) {
+  if (bnd == 0) {
+    return {| 0 | 1 | N | amount | coin_num |};
+    // return {| 0 | 1 | amount | coin_num |}; // TODO: Put back
+  } else {
+    int n1 = genInt(N, AMT, cache, amount, coin_num, coins, bnd - 1);
+    int n2 = genInt(N, AMT, cache, amount, coin_num, coins, bnd - 1);
+    int n3 = genInt(N, AMT, cache, amount, coin_num, coins, bnd - 1);
+
+    int cache_value = cache[n1, n2];
+    int cache_default = n3;
+    if (n1 >= 0 && n1 <= N && n2 >= 0 && n2 <= AMT) {
+      cache_default = cache[n1, n2];
+    }
+
+    int coins_default = n2;
+    if (n1 >= 0 && n1 < N) {
+      coins_default = coins[n1];
+    }
+    return {| 0 | 1 | amount | coin_num | cache_value | cache_default | coins[n1] | coins_default | n1 + n2 |};
+    // return {| 0 | 1 | amount | coin_num | cache_value | cache_default | coins[n1] | coins_default | n1 + n2 | n1 - n2 |};
+  }
+}
+
+int count_change(int N, ref int[N] coins, int total_amount) {
+  int[N + 1, total_amount + 1] cache;
+  // Base cases
+  for (int amount = 0; amount <= total_amount; amount++) {
+    cache[N, amount] = 0;
+  }
+  for (int coin_num = 0; coin_num <= N; coin_num++) {
+    cache[coin_num, 0] = 1;
+  }
+
+  for (int coin_num = N - 1; coin_num >= 0; coin_num--) {
+    for (int amount = 1; amount <= total_amount; amount++) {
+      int use_coin = 0;
+      if (amount >= coins[coin_num]) {
+	use_coin = cache[coin_num, amount - coins[coin_num]];
+      }
+      int no_coin = cache[coin_num + 1, amount];
+      cache[coin_num, amount] = use_coin + no_coin;
+      cache[N,0] = 10; // TODO: Remove
+      cache[coin_num, amount] += (10 - genInt(N, total_amount, cache, amount, 4, coins, 1));
+      // cache[coin_num, amount] = genInt(N, total_amount, cache, amount, coin_num, coins, 4);
+    }
+  }
+  return cache[0, total_amount];
+}
+
+harness void main() {
+  int[2] coins = {1, 2};
+  assert count_change(2, coins, 5) == 3;
+  assert count_change(2, coins, 6) == 4;
+
+  int[3] more_coins = {1, 2, 3};
+  assert count_change(3, more_coins, 6) == 7;
+
+  coins = {2, 3};
+  assert count_change(2, coins, 7) == 1;
+}
