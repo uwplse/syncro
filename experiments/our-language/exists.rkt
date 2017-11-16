@@ -51,7 +51,7 @@
   (displayln "Time for symbolic program generation")
   (define program
     (time
-     (grammar terminal-info 2 3
+     (grammar terminal-info (hash-ref options 'stmts) (hash-ref options 'depth)
               #:num-temps 0 #:guard-depth 1 #:type (Void-type)
               #:operators (list vector-increment!^ vector-decrement!^ vector-ref^
                                 grm-if^ void^ +^ *^ -^ =^)

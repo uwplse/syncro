@@ -244,12 +244,16 @@
                   ,(timing-code
                     `(force-type program (Void-type)
                                  (lambda (info type)
-                                   ,(make-grammar-expr 2 2 0 0 'type 'stmt #t
+                                   ,(make-grammar-expr (hash-ref options 'stmts)
+                                                       (hash-ref options 'depth)
+                                                       0 0 'type 'stmt #t
                                                        #:terminal-info 'info)))
                     "generate the sketch")))
               `((define program
                   ,(timing-code
-                    (make-grammar-expr 2 2 0 1 '(Void-type) 'stmt #f)
+                    (make-grammar-expr (hash-ref options 'stmts)
+                                       (hash-ref options 'depth)
+                                       0 1 '(Void-type) 'stmt #f)
                     "generate the postderivative"))))))
     (define program-run-code
       `((define env-for-postderiv

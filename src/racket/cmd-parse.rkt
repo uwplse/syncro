@@ -26,7 +26,9 @@
            (cons 'grammar-version '(ssa 1))
            ;; grammar-choice can be 'basic or 'sharing. 'sharing only
            ;; works with 'basic and 'general grammars.
-           (cons 'grammar-choice 'basic))))
+           (cons 'grammar-choice 'basic)
+           (cons 'depth 2)
+           (cons 'stmts 2))))
   (command-line
    #:argv args
    #:once-each
@@ -62,6 +64,24 @@
    [("--no-cache")
     "Do not use caching."
     (hash-set! options 'cache? #f)]
+
+   [("--depth")
+    depth
+    "Expression depth for the grammar."
+    (let ([depth-num (string->number depth)])
+      (unless (and (integer? depth) (>= depth 1))
+        (error (format "Invalid expression depth: ~a" depth-num)))
+
+      (hash-set! options 'depth depth-num))]
+
+   [("--stmts")
+    stmts
+    "Number of statements for the grammar."
+    (let ([stmts-num (string->number stmts)])
+      (unless (and (integer? stmts) (>= stmts 1))
+        (error (format "Invalid number of statements: ~a" stmts-num)))
+
+      (hash-set! options 'stmts stmts-num))]
    
    [("-b" "--bitwidth")
     bits

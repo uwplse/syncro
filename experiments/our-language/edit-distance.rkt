@@ -71,7 +71,7 @@
   (displayln "Time for symbolic program generation:")
   (define program
     (time
-     (grammar terminal-info 1 8
+     (grammar terminal-info (hash-ref options 'stmts) (hash-ref options 'depth)
               #:num-temps 0 #:guard-depth 0 #:type (Integer-type)
               #:operators (list vector-set!^ vector-ref^ +^ -^ min^ equal?^ if-expr^)
               #:version (hash-ref options 'grammar-version)

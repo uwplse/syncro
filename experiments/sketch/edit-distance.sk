@@ -4,7 +4,7 @@
 int NUM_LISTS = 3;
 
 int min(int a, int b) {
-  return a < b ? a : b;
+  return (a < b) ? a : b;
 }
 
 generator bit genBool(int M, int N, ref int[M+1, N+1] cache, ref int[M] s, ref int[N] t, int i, int j, int bnd) {
@@ -30,7 +30,7 @@ generator int genInt(int M, int N, ref int[M+1, N+1] cache, ref int[M] s, ref in
   if (bnd <= 0) {
     return {| ?? | i | j |};
   } else {
-    int bool = genBool(M, N, cache, s, t, i, j, bnd - 1);
+    bit bool = genBool(M, N, cache, s, t, i, j, bnd - 1);
     int n1 = genInt(M, N, cache, s, t, i, j, bnd - 1);
     int n2 = genInt(M, N, cache, s, t, i, j, bnd - 1);
     int cache_value = cache[n1, n2];
@@ -58,7 +58,7 @@ int edit_distance(int M, int N, ref int[M] s, ref int[N] t) {
       int skip_both = comparison + cache[i, j];
       cache[i+1, j+1] = min(skip_s, min(skip_t, skip_both));
       */
-      cache[i+1, j+1] = genInt(M, N, cache, s, t, i, j, 2);
+      cache[i+1, j+1] = genInt(M, N, cache, s, t, i, j, 4);
     }
   }
   return cache[M, N];
