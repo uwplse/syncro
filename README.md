@@ -36,5 +36,4 @@ Each such program automatically supports various command line flags, which you c
 * The `basic` grammar (`-g` option) only supports a small subset of the language that other grammars support.
 * The `#:initialize` and `algorithm` parts of the program do nothing. They are placeholders that will eventually be used in code generation.
 * The `#:sketches` construct and SSA grammar (`-g "(ssa n)"` option) do not play well together. The code will work but will likely be slow.
-* Grammar size is hardcoded and cannot yet be controlled by command line options. Change the relevant numbers in `synthesis.rkt` if you need to tweak the size of the grammar.
 * There is experimental support for metasketches, using the Synapse library. This has been commented out so that no dependencies are introduced, but any references to metasketches in the code are dead code and can be ignored.
