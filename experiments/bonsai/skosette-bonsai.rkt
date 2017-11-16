@@ -253,15 +253,35 @@
 
 (displayln "Time for synthesis by examples")
 (define input-output-examples
-  (list (list (vector '(#f #f) '(#t)) 0 #t (vector #t #f) (vector #f #f))
-        (list (vector '(#f #t #t) '(#f)) 1 #t (vector #f #t) (vector #f #f))
-        (list (vector '(#t #t #f) '(#t)) 1 #t (vector #f #f) (vector #f #f))
-        (list (vector '(#f #f #f) '(#f)) 0 #f (vector #t #t) (vector #t #t))
-        (list (vector '(#f #f #f) '(#f)) 1 #f (vector #t #t) (vector #t #t))))
+  (list
+   (list (vector '(#f #f)) (vector '(#t #f #f)) 0 #t
+         (vector #t) (vector #f))
+   (list (vector '(#f #f)) (vector '(#f #f #f)) 0 #f
+         (vector #t) (vector #t))
+   (list (vector '(#t)) (vector '(#t #t)) 0 #t
+         (vector #f) (vector #f))
+   (list (vector '(#t #f #f)) (vector '(#f #t #f #f)) 0 #f
+         (vector #f) (vector #f))
+   (list (vector '(#f #f) '(#t)) (vector '(#t #f #f) '(#t)) 0 #t
+         (vector #t #f) (vector #f #f))
+   (list (vector '(#f #t #t) '(#f)) (vector '(#f #t #t) '(#f #f)) 1 #f
+         (vector #f #t) (vector #f #t))
+   (list (vector '(#f #t #t) '(#f)) (vector '(#f #t #t) '(#t #f)) 1 #t
+         (vector #f #t) (vector #f #f))
+   (list (vector '(#t #t #f) '(#t)) (vector '(#t #t #f) '(#t #t)) 1 #t
+         (vector #f #f) (vector #f #f))
+   (list (vector '(#f #f #f) '(#f)) (vector '(#f #f #f #f) '(#f)) 0 #f
+         (vector #t #t) (vector #t #t))
+   (list (vector '(#f #f #f) '(#f)) (vector '(#f #f #f) '(#f #f)) 1 #f
+         (vector #t #t) (vector #t #t))
+   (list (vector '(#f) '(#f) '(#f #f)) (vector '(#f) '(#f) '(#f #f #f)) 2 #f
+         (vector #t #t #t) (vector #t #t #t))
+   (list (vector '(#f) '(#f) '(#f #f)) (vector '(#f) '(#f) '(#t #f #f)) 2 #t
+         (vector #t #t #t) (vector #t #t #f))))
 
 (define synth
    (time (solve (for ([parameters input-output-examples])
-            (match-define (list r1 i form old-ψ new-ψ)
+            (match-define (list r1 r1-after-update i form old-ψ new-ψ)
                 parameters)
             (set! init-eval-env '())
             (set! init-eval-env (table-add init-eval-env (symbol->enum 'ψ) old-ψ))

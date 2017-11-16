@@ -1,0 +1,121 @@
+// Rohin's note: I think I screwed up the pragma line somehow, but it isn't important
+// pragma  --fe-output-code --fe-output-test skosette_test.sk
+
+int NUM_LISTS = 3;
+
+
+generator bit genBool(ref bit[NUM_LISTS] psi, int i, bit formula, int bnd) {
+  if (bnd == 0) {
+    return {| 0 | 1 | formula |};
+  } else {
+    int index = genInt(psi, i, formula, bnd - 1);
+    return {| 0 | 1 | formula | psi[index] |};
+  }
+}
+
+generator int genInt(ref bit[NUM_LISTS] psi, int i, bit formula, int bnd) {
+  return {| ?? | i |};
+}
+
+generator void genBaseStmt(ref bit[NUM_LISTS] psi, int i, bit formula, int bnd) {
+  if (bnd == 0) {
+    return;
+  }
+
+  if (??) {
+    // choose to do a noop, akin to (void) in Racket
+    return;
+  }
+
+  int index = genInt(psi, i, formula, bnd);
+  bit value = genBool(psi, i, formula, bnd);
+  psi[index] = value;
+}
+
+generator void genStmt(ref bit[NUM_LISTS] psi, int i, bit formula, int bnd) {
+  if (??) {
+    bit condition = genBool(psi, i, formula, bnd - 1);
+    if (condition) {
+      genBaseStmt(psi, i, formula, bnd - 1);
+    } else {
+      genBaseStmt(psi, i, formula, bnd - 1);
+    }
+  } else {
+    genBaseStmt(psi, i, formula, bnd - 1);
+  }
+}
+
+
+void updatePsi(ref bit[NUM_LISTS] psi, int i, bit formula) {
+  /*
+  if (formula) {
+    psi[i] = 0;
+  }
+  */
+  genStmt(psi, i, formula, 2);
+  return;
+}
+
+harness void main() {
+  bit[NUM_LISTS] psi;
+
+  // test case 1
+  psi = {1, 0, 0};
+  updatePsi(psi, 0, 1);
+  assert psi == {0, 0, 0};
+
+  // test case 2
+  psi = {1, 0, 0};
+  updatePsi(psi, 0, 0);
+  assert psi == {1, 0, 0};
+
+  // test case 3
+  psi = {0, 0, 0};
+  updatePsi(psi, 0, 1);
+  assert psi == {0, 0, 0};
+
+  // test case 4
+  psi = {0, 0, 0};
+  updatePsi(psi, 0, 0);
+  assert psi == {0, 0, 0};
+
+  // test case 5
+  psi = {1, 0, 0};
+  updatePsi(psi, 0, 1);
+  assert psi == {0, 0, 0};
+
+  // test case 6
+  psi = {0, 1, 0};
+  updatePsi(psi, 1, 0);
+  assert psi == {0, 1, 0};
+
+  // test case 7
+  psi = {0, 1, 0};
+  updatePsi(psi, 1, 1);
+  assert psi == {0, 0, 0};
+
+  // test case 8
+  psi = {0, 0, 0};
+  updatePsi(psi, 1, 1);
+  assert psi == {0, 0, 0};
+
+  // test case 9
+  psi = {1, 1, 0};
+  updatePsi(psi, 0, 0);
+  assert psi == {1, 1, 0};
+
+  // test case 10
+  psi = {1, 1, 0};
+  updatePsi(psi, 1, 0);
+  assert psi == {1, 1, 0};
+
+  // test case 11
+  psi = {1, 1, 1};
+  updatePsi(psi, 2, 0);
+  assert psi == {1, 1, 1};
+
+  // test case 12
+  psi = {1, 1, 1};
+  updatePsi(psi, 2, 1);
+  assert psi == {1, 1, 0};
+}
