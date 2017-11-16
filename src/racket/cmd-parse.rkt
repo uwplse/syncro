@@ -69,7 +69,7 @@
     depth
     "Expression depth for the grammar."
     (let ([depth-num (string->number depth)])
-      (unless (and (integer? depth) (>= depth 1))
+      (unless (and (integer? depth-num) (>= depth-num 0))
         (error (format "Invalid expression depth: ~a" depth-num)))
 
       (hash-set! options 'depth depth-num))]
@@ -78,7 +78,7 @@
     stmts
     "Number of statements for the grammar."
     (let ([stmts-num (string->number stmts)])
-      (unless (and (integer? stmts) (>= stmts 1))
+      (unless (and (integer? stmts-num) (>= stmts-num 0))
         (error (format "Invalid number of statements: ~a" stmts-num)))
 
       (hash-set! options 'stmts stmts-num))]
@@ -88,7 +88,7 @@
     ("The bitwidth to use in Rosette."
      "Must be an integer between 1 and 32.")
     (let ([bits-num (string->number bits)])
-      (unless (and (integer? bits) (>= bits 1) (<= bits 32))
+      (unless (and (integer? bits-num) (>= bits-num 1) (<= bits-num 32))
         (error (format "Invalid bitwidth: ~a" bits-num)))
 
       (hash-set! options 'bitwidth bits-num))]

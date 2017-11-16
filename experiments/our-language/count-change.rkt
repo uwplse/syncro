@@ -94,11 +94,15 @@
     (list (vector 1 2)
           (vector 1 2)
           (vector 1 2 3)
-          (vector 2 3)))
+          (vector 2 3)
+          (vector 1 3 5)
+          (vector 1 3 5)
+          (vector 1 2 5)
+          (vector 2 5)))
   (define amounts
-    (list 5 6 6 7))
+    (list 5 6 6 7 10 11 10 10))
   (define results
-    (list 3 4 7 1))
+    (list 3 4 7 1 7 8 10 2))
 
   #;(for ([coins coin-vecs] [amount amounts] [result results])
     (printf "(cc ~a ~a) = ~a instead of ~a~%"
