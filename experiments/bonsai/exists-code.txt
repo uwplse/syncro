@@ -1,0 +1,6 @@
+(if (= (vector-ref (vector-ref num2helper (vector-ref word->document word)) new-topic) 0) 
+        (vector-increment! num2 (vector-ref word->document word)) 
+        (void))
+(if (= (vector-ref (vector-ref num2helper (vector-ref word->document word)) old-topic) 1) 
+        (vector-decrement! num2 (vector-ref word->document word)) 
+        (void))

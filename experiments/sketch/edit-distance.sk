@@ -1,0 +1,112 @@
+// Rohin's note: I think I screwed up the pragma line somehow, but it isn't important
+// pragma  --fe-output-code --fe-output-test skosette_test.sk
+
+int NUM_LISTS = 3;
+
+int min(int a, int b) {
+  return (a < b) ? a : b;
+}
+
+generator bit genBool(int M, int N, ref int[M+1, N+1] cache, ref int[M] s, ref int[N] t, int i, int j, int bnd) {
+  if (bnd <= 0) {
+    return {| 0 | 1 |};
+  } else {
+    // Our algorithm would also consider using if and equal? on booleans here
+    int c1 = genChar(M, N, cache, s, t, i, j, bnd - 1);
+    int c2 = genChar(M, N, cache, s, t, i, j, bnd - 1);
+    int n1 = genInt(M, N, cache, s, t, i, j, bnd - 1);
+    int n2 = genInt(M, N, cache, s, t, i, j, bnd - 1);
+    return {| 0 | 1 | c1 == c2 | n1 == n2 |};
+  }
+}
+
+generator int genChar(int M, int N, ref int[M+1, N+1] cache, ref int[M] s, ref int[N] t, int i, int j, int bnd) {
+  // Our algorithm would also consider using if here
+  int index = genInt(M, N, cache, s, t, i, j, bnd - 1);
+  return {| s[index] | t[index] |};
+}
+
+generator int genInt(int M, int N, ref int[M+1, N+1] cache, ref int[M] s, ref int[N] t, int i, int j, int bnd) {
+  if (bnd <= 0) {
+    return {| ?? | i | j |};
+  } else {
+    bit bool = genBool(M, N, cache, s, t, i, j, bnd - 1);
+    int n1 = genInt(M, N, cache, s, t, i, j, bnd - 1);
+    int n2 = genInt(M, N, cache, s, t, i, j, bnd - 1);
+    int cache_value = cache[n1, n2];
+    int if_value = bool ? n1 : n2;
+    return {| ?? | i | j | cache_value | if_value | n1 + n2 | n1 - n2 | min(n1, n2) |};
+  }
+}
+
+int edit_distance(int M, int N, ref int[M] s, ref int[N] t) {
+  int[M + 1, N + 1] cache;
+  // Base cases
+  for (int i = 0; i <= M; i++) {
+    cache[i, 0] = i;
+  }
+  for (int j = 0; j <= N; j++) {
+    cache[0, j] = j;
+  }
+
+  for (int i = 0; i < M; i++) {
+    for (int j = 0; j < N; j++) {
+      /*
+      int skip_s = 1 + cache[i, j+1];
+      int skip_t = 1 + cache[i+1, j];
+      int comparison = (s[i] == t[j]) ? 0 : 1;
+      int skip_both = comparison + cache[i, j];
+      cache[i+1, j+1] = min(skip_s, min(skip_t, skip_both));
+      */
+      cache[i+1, j+1] = genInt(M, N, cache, s, t, i, j, 4);
+    }
+  }
+  return cache[M, N];
+}
+
+harness void main() {
+
+  int[3] s1 = {1, 2, 3};
+  int[2] t1 = {2, 3};
+  assert edit_distance(3, 2, s1, t1) == 1;
+
+  int[2] s2 = {2, 3};
+  int[3] t2 = {1, 2, 3};
+  assert edit_distance(2, 3, s2, t2) == 1;
+
+  int[5] s3 = {1, 2, 3, 2, 1};
+  int[3] t3 = {1, 3, 1};
+  assert edit_distance(5, 3, s3, t3) == 2;
+
+  int[3] s4 = {1, 3, 1};
+  int[5] t4 = {1, 2, 3, 2, 1};
+  assert edit_distance(3, 5, s4, t4) == 2;
+
+  int[2] s5 = {1, 2};
+  int[3] t5 = {1, 3, 1};
+  assert edit_distance(2, 3, s5, t5) == 2;
+
+  int[3] s6 = {1, 3, 1};
+  int[2] t6 = {1, 2};
+  assert edit_distance(3, 2, s6, t6) == 2;
+
+  int[5] s7 = {1, 2, 3, 2, 1};
+  int[2] t7 = {1, 1};
+  assert edit_distance(5, 2, s7, t7) == 3;
+
+  int[2] s8 = {1, 1};
+  int[5] t8 = {1, 2, 3, 2, 1};
+  assert edit_distance(2, 5, s8, t8) == 3;
+
+  int[4] s9 = {1, 2, 3, 4};
+  int[4] t9 = {2, 5, 4, 5};
+  assert edit_distance(4, 4, s9, t9) == 3;
+
+  int[4] s10 = {1, 2, 3, 4};
+  int[3] t10 = {5, 6, 7};
+  assert edit_distance(4, 3, s10, t10) == 4;
+
+  int[3] s11 = {5, 6, 7};
+  int[4] t11 = {1, 2, 3, 4};
+  assert edit_distance(3, 4, s11, t11) == 4;
+}

@@ -109,13 +109,6 @@
 (define (make-id template . ids)
   (string->symbol (apply format template ids)))
 
-;; Note: Here we use (repr type) to get an expression that
-;; evaluates to the type, but we could also store this
-;; expression taken straight from the user program.
-(define (add-terminal-to-info-code info-sym var-sym type [mutable? #f])
-  `(send ,info-sym make-and-add-terminal ',var-sym ,(repr type)
-         #:mutable? ,mutable?))
-
 ;; Creates the necessary Rosette code for synthesis, runs it, and
 ;; creates the relevant update functions.
 ;; prog: A program struct (see read-file.rkt)
@@ -125,6 +118,14 @@
   ;;;;;;;;;;;;;
 
   ;; These are defined inside so that they have access to prog and options.
+
+  ;; Note: Here we use (repr type) to get an expression that
+  ;; evaluates to the type, but we could also store this
+  ;; expression taken straight from the user program.
+  (define always-mutable? (hash-ref options 'no-mutability-analysis?))
+  (define (add-terminal-to-info-code info-sym var-sym type [mutable? #f])
+    `(send ,info-sym make-and-add-terminal ',var-sym ,(repr type)
+           #:mutable? ,(or always-mutable? mutable?)))
 
   (match-define (program constants graph algorithm) prog)
 
@@ -204,8 +205,9 @@
                                #:terminal-info [info-var 'terminal-info])
       `(grammar ,info-var ,stmt ,expr
                 #:num-temps ,temps #:guard-depth ,guard #:type ,type
-                #:version ',(if sketch? 'caching (hash-ref options 'grammar-version))
+                #:version ',(if sketch? 'general (hash-ref options 'grammar-version))
                 #:choice-version ',(if sketch? 'basic (hash-ref options 'grammar-choice))
+                #:cache? ,(hash-ref options 'cache?)
                 #:mode ',mode
                 #:print-statistics
                 ,(set-member? (hash-ref options 'logging) 'stats)))
@@ -242,12 +244,16 @@
                   ,(timing-code
                     `(force-type program (Void-type)
                                  (lambda (info type)
-                                   ,(make-grammar-expr 2 2 0 0 'type 'stmt #t
+                                   ,(make-grammar-expr (hash-ref options 'stmts)
+                                                       (hash-ref options 'depth)
+                                                       0 0 'type 'stmt #t
                                                        #:terminal-info 'info)))
                     "generate the sketch")))
               `((define program
                   ,(timing-code
-                    (make-grammar-expr 2 2 0 1 '(Void-type) 'stmt #f)
+                    (make-grammar-expr (hash-ref options 'stmts)
+                                       (hash-ref options 'depth)
+                                       0 1 '(Void-type) 'stmt #f)
                     "generate the postderivative"))))))
     (define program-run-code
       `((define env-for-postderiv
@@ -475,7 +481,7 @@
            (format "No program found to update ~a upon delta ~a to ~a"
                    output-id delta-name input-id))
           (send input-node add-delta-deriv-stmts delta-name
-                (list (send output-node get-delta-code 'recompute))
+                (list (send output-node get-delta-deriv 'recompute))
                 'post))))
 
   ;;;;;;;;;;;;;;;;;

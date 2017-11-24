@@ -1,0 +1,153 @@
+// Rohin's note: I think I screwed up the pragma line somehow, but it isn't important
+// pragma  --fe-output-code --fe-output-test permutation_test.sk
+
+int N = 5;
+bool checkSwap = true;
+
+/*
+void checkPerm(int[N] permutation, int N) {
+	for(int i = 0; i < N; i++) {
+		assert permutation[i] >= 0;
+		assert permutation[i] < N;
+		for(int j = i + 1; j < N; j++) {
+			assert permutation[i] != permutation[j];
+		}
+	}
+}
+
+int[N] invert(int N, int[N] permutation){
+	int[N] inverse_perm;
+	checkPerm(permutation, N);
+	for(int i = 0; i < N; i++) {
+		inverse_perm[permutation[i]] = i;
+	}
+	return inverse_perm;
+}
+
+void swapPerm(int N, ref int[N] permutation, ref int[N] inverse_perm, int i, int j) {
+	checkPerm(permutation, N);
+	checkPerm(inverse_perm, N);
+	
+	int tmp = permutation[i];
+	permutation[i] = permutation[j];
+	permutation[j] = tmp;
+	return;
+}
+*/
+
+generator int genInt(int N, ref int[N] permutation, ref int[N] inverse_perm, ref int i, ref int j, int bnd) {
+	assert bnd >= 0;
+	if(??) {
+		return {| i | j |};
+	} else {
+		int n = genInt(N, permutation, inverse_perm, i, j, bnd - 1);
+		return {| permutation[n] | inverse_perm[n] |};
+	}
+}
+
+// void statements not considered
+void genStmt(ref int i, ref int j) {
+	if(??) {
+		{| i++ | j++ | i-- | j-- |};
+	} else {
+		if(??) {
+			i = j;
+		} else {
+			j = i;	
+		}
+	}
+}
+
+void swapInv(int N, ref int[N] permutation, ref int[N] inverse_perm, int i, int j) {
+	// checkPerm(permutation, N);
+	// checkPerm(inverse_perm, N);
+	
+	// Ideally we should have this
+	// genStmt(genInt(N, permutation, inverse_perm, i, j, 2), genInt(N, permutation, inverse_perm, i, j, 0));
+	// The following goes through, the above doesn't ^
+	// genStmt(inverse_perm[genInt(N, permutation, inverse_perm, i, j, 1)], genInt(N, permutation, inverse_perm, i, j, 0));
+	// hard-coding the solution, below, also goes throughs
+	inverse_perm[permutation[i]] = i;
+	inverse_perm[permutation[j]] = j;
+	return;
+}
+
+int checkInverse(int N, int[N] permutation, int[N] inverse_perm) {
+	int result = 1;
+	for(int i = 0; i < N; i++) {
+		if(inverse_perm[permutation[i]] != i) {
+			result = 0;
+		}
+	}
+	return result;
+}
+
+harness void main() {
+	int[N] permutation;
+	int[N] inverse_perm;
+	
+	// test case 1
+	permutation = {*};
+	inverse_perm = invert(N, permutation);
+	if(checkSwap) {
+		swapPerm(N, permutation, inverse_perm, 4, 1);
+		assert (checkInverse(N, permutation, inverse_perm) == 0);
+		swapInv(N, permutation, inverse_perm, 4, 1);
+		assert inverse_perm == {0, 4, 1, 2, 3};
+	} else {
+		assert inverse_perm == {0, 1, 4, 2, 3};
+	}
+	assert (checkInverse(N, permutation, inverse_perm) == 1);
+
+	// test case 2
+	permutation = {1, 2, 0, 3, 4};
+	inverse_perm = invert(N, permutation);
+	if(checkSwap) {
+		swapPerm(N, permutation, inverse_perm, 4, 0);
+		assert (checkInverse(N, permutation, inverse_perm) == 0);
+		swapInv(N, permutation, inverse_perm, 4, 0);
+		assert inverse_perm == {2, 4, 1, 3, 0};
+	} else {
+		assert inverse_perm == {2, 0, 1, 3, 4};
+	}
+	assert (checkInverse(N, permutation, inverse_perm) == 1);
+
+	// test case 3
+	permutation = {0, 4, 1, 2, 3};
+	inverse_perm = invert(N, permutation);
+	if(checkSwap) {
+		swapPerm(N, permutation, inverse_perm, 0, 1);
+		assert (checkInverse(N, permutation, inverse_perm) == 0);
+		swapInv(N, permutation, inverse_perm, 0, 1);
+		assert inverse_perm == {1, 2, 3, 4, 0};
+	} else {
+		assert inverse_perm == {0, 2, 3, 4, 1};
+	}
+	assert (checkInverse(N, permutation, inverse_perm) == 1);
+
+	// test case 4	
+	permutation = {4, 1, 2, 0, 3};
+	inverse_perm = invert(N, permutation);
+	if(checkSwap) {
+		swapPerm(N, permutation, inverse_perm, 3, 1);
+		assert (checkInverse(N, permutation, inverse_perm) == 0);
+		swapInv(N, permutation, inverse_perm, 3, 1);
+		assert inverse_perm == {1, 3, 2, 4, 0};
+	} else {
+		assert inverse_perm == {3, 1, 2, 4, 0};
+	}
+	assert (checkInverse(N, permutation, inverse_perm) == 1);
+
+	// test case 5
+	permutation = {4, 3, 1, 2, 0};
+	inverse_perm = invert(N, permutation);
+	if(checkSwap) {
+		swapPerm(N, permutation, inverse_perm, 2, 3);
+		assert (checkInverse(N, permutation, inverse_perm) == 0);
+		swapInv(N, permutation, inverse_perm, 2, 3);
+		assert inverse_perm == {4, 3, 2, 1, 0};
+	} else {
+		assert inverse_perm == {4, 2, 3, 1, 0};
+	}
+	assert (checkInverse(N, permutation, inverse_perm) == 1);
+}

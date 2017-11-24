@@ -16,6 +16,21 @@
 ;; Grammar construction ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; Generates a symbolic program (that is, a set of programs
+;; represented as a choice over concrete programs through Rosette
+;; boolean variables) that when evaluated would produce a value of the
+;; given type. Variables in the symbolic program are drawn from
+;; terminal-info, functions and special forms are drawn from
+;; operators, and the size of the programs generated is constrained by
+;; num-stmts and depth. A common use case is to ask for (Void-type),
+;; in which case we care not about the return value (which is always
+;; #<void>) but the side effects that occur along the way.
+;; Note that most of the parameters have no effect on the basic
+;; grammar, which hardcodes many things (such as the list of
+;; operators).
+;; Note that the num-stmts and depth do not have exact meanings, they
+;; are simply used as costs. (For example, despite an if having
+;; multiple statements inside it, it counts as only one statement.)
 ;; terminal-info: A Lexical-Terminal-Info% object
 ;; num-stmts:     Number of statements to allow
 ;; depth:         Expression depth to allow
@@ -23,22 +38,40 @@
 ;; #:guard-depth: Depth of the guard expression. If this is #f, no
 ;;                guard is inserted.
 ;; #:type:        The output type of the expression to be generated.
+;; #:disable-types?: Whether to disable the type analysis. Does not
+;;                affect the basic grammar.
 ;; #:operators:   A list of operators to use. Each operator is either
 ;;                a grammar-operator? or a symbol (like 'set!)
-;; #:version and #:choice-version are settings determining which
-;; grammar to use and how to use it.
-;; Note that the num-stmts and depth do not have exact meanings, they
-;; are simply used as costs. (For example, despite an if having
-;; multiple statements inside it, it counts as only one statement.)
+;; #:version:     Which grammar to use (basic, general, caching, ssa)
+;; #:choice-version: Which choice strategy to use (basic or sharing).
+;; #:mode:        Whether to generate a statement or an expression.
+;; #:print-statistics: #t if we should print the number of boolean
+;;                     variables used to encode the grammar, #f
+;;                     otherwise.
+;; Returns: A symbolic lifted? object representing the set of
+;;          type-safe and mutability-safe programs of size limited in
+;;          some way by depth/num-stmts that when evaluated produce a
+;;          value of the given type. If mutable? is #t and we are not
+;;          using the basic grammar, then the values returned by the
+;;          programs must be allowed to be mutated according to the
+;;          mutability analysis. Returns #f if no program satisfying
+;;          the constraints exists. Note that #f is lifted? and so it
+;;          is always possible to call eval-lifted, lifted-code
+;;          etc. on the result of a call to grammar.
 (define (grammar terminal-info num-stmts depth
                  #:num-temps [num-temps 0]
                  #:guard-depth [guard-depth 0]
                  #:type [type (Void-type)]
+                 #:disable-types? [disable-types? #f]
+                 #:mutable? [mutable? #f]
+                 #:use-constants? [use-constants? #t]
                  #:operators [operator-info default-operators]
                  #:version [version 'basic]
                  #:choice-version [choice-version 'basic]
+                 #:cache? [cache? #t]
                  #:mode [mode 'stmt]
                  #:print-statistics [print-statistics #f])
+  (when disable-types? (set! type (Any-type)))
   (define-values (new-pairs-set all-pairs-set operators)
     (remove-polymorphism operator-info terminal-info))
   (define chooser (make-chooser choice-version))
@@ -51,45 +84,50 @@
                           #:num-temps num-temps
                           #:guard-depth guard-depth
                           #:type type)]
-          ['caching
-           (grammar-general terminal-info operators num-stmts depth chooser
-                            #:num-temps num-temps
-                            #:guard-depth guard-depth
-                            #:use-constants? #t
-                            #:type type
-                            #:cache? #t
-                            #:mode mode)]
           ['general
            (grammar-general terminal-info operators num-stmts depth chooser
                             #:num-temps num-temps
                             #:guard-depth guard-depth
-                            #:use-constants? #t
+                            #:use-constants? use-constants?
                             #:type type
-                            #:cache? #f
+                            #:mutable? mutable?
+                            #:cache? cache?
+                            #:disable-types? disable-types?
                             #:mode mode)]
           [`(ssa ,(? integer? num-constants))
            (grammar-ssa terminal-info operators num-stmts depth chooser
                         #:num-temps num-temps
                         #:guard-depth guard-depth
-                        #:num-constants num-constants
+                        #:num-constants (if use-constants? num-constants 0)
                         #:type type
+                        #:mutable? mutable?
                         #:new-pairs-set new-pairs-set
-                        #:cache? #t
+                        #:cache? cache?
+                        #:disable-types? disable-types?
                         #:mode mode)]
-          #;['synthax-deep
-           (match (list num-stmts depth)
-             ['(2 2) (grammar-synthax-deep22 terminal-info)]
-             ['(3 3) (grammar-synthax-deep33 terminal-info)]
-             ['(3 4) (grammar-synthax-deep34 terminal-info)]
-             [_ (error
-                 (format "No synthax grammar for ~a statements and ~a expression depth"
-                         num-stmts depth))])]
           [_
            (error (format "Unknown grammar type: ~a" version))])))
   
   (when print-statistics (send chooser print-stats))
   result)
 
+;; Creates a symbolic program that defines a new temporary variable.
+;; TODO: The meaning of mutable? here seems different from all the
+;; other places we use mutable?, is this a bug?
+;; Note that there is an important invariant that callers must ensure
+;; holds true between fn and type + mutable?, detailed in the
+;; documentation for fn.
+;; terminal-info: Lexical-Terminal-Info% object, may be mutated
+;; type: A Type?, the type that the generated expression should
+;;       evaluate to
+;; mutable?: Boolean, #t if the generated temporary variable is
+;;           allowed to be mutated in the future
+;; fn: Function of no arguments that returns a lifted? value or
+;;     #f. If not #f, the returned value is a subtree satisfying the
+;;     type and mutability constraints implied by type and mutable?.
+;; Returns: A symbolic program of the form (define tmp (??)) where tmp
+;;          is a fresh temporary variable and (??) is either #f or a
+;;          subtree satisfying the type and mutability constraints.
 (define (create-temporary terminal-info type mutable? fn)
   (define sym (gensym 'tmp))
   (define subexp (fn))
@@ -102,29 +140,58 @@
               #:mutable? mutable?)))
   (define^ lifted-sym subexp))
 
+;; Same interface as grammar, defined above.
+;; Generates a program of the following form:
+;; (let ()
+;;   (define constant1 (??))  ;; A symbolic integer
+;;   (define constant2 (??))
+;;   ...
+;;   (define tmp1 (??))  ;; A boolean hole, perhaps
+;;   (define tmp2 (??))  ;; A vector hole, perhaps
+;;   ...
+;;   (let ()
+;;     (??)  ;; statement that mutates something
+;;     ...))
+;; This uses the general grammar to generate a lot of small, shallow
+;; expressions or statements, and then stitches them together, whereas
+;; the general grammar with large parameters would generate one
+;; monolithic AST.
+;; chooser: An object of one of the Chooser% classes in choice.rkt.
+;; new-pairs-set: TODO: Describe
 (define (grammar-ssa terminal-info operators num-stmts expr-depth chooser
                      #:num-temps [num-temps 0]
                      #:guard-depth [guard-depth 0]
                      #:num-constants [num-constants 0]
                      #:type [start-type (Void-type)]
+                     #:mutable? [mutable? #f]
                      #:new-pairs-set new-pairs-set
                      #:cache? cache?
+                     #:disable-types? [disable-types? #f]
                      #:mode mode)
+  (when mutable?
+    (error "Unsupported grammar option: SSA grammar does not enforce top level mutability constraint"))
+
+  ;; Does the same thing as grammar-general, but provides default
+  ;; values for many of the options. This is optimized to simply
+  ;; generate a normal AST without any bells or whistles.
   (define (generate type mutable? stmts depth)
     (grammar-general terminal-info operators stmts depth chooser
                      #:num-temps 0 #:guard-depth 0
                      #:use-constants? #f #:cache? cache?
+                     #:disable-types? disable-types?
                      #:type type #:mutable? mutable?
                      #:mode 'stmt))
 
-  ;; pair: tm-pair defining what type of value we want and whether or
-  ;; not it should be mutable.
-  (define (create-ssa-temporary pair)
-    (match pair
+  ;; Wrapper around create-temporary to pass in some default
+  ;; parameters (such as the terminal-info).
+  (define (create-ssa-temporary type-mutability-pair)
+    (match type-mutability-pair
       [(tm-pair type mutable?)
        (create-temporary terminal-info type mutable?
                          (lambda () (generate type mutable? 1 1)))]))
 
+  ;; List of lifted-define objects, each of which defines a symbolic
+  ;; integer constant.
   (define integer-holes
     (for/list ([i num-constants])
       (define-symbolic* hole integer?)
@@ -134,38 +201,46 @@
               #:mutable? #f))
       (define^ lifted-sym hole)))
 
-  ;; Choose definitions for each variable
+  ;; Choose definitions for each variable, producing a list of
+  ;; lifted-define objects.
   ;; We only consider new-pairs-set here, which is the set of all
   ;; tm-pairs that can be generated by applying operators -- in
   ;; particular, it does not include tm-pairs that can only be
   ;; obtained by choosing variables, because we don't want to have
-  ;; temporary variables that are the same as variables.
+  ;; temporary variables that are the same as existing variables.
   ;; Loop order is important here. If we have types A and B, we want
   ;; to generate A B A B A B instead of A A A B B B, so that any
   ;; expressions that produce A that require B can be synthesized.
   ;; Dead code elimination assumes that any definitions here do not
   ;; modify state, so we don't allow Void type. For now we assume
   ;; that all procedures that modify state return void.
-  ;; TODO: Better solution to the state modification problem.
+  ;; TODO: Better solution to the problem above.
   (define num-defns
     (if (equal? mode 'stmt)
         expr-depth
         (* expr-depth (second mode))))
-
   (define definitions
-    (for*/list ([i num-defns]
-                [tmp-pair new-pairs-set]
-                #:unless (equal? (tm-pair-type tmp-pair) (Void-type)))
-      (create-ssa-temporary tmp-pair)))
+    (if disable-types?
+        (for/list ([i num-defns])
+          (create-ssa-temporary (tm-pair (Any-type) #t)))
+        (for*/list ([i num-defns]
+                    [tmp-pair new-pairs-set]
+                    #:unless (equal? (tm-pair-type tmp-pair) (Void-type)))
+          (create-ssa-temporary tmp-pair))))
 
   ;; Build the program
   (if (equal? mode 'stmt)
       (apply begin^
              (append integer-holes definitions
-                     (list (generate (Void-type) #f num-stmts 2))))
+                     (list (generate start-type mutable? num-stmts 2))))
       (append integer-holes definitions)))
 
 
+;; Similar interface as grammar (defined above).
+;; This is the main workhorse of grammar generation. In particular, it
+;; makes sure that all generated programs are type safe.
+;; Optionally, the grammar can also apply a caching optimization in
+;; order to share subtrees among branches where it is safe to do so.
 (define (grammar-general terminal-info operators num-stmts expr-depth chooser
                          #:num-temps [num-temps 0]
                          #:guard-depth [guard-depth 0]
@@ -173,6 +248,7 @@
                          #:type [start-type (Void-type)]
                          #:mutable? [mutable? #f]
                          #:cache? cache?
+                         #:disable-types? [disable-types? #f]
                          #:mode mode)
   (define orig-params
     (hash 'terminal-info terminal-info
@@ -184,21 +260,116 @@
           'guard-depth guard-depth
           'type start-type
           'mutable? mutable?
-          'cache? cache?))
+          'cache? cache?
+          'disable-types? disable-types?
+          'mode mode))
 
   (define (my-choose* . args)
     (send chooser choose* args #f))
 
-  ;; We use different caches for lookup and insertion. This is because
-  ;; for every new choice, we create a copy of the cache so far, used
-  ;; for lookup. However, when we generate new programs, we want them
-  ;; to be used in future lookups, so we insert them into the original
-  ;; cache.
+  ;; Caching is tricky to get right. Consider the following symbolic
+  ;; AST:
+  ;;                        (?? int)
+  ;;            /----------/   |    \--\
+  ;;       vector-ref          +        -
+  ;;        /      \          / \      / \
+  ;; (?? vector) (?? int)
+
+  ;; Here, we are about to generate two subtrees of the form (?? int)
+  ;; for the +, and then we'll go on to the -. Note that these two
+  ;; subtrees cannot be shared -- they must use different symbolic
+  ;; booleans at choice nodes, otherwise they would be forced to be
+  ;; the same program, and you would be forced to add a number to
+  ;; itself (basically the + is acting more like (curry * 2)). So we
+  ;; do need two different subtrees. However, since there is a choice
+  ;; node above that lets us pick between vector-ref and +, there will
+  ;; never be a program that has *both* the vector-ref and the +, and
+  ;; so it is safe to reuse the (?? int) subtree from vector-ref
+  ;; (let's call that tree T1). But T1 can only be reused as *one* of
+  ;; the subtrees for +, the other subtree T2 must be generated from
+  ;; scratch with new symbolic boolean choice nodes.
+  ;; Now, once we've done that, we can move on to the -. Now, since
+  ;; we're once again under a choice node and we can never conflict
+  ;; with the vector-ref or the +, we can actually reuse both T1 *and*
+  ;; T2, and so we don't need to generate anything new this time.
+
+  ;; This means that we have an unusual caching policy, where every
+  ;; time there's a cache hit, we can use that subtree, but then we
+  ;; need to delete it while filling out the rest of the arguments,
+  ;; but then once we backtrack to the choice node and start on
+  ;; another subtree, we can insert it back into the cache.
+
+  ;; In order to actually implement such an algorithm, we use both a
+  ;; temporary lookup cache and a less temporary true cache. Every
+  ;; time we start a new choice node, we create a new true
+  ;; cache. (This part happens in grammar-general-helper, the new
+  ;; cache is then passed in to cached-grammar.) Every time we start
+  ;; a new choice within a choice node, the lookup cache is reset to
+  ;; be a copy of the true cache, since all of the subtrees that were
+  ;; used and deleted from the lookup cache are now eligible to be
+  ;; reused again. Finally, every time we attempt to generate a new
+  ;; symbolic program, we check the cache to see if there's an
+  ;; eligible subtree. For a cache hit, we reuse the subtree and
+  ;; delete it from the lookup cache (but *not* the true cache). For a
+  ;; cache miss, we generate a new subtree from scratch, use it, and
+  ;; add it to the true cache (but *not* the lookup cache, since we
+  ;; just used it).
+
+  ;; The parts of this algorithm which involve creating new versions
+  ;; of the true cache and lookup cache must be implemented by callers
+  ;; of cached-grammar. cached-grammar assumes that the caches are
+  ;; maintained in this way, and then performs cache lookups and deals
+  ;; with cache hits and cache misses appropriately.
+
+  ;; The keys to the caches are tm-pairs (which, combined with depth,
+  ;; uniquely identify the subtree that should be generated). The
+  ;; depth is not included in the key because any cache instance will
+  ;; only contain subtrees of a specific depth. The values are *lists*
+  ;; of subtrees, because it is possible to generate multiple subtrees
+  ;; for the same key. In the example above, the key (tm-pair int #f)
+  ;; would have the value (list T1 T2) at the point where it is about
+  ;; to generate subtrees for -. Once we reuse the subtree T1 for the
+  ;; first argument to -, the value would be updated to (list T2).
+
+  ;; As if this were not tricky enough already, we sometimes can have
+  ;; symbolic keys to the cache. One potential solution would be to
+  ;; implement the cache as an associative list, which Rosette will
+  ;; automatically lift to work on symbolic keys. However, this leads
+  ;; to extremely expensive symbolic computation, so it doesn't
+  ;; work. Usually though, symbolic keys only encode a small number of
+  ;; concrete keys, and so another strategy is to take each symbolic
+  ;; key, enumerate the set of possible concrete keys, perform the
+  ;; algorithm above on each concrete key separately to get a set of
+  ;; subtrees, and then merge the set of subtrees into a single
+  ;; subtree by guarding each subtree with whatever boolean condition
+  ;; guarded the corresponding concrete key. With this strategy, the
+  ;; caches themselves only ever see concrete keys and as a result
+  ;; they can be implemented as plain hash maps.
+  ;; Note that by doing this we are taking all of the guarantees of
+  ;; safe Rosette and stomping them into the ground. This is very much
+  ;; dependent on a lot of knowledge about Rosette internals that is
+  ;; not guaranteed by its API. In particular, it uses impure code
+  ;; (hash-set! for the cache) inside of a for/all.
+
+  ;; It is possible to disable the removal of a cache hit from the
+  ;; lookup cache, by passing #f for remove?. This is safe when you
+  ;; know that you are going to use the cache at most once, in which
+  ;; case you can pass in the true cache for the lookup cache (instead
+  ;; of making a copy) and disable removal on cache hits. This saves
+  ;; you a hash copy (you don't need to create the lookup cache).
+  ;; TODO: Remove this feature, it's premature optimization, far too
+  ;; complicated for the meager benefit it provides.
+
+  ;; desired-type, mutable?, depth: Parameters controlling the subtree
+  ;; to produce. See grammar documentation.
+  ;; lookup-cache: The lookup cache, described above.
+  ;; true-cache:   The true cache, described above.
+  ;; remove?:      Whether to remove a subtree found in a cache hit.
+  ;; Returns: A subtree (lifted? object) satisfying the constraints
+  ;;          implied by desired-type, mutable? and depth, or #f.
   (define (cached-grammar desired-type #:mutable? mutable? depth
-                          lookup-cache insert-cache remove?)
-    ;; This depends on an understanding of the internals of Rosette.
-    ;; In particular, this uses lots of impure code (hash-set! for the
-    ;; cache) inside of a for/all, which documentation disallows.
+                          lookup-cache true-cache remove?)
+    (when disable-types? (set! desired-type (Any-type)))
     (apply-on-symbolic-type
      desired-type
      (lambda (concrete-type)
@@ -206,34 +377,46 @@
               [cache-val-list (if cache? (hash-ref lookup-cache key '()) '())])
          (if (null? cache-val-list)
              ;; Cache miss (or not caching). Generate a new program:
-             (let ([result (general-grammar concrete-type #:mutable? mutable? depth)])
-               ;; Insert into the cache if we're caching. Insert at
-               ;; the end so that the cache is ordered by ascending
+             (let ([result (grammar-general-helper concrete-type #:mutable? mutable? depth)])
+               ;; Insert into the true cache if we're caching. Insert
+               ;; at the end so that the cache is ordered by ascending
                ;; creation times (that is, the first item is the one
-               ;; that was created first).
+               ;; that was created first). This means that if we
+               ;; generate (+ T1 T2) and we then want to reuse
+               ;; subtrees for -, we will get (- T1 T2) rather than
+               ;; (- T2 T1), which is not as good for state merging.
                (when cache?
-                 (hash-set! insert-cache key
-                            (append (hash-ref insert-cache key '())
+                 (hash-set! true-cache key
+                            (append (hash-ref true-cache key '())
                                     (list result))))
                result)
              ;; Cache hit. Remove the value so it isn't used again if
              ;; the remove? flag is set.
-             ;; Exception: If the value is #f, then leave it, since we
-             ;; don't need to worry about reusing #f values.
+             ;; Exception: If the value is not symbolic, then we can
+             ;; reuse it as much as we want, so leave it in the
+             ;; cache. In particular, values of #f (which mean that
+             ;; no program can satisfy the tm-pair) will be reused.
              (let ([result (car cache-val-list)])
-               (when (and remove? result)
+               (when (and remove? (or (symbolic? result) result))
                  (hash-set! lookup-cache key (cdr cache-val-list)))
                result))))))
-  
+
+  ;; Returns a lifted-set! object, or #f if no such program exists.
+  ;; Note that since a set! always returns #<void>, if desired-type is
+  ;; not compatible with (Void-type), this will return #f.
+  ;; cache: The true cache. See description of caching algorithm above
+  ;;        cached-grammar.
   (define (make-subexp-set! cache desired-type mutable? depth)
+    (when disable-types? (set! desired-type (Any-type)))
     (and (unify-types (Void-type) desired-type)
          (not mutable?)
          ;; We only need to get one item out of cache, so no need to
-         ;; make a copy which we then mutate.
+         ;; make a copy which we then mutate. See also description of
+         ;; the caching algorithm before cached-grammar.
          (let ([variable
                 (apply my-choose*
                        (send terminal-info get-terminals #:mutable? #t))])
-           (and variable
+           (and (or (symbolic? variable) variable)
                 (let* ([type (infer-type variable)]
                        ;; TODO: This may be wrong. Consider, if num1
                        ;; is mutable and num2 is not:
@@ -245,9 +428,15 @@
                        ;; num1 and num2 were aliased to begin with?
                        [subexp (cached-grammar type #:mutable? #f (- depth 1)
                                                cache cache #f)])
-                  (and subexp (set!^ variable subexp)))))))
-  
+                  (and (or (symbolic? subexp) subexp)
+                       (set!^ variable subexp)))))))
+
+  ;; Returns a lifted? object that applies the given operator to some
+  ;; arguments. The return value must satisfy the constraints implied
+  ;; by desired-type, mutable? and depth.
   (define (make-subexp-operator operator cache desired-type mutable? depth)
+    (when disable-types? (set! desired-type (Any-type)))
+    ;; Get the type information for the arguments
     (let ([domain-pairs
            (and (can-use-operator? operator orig-params depth desired-type)
                 (operator-domain-with-mutability operator desired-type mutable?))]
@@ -263,12 +452,17 @@
         (if (null? lst)
             lst
             (let* ([first (fn (car lst))]
-                   [rest (and first (special-andmap fn (cdr lst)))])
-              (and rest (cons first rest)))))
+                   [rest (and (or (symbolic? first) first)
+                              (special-andmap fn (cdr lst)))])
+              (and (or (symbolic? rest) rest)
+                   (cons first rest)))))
 
+      ;; Generate subtrees for the arguments
       (let* ([result (and domain-pairs
                           (special-andmap get-or-make-subexp domain-pairs))])
-        (and result (operator-make-lifted operator result)))))
+        ;; Build the final tree
+        (and (or (symbolic? result) result)
+             (operator-make-lifted operator result)))))
 
   ;; special-andmap above creates weird symbolic terms because of
   ;; the complicated recursion. An alternative below.
@@ -279,8 +473,10 @@
   ;; (and result (not (member #f result)) result)))
   (define special-form->proc
     (hash 'set! make-subexp-set!))
-  
+
+  ;; Dispatches to the appropriate make-subexp helper
   (define (make-subexp operator cache desired-type mutable? depth)
+    (when disable-types? (set! desired-type (Any-type)))
     (cond [(grammar-operator? operator)
            (make-subexp-operator operator cache desired-type mutable? depth)]
           [(hash-has-key? special-form->proc operator)
@@ -289,11 +485,11 @@
           [else
            (error (format "Unknown special form: ~a" operator))]))
 
-  ;; Type can be symbolic. This may make things tricky.
-  ;; TODO: Is this sound? There may be some programs that we should
-  ;; generate but don't, specifically when the desired-type is
-  ;; symbolic and so we have too much sharing.
-  (define (general-grammar desired-type depth #:mutable? [mutable? #f])
+  ;; Generates all of the possible productions and chooses from all of
+  ;; them. Returns a lifted? tree that satisfies the constraints
+  ;; implied by desired-type, mutable? and depth.
+  (define (grammar-general-helper desired-type depth #:mutable? [mutable? #f])
+    (when disable-types? (set! desired-type (Any-type)))
     (define cache (and cache? (make-hash)))
 
     ;; Base case: Terminals
@@ -327,22 +523,26 @@
     (define all-args (append terminals integer-hole boolean-constants recurse))
     (apply my-choose* all-args))
 
-  (cond [(and (equal? mode 'stmt) (equal? start-type (Void-type)))
+  ;; Different ways in which the grammar might be used.
+  (cond [(and (equal? mode 'stmt) (unify-types start-type (Void-type)))
          (build-grammar terminal-info num-stmts expr-depth num-temps guard-depth
-                        general-grammar
+                        grammar-general-helper
                         (lambda (num-stmts depth)
                           (build-list num-stmts
                                       (lambda (i)
-                                        (general-grammar (Void-type) depth)))))]
+                                        (grammar-general-helper (Void-type) depth)))))]
         [(equal? mode 'stmt)
-         (general-grammar start-type expr-depth #:mutable? mutable?)]
+         (grammar-general-helper start-type expr-depth #:mutable? mutable?)]
         [else
          (for/list ([i (second mode)])
            (create-temporary
             terminal-info start-type mutable?
             (lambda ()
-              (general-grammar start-type expr-depth #:mutable? mutable?))))]))
+              (grammar-general-helper start-type expr-depth #:mutable? mutable?))))]))
 
+;; Basic grammar, which creates a lifted? object by generating a tree
+;; using code similar in structure to a recursive descent parser. Each
+;; new function requires another production and an edit to the code.
 (define (grammar-basic terminal-info operators num-stmts depth chooser
                        #:num-temps [num-temps 0]
                        #:guard-depth [guard-depth 0]
@@ -481,6 +681,28 @@
   (build-grammar terminal-info num-stmts depth num-temps guard-depth
                  expr-grammar stmt-grammar))
 
+;; Adds bells and whistles to the simple "create a nested AST"
+;; grammars that are defined above.
+;; terminal-info: Lexical-Terminal-Info% object
+;; num-stmts:     Number of statements the AST can have
+;; depth:         Maximum allowed expression depth
+;; num-temps:     The number of temporary variables to create. These
+;;                are different from the temporary variables in the
+;;                SSA grammar, because these are untyped.
+;; guard-depth:   Depth of the guard expression. Zero means there
+;;                should be no guard.
+;; expr-grammar:  A function for generating symbolic expressions.
+;; stmt-grammar:  A function for generating symbolic statements.
+;; Generates a program of the following form:
+;; (if <guard-expression>
+;;     (void)
+;;     (let ()
+;;       (define temp-variable-1 (expr-??))
+;;       ...
+;;       (define temp-variable-%num-temps% (expr-??))
+;;       (stmt-??)
+;;       ...
+;;       (stmt-??)))
 (define (build-grammar terminal-info num-stmts depth num-temps guard-depth
                        expr-grammar stmt-grammar)
   ;; Choose guard

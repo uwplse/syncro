@@ -14,17 +14,21 @@
   (define options
     (make-hash
      (list (cons 'logging (mutable-set 'cegis 'progress))
-           (cons 'metasketch? #f)
+           ;(cons 'metasketch? #f)
+           (cons 'no-type-analysis? #f)
+           (cons 'no-mutability-analysis? #f)
+           (cons 'cache? #t)
            (cons 'bitwidth 10)
            (cons 'timeout 3600)
            (cons 'module-file "metasketch-module-file.rkt")
-           ;; grammar-version can be 'basic, 'general, 'caching, or
-           ;; '(ssa n), where n is a non-negative integer (use '(ssa
-           ;; 1) by default).
+           ;; grammar-version can be 'basic, 'general, or '(ssa n), where n is a
+           ;; non-negative integer (use '(ssa 1) by default).
            (cons 'grammar-version '(ssa 1))
            ;; grammar-choice can be 'basic or 'sharing. 'sharing only
            ;; works with 'basic and 'general grammars.
-           (cons 'grammar-choice 'basic))))
+           (cons 'grammar-choice 'basic)
+           (cons 'depth 2)
+           (cons 'stmts 2))))
   (command-line
    #:argv args
    #:once-each
@@ -47,14 +51,44 @@
    
    #;[("-m" "--use-metasketch")
     "Use metasketches during synthesis."
-    (hash-set! options 'metasketch? #t)]
+      (hash-set! options 'metasketch? #t)]
+
+   [("--no-types")
+    "Do not use the type analysis."
+    (hash-set! options 'no-type-analysis? #t)]
+
+   [("--no-mutability")
+    "Do not use the mutability analysis."
+    (hash-set! options 'no-mutability-analysis? #t)]
+
+   [("--no-cache")
+    "Do not use caching."
+    (hash-set! options 'cache? #f)]
+
+   [("--depth")
+    depth
+    "Expression depth for the grammar."
+    (let ([depth-num (string->number depth)])
+      (unless (and (integer? depth-num) (>= depth-num 0))
+        (error (format "Invalid expression depth: ~a" depth-num)))
+
+      (hash-set! options 'depth depth-num))]
+
+   [("--stmts")
+    stmts
+    "Number of statements for the grammar."
+    (let ([stmts-num (string->number stmts)])
+      (unless (and (integer? stmts-num) (>= stmts-num 0))
+        (error (format "Invalid number of statements: ~a" stmts-num)))
+
+      (hash-set! options 'stmts stmts-num))]
    
    [("-b" "--bitwidth")
     bits
     ("The bitwidth to use in Rosette."
      "Must be an integer between 1 and 32.")
     (let ([bits-num (string->number bits)])
-      (unless (and (integer? bits) (>= bits 1) (<= bits 32))
+      (unless (and (integer? bits-num) (>= bits-num 1) (<= bits-num 32))
         (error (format "Invalid bitwidth: ~a" bits-num)))
 
       (hash-set! options 'bitwidth bits-num))]
@@ -68,9 +102,9 @@
    [("-g" "--grammar")
     grammar
     ("Which type of grammar to use."
-     "Either basic, general, caching, or (ssa n).")
+     "Either basic, general, or (ssa n).")
     (let ([grammar-type (call-with-input-string grammar read)])
-      (unless (or (member grammar-type '(basic general caching))
+      (unless (or (member grammar-type '(basic general))
                   (ssa-spec? grammar-type))
         (error (format "Invalid option to -g or --grammar: ~a" grammar-type)))
 
@@ -119,11 +153,8 @@
 
    #:args () (void))
 
-  (let ([version (hash-ref options 'grammar-version)]
+  (let ([cache? (hash-ref options 'cache?)]
         [choice (hash-ref options 'grammar-choice)])
-    (when (and (or (equal? version 'caching) (ssa-spec? version))
-               (equal? choice 'sharing))
-      (error
-       (format "Cannot combine grammar choice 'sharing with grammar type '~a"
-               version))))
+    (when (and cache? (equal? choice 'sharing))
+      (error "Cannot combine grammar choice 'sharing with caching")))
   options)

@@ -4,6 +4,7 @@
 
 (provide vector-sum vector-increment! vector-decrement!
          (rename-out [general-vector-ref vector-ref]
+                     [general-vector-ref-default vector-ref-default]
                      [general-vector-set! vector-set!]))
 
 (define (vector-sum vec)
@@ -24,6 +25,13 @@
   (define int-idx
     (if (bv? idx) (bitvector->integer idx) idx))
   (vector-ref vec int-idx))
+
+(define (general-vector-ref-default vec idx default)
+  (define int-idx
+    (if (bv? idx) (bitvector->integer idx) idx))
+  (if (or (< idx 0) (>= idx (vector-length vec)))
+      default
+      (vector-ref vec int-idx)))
 
 (define (general-vector-set! vec idx val)
   (define int-idx
