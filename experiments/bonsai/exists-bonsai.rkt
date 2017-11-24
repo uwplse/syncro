@@ -8,9 +8,10 @@
 
 ; The syntax of our Syncro language, in BNF
 (define syncro-stx
-  '([stmt ((vector-increment! . vec-term) . int-term)             ; vector incr operation
-          ((vector-decrement! . vec-term) . int-term)             ; vector decr operation
+  '([stmt 
           void-stmt
+          ((vector-increment! . vec-term) . int-term)             ; vector incr operation
+          ((vector-decrement! . vec-term) . int-term)             ; vector decr operation
           (((if . bool-term) . stmt) . stmt)
     ]
     [vec-term
@@ -19,7 +20,7 @@
     ]
     [int-term
         one
-        zero
+        int-hole
         name
         ((vector-ref . vec-term) . int-term)
     ]
@@ -80,10 +81,7 @@
         'void-stmt
         (λ () INT)
 
-        'one
-        (λ () INT)
-
-        'zero
+        'int-hole
         (λ () INT)
 
         'true
@@ -147,11 +145,9 @@
         'void-stmt
         (λ () 0)
 
-        'one
-        (λ () 1)
-
-        'zero
-        (λ () 0)
+        'int-hole
+        (λ () (define-symbolic new-int integer?)
+            new-int)
 
         'true
         (λ () true)
